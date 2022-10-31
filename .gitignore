@@ -1,0 +1,5 @@
+.vscode/
+build/
+bin/
+*.nes
+nes_rom.cpp
