@@ -10,20 +10,25 @@ SRC_DIR = .
 BIN_DIR = build
 ROM := ../../roms/nestest.nes
 
+CORE_DIR=../../core
+
 BIN_NAME = shapones
 BIN = $(BIN_DIR)/$(BIN_NAME)
 
-SRC_LIST = $(wildcard $(SRC_DIR)/*.*)
+SRC_LIST = \
+	$(wildcard $(SRC_DIR)/*.*) \
+	$(wildcard $(CORE_DIR)/src/*.*) \
+	$(wildcard $(CORE_DIR)/include/shapones/*.*) 
 
 all: $(BIN)
 
 $(BIN): $(SRC_LIST)
 	mkdir -p $(BIN_DIR)
 	g++ \
-		../../core/src/*.cpp \
+		$(CORE_DIR)/src/*.cpp \
 		*.cpp \
 		-O4 \
-		-I../../core/include \
+		-I$(CORE_DIR)/include \
 		-I. \
 		`wx-config --cflags` \
 		`wx-config --libs` \
