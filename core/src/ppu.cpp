@@ -8,6 +8,7 @@ static int lead_x;
 static int lead_y;
 static int focus_x;
 static int focus_y;
+static int next_focus_x;
 static int shift_x;
 
 //static ScrollRegister scroll;
@@ -25,7 +26,7 @@ static bool scroll_ppuaddr_high_stored = false;
 static Palette palette_file[PALETTE_NUM_BANK];
 
 static OamEntry oam[MAX_SPRITE_COUNT];
-static SpriteLine visible_sprites[MAX_VISIBLE_SPRITES];
+static SpriteLine sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
 static void hold_reset_state();
@@ -39,7 +40,7 @@ static void palette_write(addr_t addr, uint8_t data);
 
 static void render_bg_block(uint8_t *line_buff, int x0, int x1);
 static void render_sprite_block(uint8_t *line_buff, int x0, int x1);
-static void update_scroll_counter(int x0, int x1);
+static void update_scroll_counter(int step);
 static void enum_visible_sprites();
 
 void reset() {
@@ -63,6 +64,7 @@ static void hold_reset_state() {
     lead_y = 0;
     focus_x = 0;
     focus_y = 0;
+    next_focus_x = 0;
 
     num_visible_sprites = 0;
 
@@ -253,6 +255,8 @@ static uint8_t palette_read(addr_t addr) {
 
 static void palette_write(addr_t addr, uint8_t data) {
     addr %= PALETTE_FILE_SIZE;
+    data &= 0x3f;
+
     switch (addr) {
     case 0x10: palette_file[0].color[0] = data; break;
     case 0x14: palette_file[1].color[0] = data; break;
@@ -293,29 +297,6 @@ void render_next_block(uint8_t *line_buff, int num_cycles) {
     }
 
     while (true) {
-
-        // determine rendering block area
-        int next_focus_x;
-        if (focus_x == 0 && focus_y < SCREEN_HEIGHT) {
-            // head of line
-            int coarse_x = reg.scroll & SCROLL_MASK_COARSE_X;
-            next_focus_x = BLOCK_SIZE - (((coarse_x * TILE_SIZE) + reg.fine_x) & (BLOCK_SIZE - 1));
-        }
-        else if (focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) {
-            // visible area
-            next_focus_x = focus_x + BLOCK_SIZE;
-            if (next_focus_x > SCREEN_WIDTH) {
-                next_focus_x = SCREEN_WIDTH;
-            }
-        }
-        else {
-            // blanking area
-            next_focus_x = focus_x + BLOCK_SIZE;
-            if (next_focus_x > LINE_CYCLES) {
-                next_focus_x = LINE_CYCLES;
-            }
-        }
-
         // if the new focus does not overtake the lead counter, render the area
         if (focus_y != lead_y || next_focus_x <= lead_x) {
             if (focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) {
@@ -340,7 +321,7 @@ void render_next_block(uint8_t *line_buff, int num_cycles) {
                 }
             }
             
-            update_scroll_counter(focus_x, next_focus_x);
+            update_scroll_counter(next_focus_x - focus_x);
 
             // update focus counter
             focus_x = next_focus_x;
@@ -352,6 +333,28 @@ void render_next_block(uint8_t *line_buff, int num_cycles) {
         else {
             break;
         }
+
+        // determine rendering block area
+        if (focus_x == 0 && focus_y < SCREEN_HEIGHT) {
+            // head of line
+            int coarse_x = reg.scroll & SCROLL_MASK_COARSE_X;
+            next_focus_x = BLOCK_SIZE - (((coarse_x * TILE_SIZE) + reg.fine_x) & (BLOCK_SIZE - 1));
+        }
+        else if (focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) {
+            // visible area
+            next_focus_x = focus_x + BLOCK_SIZE;
+            if (next_focus_x > SCREEN_WIDTH) {
+                next_focus_x = SCREEN_WIDTH;
+            }
+        }
+        else {
+            // blanking area
+            next_focus_x = focus_x + BLOCK_SIZE;
+            if (next_focus_x > LINE_CYCLES) {
+                next_focus_x = LINE_CYCLES;
+            }
+        }
+
     }
 }
 
@@ -377,12 +380,14 @@ static void render_bg_block(uint8_t *line_buff, int x0, int x1) {
     uint32_t chr = (uint32_t)chr0 | ((uint32_t)chr1 << 16);
     
     // calc attr index
-    int attr_index = (scroll & SCROLL_MASK_NAME_SEL) + 0x3c0;
-    int coarse_y = (scroll & SCROLL_MASK_COARSE_Y) >> 5;
-    int coarse_x = scroll & SCROLL_MASK_COARSE_X;
-    attr_index += (coarse_y / 4) * (NUM_TILE_X / 4);
-    attr_index += coarse_x / 4;
-    int attr_shift_size = ((coarse_y & 0x2) << 1) | (coarse_x & 0x2);
+    int attr_index = 
+        (scroll & SCROLL_MASK_NAME_SEL) |
+        0x3c0 |
+        ((scroll >> 2) & 0x7) |
+        ((scroll >> 4) & 0x38);
+    int attr_shift_size =
+        ((scroll >> 4) & 0x4) |
+        (scroll & 0x2);
 
     // read attr table
     uint8_t attr = memory::vram_read(attr_index);
@@ -390,13 +395,15 @@ static void render_bg_block(uint8_t *line_buff, int x0, int x1) {
     Palette palette = palette_file[attr];
 
     // adjust CHR bit pos
-    int chr_shift_size = ((coarse_x & 1) << 4) | (shift_x << 1);
+    int chr_shift_size =
+        ((scroll << 4) & 0x10) |
+        (shift_x << 1);
     chr >>= chr_shift_size;
 
     // render BG block
     uint8_t bg_color = palette_file[0].color[0];
     for (int x = x0; x < x1; x++) {
-        int palette_index = chr & 0x3;
+        uint32_t palette_index = chr & 0x3;
         chr >>= 2;
         if (palette_index == 0) {
             line_buff[x] = bg_color;
@@ -468,21 +475,19 @@ static void enum_visible_sprites() {
             }
 
             // store sprite information
-            SpriteLine vs;
-            vs.chr = chr;
-            vs.x = s.x;
-            vs.behind_of_bg = (s.attr & OAM_ATTR_PRIORITY) != 0;
-            vs.palette = palette_file[4 + (s.attr & OAM_ATTR_PALETTE)];
-            visible_sprites[num_visible_sprites++] = vs;
+            SpriteLine sl;
+            sl.chr = chr;
+            sl.x = s.x;
+            sl.palette = palette_file[4 + (s.attr & OAM_ATTR_PALETTE)];
+            sl.attr = 0;
+            if (s.attr & OAM_ATTR_PRIORITY) sl.attr |= SL_ATTR_BEHIND;
+            if (i == 0) sl.attr |= SL_ATTR_ZERO;
+            sprite_lines[num_visible_sprites++] = sl;
 
             if (num_visible_sprites >= MAX_VISIBLE_SPRITES) {
                 break;
             }
         }
-    }
-
-    for (int i = num_visible_sprites; i < MAX_VISIBLE_SPRITES; i++) {
-        visible_sprites[i].x = 255;
     }
 }
 
@@ -490,34 +495,33 @@ static void render_sprite_block(uint8_t *line_buff, int x0_block, int x1_block) 
     // sprite height
     int h = reg.control.sprite_size ? 16 : 8;
     for (int i = 0; i < num_visible_sprites; i++) {
-        auto s = visible_sprites[i];
-        int x0 = x0_block > s.x ? x0_block : s.x;
-        int x1 = x1_block < s.x + TILE_SIZE ? x1_block : s.x + TILE_SIZE;
-        uint32_t chr = s.chr >> (2 * (x0 - s.x));
+        auto sl = sprite_lines[i];
+        int x0 = x0_block > sl.x ? x0_block : sl.x;
+        int x1 = x1_block < sl.x + TILE_SIZE ? x1_block : sl.x + TILE_SIZE;
+        uint16_t chr = sl.chr >> (2 * (x0 - sl.x));
         for (int x = x0; x < x1; x++) {
-            int palette_index = chr & 0x3;
+            uint16_t palette_index = chr & 0x3;
             chr >>= 2;
             bool sprite_opaque = (palette_index != 0);
             bool bg_opaque = (line_buff[x] & OPAQUE_FLAG) != 0;
-            if (sprite_opaque && (!bg_opaque || !s.behind_of_bg)) {
-                line_buff[x] = s.palette.color[palette_index];
+            if (sprite_opaque && (!bg_opaque || !(sl.attr & SL_ATTR_BEHIND))) {
+                line_buff[x] = sl.palette.color[palette_index];
             }
-            if (sprite_opaque && bg_opaque) {
+            if ((sl.attr & SL_ATTR_ZERO) && sprite_opaque && bg_opaque) {
                 reg.status.sprite0_hit = 1;
             }
         }
     }
 }
 
-static void update_scroll_counter(int x0, int x1) {
+static void update_scroll_counter(int step) {
     if (!reg.mask.bg_enable && !reg.mask.sprite_enable) {
         return;
     }
 
-    int n = x1 - x0;
     if (focus_y < SCREEN_HEIGHT) {
         if (focus_x < SCREEN_WIDTH) {
-            shift_x += n;
+            shift_x += step;
             while (shift_x >= TILE_SIZE) {
                 shift_x -= TILE_SIZE;
                 // if coarse_x < 31

@@ -124,9 +124,12 @@ struct OamEntry {
     uint8_t x;
 };
 
+static constexpr uint8_t SL_ATTR_BEHIND = 0x1;
+static constexpr uint8_t SL_ATTR_ZERO   = 0x2;
+
 struct SpriteLine {
     uint8_t x;
-    bool behind_of_bg;
+    uint8_t attr;
     uint16_t chr;
     Palette palette;
 };

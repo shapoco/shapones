@@ -35,7 +35,7 @@ int main() {
     vreg_set_voltage(VREG_VOLTAGE_1_30);
     sleep_ms(100);
     stdio_init_all();
-    set_sys_clock_khz(250000, true);
+    //set_sys_clock_khz(250000, true);
     //set_sys_clock_khz(270000, true);
     //set_sys_clock_khz(275000, true);
     set_sys_clock_khz(280000, true);
