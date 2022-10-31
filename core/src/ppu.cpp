@@ -454,9 +454,6 @@ static void enum_visible_sprites() {
             int chrrom_index = tile_index * 8 + (src_y & 0x7);
             uint16_t chr = memory::chrrom_reordered[chrrom_index];
 
-            // ignore transparent sprite
-            if (chr == 0) continue;
-
             if (s.attr & OAM_ATTR_INVERT_H) {
                 // horizontal inversion
                 chr = 
