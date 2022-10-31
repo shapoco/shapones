@@ -89,6 +89,7 @@ void FcScreen::OnPaint(wxPaintEvent &event) {
 
     char s[32];
     sprintf(s, "%6.3lfms / frame", total_emu_time_ms / total_frames);
+    pdc.SetTextForeground(*wxWHITE);
     pdc.DrawText(wxString(s), 0, 0);
 }
 

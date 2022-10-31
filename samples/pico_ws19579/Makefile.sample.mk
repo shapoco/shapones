@@ -1,13 +1,18 @@
 .PHONY: all install clean
 
 REPO_DIR=$(shell pwd)
-SRC_DIR=src
+SRC_DIR=.
 BUILD_DIR=build
 
 BIN_NAME=pico_nes_ws19579.uf2
 BIN=$(BUILD_DIR)/$(BIN_NAME)
 
-SRC_LIST=$(wildcard $(SRC_DIR)/*.*)
+CORE_DIR=../../core
+
+SRC_LIST=\
+	$(wildcard $(SRC_DIR)/*.*) \
+	$(wildcard $(CORE_DIR)/src/*.*) \
+	$(wildcard $(CORE_DIR)/include/shapones/*.*) 
 
 all: $(BIN)
 
