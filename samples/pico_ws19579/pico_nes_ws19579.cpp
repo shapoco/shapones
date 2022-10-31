@@ -27,17 +27,15 @@ uint8_t line_buff_1[nes::SCREEN_WIDTH];
 uint8_t color_buff[256*240];
 uint16_t frame_buff[128*120];
 
-queue_t ppu_step_req_queue;
+static volatile bool vsync_flag = false;
 
 static void lcd_driver_entry();
-
-
 
 int main() {
     vreg_set_voltage(VREG_VOLTAGE_1_30);
     sleep_ms(100);
     stdio_init_all();
-    //set_sys_clock_khz(250000, true);
+    set_sys_clock_khz(250000, true);
     //set_sys_clock_khz(270000, true);
     //set_sys_clock_khz(275000, true);
     set_sys_clock_khz(280000, true);
@@ -55,21 +53,18 @@ int main() {
     nes::memory::map_ines(nes_rom);
     nes::reset();
     
-    queue_init(&ppu_step_req_queue, sizeof(int), 1);
-    
     multicore_launch_core1(lcd_driver_entry);
     
     for(;;) {
         gpio_put(2, 1);
+        vsync_flag = true;
         nes::vsync(line_buff_0);
+        vsync_flag = false;
         gpio_put(2, 0);
         for (int y = 0; y < 120; y++) {
             nes::render_next_line(color_buff + y * 512);
             nes::render_next_line(color_buff + y * 512 + 256);
         }
-        
-        int dummy = 0;
-        queue_add_blocking(&ppu_step_req_queue, &dummy);
     }
 
     return 0;
@@ -77,8 +72,9 @@ int main() {
 
 static void lcd_driver_entry() {
     for(;;) {
-        int y;
-        queue_remove_blocking(&ppu_step_req_queue, &y);
+        while (!vsync_flag) { sleep_us(100); }
+        while (vsync_flag) { sleep_us(100); }
+        lcd.finish_write_data();
         
         uint16_t *wr_ptr = frame_buff;
         for (int y = 0; y < 120; y++) {
@@ -92,7 +88,6 @@ static void lcd_driver_entry() {
                 *(wr_ptr++) = ((co >> 8) & 0xff) | ((co << 8) & 0xff00);
             }
         }
-        lcd.finish_write_data();
         lcd.start_write_data(16, 4, 128, 120, frame_buff);
     }
 }
