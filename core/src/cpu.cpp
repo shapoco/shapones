@@ -3,80 +3,8 @@
 
 namespace nes::cpu {
 
-// instruction decode table
-static const OpDecRecord OpDecTable[] = {
-    { BRK   , Implied   , 7 },  { ORA   , PreIdxInd , 6 },  { NOP   , Implied   , 2 },  { SLO   , PreIdxInd , 8 }, 
-    { NOPD  , Implied   , 3 },  { ORA   , ZeroPage  , 3 },  { ASL   , ZeroPage  , 5 },  { SLO   , ZeroPage  , 5 }, 
-    { PHP   , Implied   , 3 },  { ORA   , Immediate , 2 },  { ASL   , Accum     , 2 },  { ANC   , Immediate , 2 }, 
-    { NOPI  , Implied   , 4 },  { ORA   , Absolute  , 4 },  { ASL   , Absolute  , 6 },  { SLO   , Absolute  , 6 }, 
-    { BPL   , Relative  , 2 },  { ORA   , PostIdxInd, 5 },  { NOP   , Implied   , 2 },  { SLO   , PostIdxInd, 8 }, 
-    { NOPD  , Implied   , 4 },  { ORA   , ZeroPageX , 4 },  { ASL   , ZeroPageX , 6 },  { SLO   , ZeroPageX , 6 }, 
-    { CLC   , Implied   , 2 },  { ORA   , AbsoluteY , 4 },  { NOP   , Implied   , 2 },  { SLO   , AbsoluteY , 7 }, 
-    { NOPI  , Implied   , 4 },  { ORA   , AbsoluteX , 4 },  { ASL   , AbsoluteX , 6 },  { SLO   , AbsoluteX , 7 }, 
-    { JSR   , Absolute  , 6 },  { AND   , PreIdxInd , 6 },  { NOP   , Implied   , 2 },  { RLA   , PreIdxInd , 8 }, 
-    { BIT   , ZeroPage  , 3 },  { AND   , ZeroPage  , 3 },  { ROL   , ZeroPage  , 5 },  { RLA   , ZeroPage  , 5 }, 
-    { PLP   , Implied   , 4 },  { AND   , Immediate , 2 },  { ROL   , Accum     , 2 },  { ANC   , Immediate , 2 }, 
-    { BIT   , Absolute  , 4 },  { AND   , Absolute  , 4 },  { ROL   , Absolute  , 6 },  { RLA   , Absolute  , 6 }, 
-    { BMI   , Relative  , 2 },  { AND   , PostIdxInd, 5 },  { NOP   , Implied   , 2 },  { RLA   , PostIdxInd, 8 }, 
-    { NOPD  , Implied   , 4 },  { AND   , ZeroPageX , 4 },  { ROL   , ZeroPageX , 6 },  { RLA   , ZeroPageX , 6 }, 
-    { SEC   , Implied   , 2 },  { AND   , AbsoluteY , 4 },  { NOP   , Implied   , 2 },  { RLA   , AbsoluteY , 7 }, 
-    { NOPI  , Implied   , 4 },  { AND   , AbsoluteX , 4 },  { ROL   , AbsoluteX , 6 },  { RLA   , AbsoluteX , 7 }, 
-    { RTI   , Implied   , 6 },  { EOR   , PreIdxInd , 6 },  { NOP   , Implied   , 2 },  { SRE   , PreIdxInd , 8 }, 
-    { NOPD  , Implied   , 3 },  { EOR   , ZeroPage  , 3 },  { LSR   , ZeroPage  , 5 },  { SRE   , ZeroPage  , 5 }, 
-    { PHA   , Implied   , 3 },  { EOR   , Immediate , 2 },  { LSR   , Accum     , 2 },  { ALR   , Immediate , 2 }, 
-    { JMP   , Absolute  , 3 },  { EOR   , Absolute  , 4 },  { LSR   , Absolute  , 6 },  { SRE   , Absolute  , 6 }, 
-    { BVC   , Relative  , 2 },  { EOR   , PostIdxInd, 5 },  { NOP   , Implied   , 2 },  { SRE   , PostIdxInd, 8 }, 
-    { NOPD  , Implied   , 4 },  { EOR   , ZeroPageX , 4 },  { LSR   , ZeroPageX , 6 },  { SRE   , ZeroPageX , 6 }, 
-    { CLI   , Implied   , 2 },  { EOR   , AbsoluteY , 4 },  { NOP   , Implied   , 2 },  { SRE   , AbsoluteY , 7 }, 
-    { NOPI  , Implied   , 4 },  { EOR   , AbsoluteX , 4 },  { LSR   , AbsoluteX , 6 },  { SRE   , AbsoluteX , 7 }, 
-    { RTS   , Implied   , 6 },  { ADC   , PreIdxInd , 6 },  { NOP   , Implied   , 2 },  { RRA   , PreIdxInd , 8 }, 
-    { NOPD  , Implied   , 3 },  { ADC   , ZeroPage  , 3 },  { ROR   , ZeroPage  , 5 },  { RRA   , ZeroPage  , 5 }, 
-    { PLA   , Implied   , 4 },  { ADC   , Immediate , 2 },  { ROR   , Accum     , 2 },  { ARR   , Immediate , 2 }, 
-    { JMP   , IndAbs    , 5 },  { ADC   , Absolute  , 4 },  { ROR   , Absolute  , 6 },  { RRA   , Absolute  , 6 }, 
-    { BVS   , Relative  , 2 },  { ADC   , PostIdxInd, 5 },  { NOP   , Implied   , 2 },  { RRA   , PostIdxInd, 8 }, 
-    { NOPD  , Implied   , 4 },  { ADC   , ZeroPageX , 4 },  { ROR   , ZeroPageX , 6 },  { RRA   , ZeroPageX , 6 }, 
-    { SEI   , Implied   , 2 },  { ADC   , AbsoluteY , 4 },  { NOP   , Implied   , 2 },  { RRA   , AbsoluteY , 7 }, 
-    { NOPI  , Implied   , 4 },  { ADC   , AbsoluteX , 4 },  { ROR   , AbsoluteX , 6 },  { RRA   , AbsoluteX , 7 }, 
-    { NOPD  , Implied   , 2 },  { STA   , PreIdxInd , 6 },  { NOPD  , Implied   , 2 },  { SAX   , PreIdxInd , 6 }, 
-    { STY   , ZeroPage  , 3 },  { STA   , ZeroPage  , 3 },  { STX   , ZeroPage  , 3 },  { SAX   , ZeroPage  , 3 }, 
-    { DEY   , Implied   , 2 },  { NOPD  , Implied   , 2 },  { TXA   , Implied   , 2 },  { XAA   , Immediate , 2 }, 
-    { STY   , Absolute  , 4 },  { STA   , Absolute  , 4 },  { STX   , Absolute  , 4 },  { SAX   , Absolute  , 4 }, 
-    { BCC   , Relative  , 2 },  { STA   , PostIdxInd, 6 },  { NOP   , Implied   , 2 },  { AHX   , PostIdxInd, 6 }, 
-    { STY   , ZeroPageX , 4 },  { STA   , ZeroPageX , 4 },  { STX   , ZeroPageY , 4 },  { SAX   , ZeroPageY , 4 }, 
-    { TYA   , Implied   , 2 },  { STA   , AbsoluteY , 4 },  { TXS   , Implied   , 2 },  { TAS   , AbsoluteY , 5 }, 
-    { SHY   , AbsoluteX , 5 },  { STA   , AbsoluteX , 4 },  { SHX   , AbsoluteY , 5 },  { AHX   , AbsoluteY , 5 }, 
-    { LDY   , Immediate , 2 },  { LDA   , PreIdxInd , 6 },  { LDX   , Immediate , 2 },  { LAX   , PreIdxInd , 6 }, 
-    { LDY   , ZeroPage  , 3 },  { LDA   , ZeroPage  , 3 },  { LDX   , ZeroPage  , 3 },  { LAX   , ZeroPage  , 3 }, 
-    { TAY   , Implied   , 2 },  { LDA   , Immediate , 2 },  { TAX   , Implied   , 2 },  { LAX   , Immediate , 2 }, 
-    { LDY   , Absolute  , 4 },  { LDA   , Absolute  , 4 },  { LDX   , Absolute  , 4 },  { LAX   , Absolute  , 4 }, 
-    { BCS   , Relative  , 2 },  { LDA   , PostIdxInd, 5 },  { NOP   , Implied   , 2 },  { LAX   , PostIdxInd, 5 }, 
-    { LDY   , ZeroPageX , 4 },  { LDA   , ZeroPageX , 4 },  { LDX   , ZeroPageY , 4 },  { LAX   , ZeroPageY , 4 }, 
-    { CLV   , Implied   , 2 },  { LDA   , AbsoluteY , 4 },  { TSX   , Implied   , 2 },  { LAS   , AbsoluteY , 4 }, 
-    { LDY   , AbsoluteX , 4 },  { LDA   , AbsoluteX , 4 },  { LDX   , AbsoluteY , 4 },  { LAX   , AbsoluteY , 4 }, 
-    { CPY   , Immediate , 2 },  { CMP   , PreIdxInd , 6 },  { NOPD  , Implied   , 2 },  { DCP   , PreIdxInd , 8 }, 
-    { CPY   , ZeroPage  , 3 },  { CMP   , ZeroPage  , 3 },  { DEC   , ZeroPage  , 5 },  { DCP   , ZeroPage  , 5 }, 
-    { INY   , Implied   , 2 },  { CMP   , Immediate , 2 },  { DEX   , Implied   , 2 },  { AXS   , Immediate , 2 }, 
-    { CPY   , Absolute  , 4 },  { CMP   , Absolute  , 4 },  { DEC   , Absolute  , 6 },  { DCP   , Absolute  , 6 }, 
-    { BNE   , Relative  , 2 },  { CMP   , PostIdxInd, 5 },  { NOP   , Implied   , 2 },  { DCP   , PostIdxInd, 8 }, 
-    { NOPD  , Implied   , 4 },  { CMP   , ZeroPageX , 4 },  { DEC   , ZeroPageX , 6 },  { DCP   , ZeroPageX , 6 }, 
-    { CLD   , Implied   , 2 },  { CMP   , AbsoluteY , 4 },  { NOP   , Implied   , 2 },  { DCP   , AbsoluteY , 7 }, 
-    { NOPI  , Implied   , 4 },  { CMP   , AbsoluteX , 4 },  { DEC   , AbsoluteX , 7 },  { DCP   , AbsoluteX , 7 }, 
-    { CPX   , Immediate , 2 },  { SBC   , PreIdxInd , 6 },  { NOPD  , Implied   , 3 },  { ISB   , PreIdxInd , 8 }, 
-    { CPX   , ZeroPage  , 3 },  { SBC   , ZeroPage  , 3 },  { INC   , ZeroPage  , 5 },  { ISB   , ZeroPage  , 5 }, 
-    { INX   , Implied   , 2 },  { SBC   , Immediate , 2 },  { NOP   , Implied   , 2 },  { SBC   , Immediate , 2 }, 
-    { CPX   , Absolute  , 4 },  { SBC   , Absolute  , 4 },  { INC   , Absolute  , 6 },  { ISB   , Absolute  , 6 }, 
-    { BEQ   , Relative  , 2 },  { SBC   , PostIdxInd, 5 },  { NOP   , Implied   , 2 },  { ISB   , PostIdxInd, 8 }, 
-    { NOPD  , Implied   , 4 },  { SBC   , ZeroPageX , 4 },  { INC   , ZeroPageX , 6 },  { ISB   , ZeroPageX , 6 }, 
-    { SED   , Implied   , 2 },  { SBC   , AbsoluteY , 4 },  { NOP   , Implied   , 2 },  { ISB   , AbsoluteY , 7 }, 
-    { NOPI  , Implied   , 4 },  { SBC   , AbsoluteX , 4 },  { INC   , AbsoluteX , 7 },  { ISB   , AbsoluteX , 7 },
-};
-
-static bool stopped = false;
-
 static Registers reg;
-
-static void process_interrupts();
-static int process_next_inst(int num_inst);
+static bool stopped = false;
 
 uint8_t bus_read(addr_t addr) {
     uint8_t retval;
@@ -161,9 +89,10 @@ static inline uint16_t fetch_w() {
     return retval;
 }
 
-static inline void set_nz(uint8_t value) {
+static inline uint8_t set_nz(uint8_t value) {
     reg.status.negative = (value >> 7) & 1;
     reg.status.zero = (value == 0) ? 1 : 0;
+    return value;
 }
 
 static inline void push(uint8_t value) {
@@ -180,533 +109,470 @@ static inline uint8_t pop() {
     return bus_read(0x100 | ++reg.SP);
 }
 
-static inline uint16_t fetch_addr_or_data(AddrMode mode, int *cycle) {
-    switch (mode) {
-    case Accum: return 0;
-    case Implied: return 0;    
-    case Immediate: return fetch();
-    case Relative:
-        {
-            int distance = fetch();
-            if (distance >= 0x80) distance -= 256;
-            uint16_t retval = reg.PC + distance;
-            if ((retval & 0xff00u) != (reg.PC & 0xff00u)) *cycle += 1;
-            return retval;
-        }
-    case ZeroPage: return fetch();
-    case ZeroPageX: return (fetch() + reg.X) & 0xff;
-    case ZeroPageY: return (fetch() + reg.Y) & 0xff;
-    case Absolute: return fetch_w();
-    case AbsoluteX:
-        {
-            uint16_t base = fetch_w();
-            uint16_t retval = base + reg.X;
-            if ((base & 0xff00u) != (retval & 0xff00u)) *cycle += 1;
-            return retval;
-        }
-    case AbsoluteY:
-        {
-            uint16_t base = fetch_w();
-            uint16_t retval = base + reg.Y;
-            if ((base & 0xff00u) != (retval & 0xff00u)) *cycle += 1;
-            return retval;
-        }
-    case PreIdxInd:
-        {
-            addr_t base = (fetch() + reg.X) & 0xffu;
-            addr_t addr = bus_read(base) | ((uint16_t)bus_read((base + 1) & 0xffu) << 8);
-            if ((addr & 0xff00u) != (base & 0xff00u)) *cycle += 1;
-            return addr;
-        }
-    case PostIdxInd:
-        {
-            addr_t addrOrData = fetch();
-            addr_t baseAddr = bus_read(addrOrData) | ((uint16_t)bus_read((addrOrData + 1) & 0xffu) << 8);
-            addr_t addr = baseAddr + reg.Y;
-            if ((addr & 0xff00u) != (baseAddr & 0xff00u)) *cycle += 1;
-            return addr;
-        }
-    default: //case IndAbs:
-        {
-            addr_t addrOrData = fetch_w();
-            addr_t next_addr = (addrOrData & 0xFF00) | (((addrOrData & 0xFF) + 1) & 0xFF);
-            addr_t addr = bus_read(addrOrData) | ((uint16_t)bus_read(next_addr) << 8);
-            return addr;
-        }
-    }
+static inline addr_t fetch_zpg() { return fetch(); }
+static inline addr_t fetch_zpg_x() { return (fetch() + reg.X) & 0xff; }
+static inline addr_t fetch_zpg_y() { return (fetch() + reg.Y) & 0xff; }
+
+static inline addr_t fetch_imm() { 
+    return fetch();
 }
 
-static inline void process_interrupts() {
-    if (interrupt::is_nmi_asserted()) {
-        interrupt::deassert_nmi();
-        reg.status.breakmode = false;
-        push(reg.PC >> 8);
-        push(reg.PC & 0xff);
-        push(reg.status.raw);
-        reg.status.interrupt = true;
-        reg.PC = bus_read_w(VEC_NMI);
-    }
-    else if (interrupt::is_irq_asserted() && !reg.status.interrupt) {
-        interrupt::deassert_irq();
-        reg.status.breakmode = false;
-        push(reg.PC >> 8);
-        push(reg.PC & 0xff);
-        push(reg.status.raw);
-        reg.status.interrupt = true;
+static inline addr_t fetch_pre_idx_ind(int *cycle) {
+    addr_t base = (fetch() + reg.X) & 0xff;
+    addr_t addr = bus_read(base) | ((uint16_t)bus_read((base + 1) & 0xffu) << 8);
+    if ((addr & 0xff00u) != (base & 0xff00u)) *cycle += 1;
+    return addr;
+}
+
+static inline addr_t fetch_post_idx_ind(int *cycle) {
+    addr_t addrOrData = fetch();
+    addr_t baseAddr = bus_read(addrOrData) | ((uint16_t)bus_read((addrOrData + 1) & 0xffu) << 8);
+    addr_t addr = baseAddr + reg.Y;
+    if ((addr & 0xff00u) != (baseAddr & 0xff00u)) *cycle += 1;
+    return addr;
+}
+
+static inline addr_t fetch_abs() { 
+    return fetch_w();
+}
+
+static inline addr_t fetch_abs_x(int *cycle) { 
+    uint16_t base = fetch_w();
+    uint16_t retval = base + reg.X;
+    if ((base & 0xff00u) != (retval & 0xff00u)) *cycle += 1;
+    return retval;
+}
+            
+static inline addr_t fetch_abs_y(int *cycle) { 
+    uint16_t base = fetch_w();
+    uint16_t retval = base + reg.Y;
+    if ((base & 0xff00u) != (retval & 0xff00u)) *cycle += 1;
+    return retval;
+}
+
+static inline addr_t fetch_ind_abs() {
+    addr_t addr_or_data = fetch_w();
+    addr_t next_addr = (addr_or_data & 0xFF00) | (((addr_or_data & 0xFF) + 1) & 0xFF);
+    addr_t addr = bus_read(addr_or_data) | ((uint16_t)bus_read(next_addr) << 8);
+    return addr;
+}
+
+static inline addr_t fetch_rel(int *cycle) {    
+    int distance = fetch();
+    if (distance >= 0x80) distance -= 256;
+    addr_t retval = reg.PC + distance;
+    if ((retval & 0xff00u) != (reg.PC & 0xff00u)) *cycle += 1;
+    return retval;
+}
+
+static inline void opBRK() {
+    bool interrupt = reg.status.interrupt != 0;
+    push(reg.PC >> 8);
+    push(reg.PC & 0xff);
+    reg.status.breakmode = true;
+    push(reg.status.raw);
+    reg.status.interrupt = true;
+    if ( ! interrupt) {
         reg.PC = bus_read_w(VEC_IRQ);
     }
 }
 
-int exec_next_inst(int batch_size) {
-    input::update();
-    int cycle;
-    if (stopped) {
-        cycle = 1; // nop
-    }
-    else if (dma::is_running()) {
-        cycle = dma::exec_next_cycle();
-    }
-    else {
-        cycle = process_next_inst(batch_size);
-    }
-    
-    return cycle;
+static inline void opJMP(addr_t addr) {
+    reg.PC = addr;
 }
 
-static int process_next_inst(int batch_size) {
-    int total_cycle = 0;
-    
-    process_interrupts();
-    
-    while (batch_size-- > 0) {
+static inline void opJSR(addr_t addr) {
+    addr_t pc = reg.PC - 1;
+    push(pc >> 8);
+    push(pc & 0xff);
+    reg.PC = addr;
+}
+
+static inline void opRTI() {
+    reg.status.raw = pop();
+    reg.status.reserved = true;
+    reg.PC = (addr_t)pop();
+    reg.PC |= ((addr_t)pop() << 8);
+}
+
+static inline void opRTS() {
+    reg.PC = (addr_t)pop();
+    reg.PC |= ((addr_t)pop() << 8);
+    reg.PC += 1;
+}
+
+static inline void opBIT(addr_t addr) {
+    uint8_t data = bus_read(addr);
+    reg.status.negative = (data >> 7) & 1;
+    reg.status.overflow = (data >> 6) & 1;
+    reg.status.zero = (reg.A & data) ? 0 : 1;
+}
+
+static inline void opPHP() {
+    reg.status.breakmode = 1;
+    push(reg.status.raw);
+}
+
+static inline void opPLP() {
+    reg.status.raw = pop();
+    reg.status.reserved = 1;
+}
         
-        addr_t op_addr = reg.PC;
-
-        uint8_t op_code = fetch();
-
-        auto op = OpDecTable[op_code];
-
-        int cycle = op.cycle;
-
-        const char* op_mode_str = "???";
-        switch (op.addr_mode) {
-        case Absolute   : op_mode_str = "Absolute";     break;
-        case AbsoluteX  : op_mode_str = "AbsoluteX";    break;
-        case AbsoluteY  : op_mode_str = "AbsoluteY";    break;
-        case Accum      : op_mode_str = "Accum";        break;
-        case Immediate  : op_mode_str = "Immediate";    break;
-        case Implied    : op_mode_str = "Implied";      break;
-        case IndAbs     : op_mode_str = "IndAbs";       break;
-        case PostIdxInd : op_mode_str = "PostIdxInd";   break;
-        case PreIdxInd  : op_mode_str = "PreIdxInd";    break;
-        case Relative   : op_mode_str = "Relative";     break;
-        case ZeroPage   : op_mode_str = "ZeroPage";     break;
-        case ZeroPageX  : op_mode_str = "ZeroPageX";    break;
-        case ZeroPageY  : op_mode_str = "ZeroPageY";    break;
-        }
-
-
-        uint16_t addr_or_data = fetch_addr_or_data((AddrMode)op.addr_mode, &cycle);
-
-        const char* op_name = "???";
-
-    #define NES_CPU_OP_CASE(op) \
-        case op: op_name = #op;
-
-        switch (op.mnemonic) {
-        NES_CPU_OP_CASE(LDA)
-            reg.A = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-            set_nz(reg.A);
-            break;
-
-        NES_CPU_OP_CASE(LDX)
-            reg.X = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-            set_nz(reg.X);
-            break;
-
-        NES_CPU_OP_CASE(LDY)
-            reg.Y = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-            set_nz(reg.Y);
-            break;
-
-        NES_CPU_OP_CASE(STA) 
-            bus_write(addr_or_data, reg.A);
-            break;
-
-        NES_CPU_OP_CASE(STX)
-            bus_write(addr_or_data, reg.X);
-            break;
-
-        NES_CPU_OP_CASE(STY)
-            bus_write(addr_or_data, reg.Y);
-            break;
-
-        NES_CPU_OP_CASE(TAX)
-            reg.X = reg.A;
-            set_nz(reg.X);
-            break;
-
-        NES_CPU_OP_CASE(TAY)
-            reg.Y = reg.A;
-            set_nz(reg.Y);
-            break;
-
-        NES_CPU_OP_CASE(TSX)
-            reg.X = reg.SP & 0xffu;
-            set_nz(reg.X);
-            break;
-
-        NES_CPU_OP_CASE(TXA)
-            reg.A = reg.X;
-            set_nz(reg.A);
-            break;
-
-        NES_CPU_OP_CASE(TXS)
-            reg.SP = reg.X + 0x0100;
-            break;
-
-        NES_CPU_OP_CASE(TYA)
-            reg.A = reg.Y;
-            set_nz(reg.A);
-            break;
-
-        NES_CPU_OP_CASE(ADC)
-            {
-                uint16_t data = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-                uint16_t operated = (uint16_t)reg.A + data + reg.status.carry;
-                reg.status.overflow = (!(((reg.A ^ data) & 0x80) != 0) && (((reg.A ^ operated) & 0x80)) != 0);
-                reg.status.carry = (operated >= 0x100) ? 1 : 0;
-                reg.A = operated;
-                set_nz(reg.A);
-            }
-            break;
-
-        NES_CPU_OP_CASE(AND)
-            {
-                uint8_t data = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-                reg.A = data & reg.A;
-                set_nz(reg.A);
-            }
-            break;
-
-        NES_CPU_OP_CASE(ASL)
-            {
-                uint8_t data = (op.addr_mode == Accum) ? reg.A : bus_read(addr_or_data);
-                reg.status.carry = (data >> 7) & 1;
-                data <<= 1;
-                set_nz(data);
-                if (op.addr_mode == Accum) {
-                    reg.A = data;
-                }
-                else {
-                    bus_write(addr_or_data, data);
-                }
-            }
-            break;
+static inline void opPHA() {
+    push(reg.A);
+}
         
-        NES_CPU_OP_CASE(BIT)
-            {
-                uint8_t data = bus_read(addr_or_data);
-                reg.status.negative = (data >> 7) & 1;
-                reg.status.overflow = (data >> 6) & 1;
-                reg.status.zero = (reg.A & data) ? 0 : 1;
-            }
-            break;
+static inline void opPLA() {
+    reg.A = pop();
+    set_nz(reg.A);
+}
 
-        NES_CPU_OP_CASE(CMP)
-            {
-                uint8_t data = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-                int16_t compared = (int16_t)reg.A - (int16_t)data;
-                reg.status.carry = compared >= 0;
-                set_nz(compared);
-            }
-            break;
-
-        NES_CPU_OP_CASE(CPX)
-            {
-                uint8_t data = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-                int16_t compared = (int16_t)reg.X - (int16_t)data;
-                reg.status.carry = compared >= 0;
-                set_nz(compared);
-            }
-            break;
-
-        NES_CPU_OP_CASE(CPY)
-            {
-                uint8_t data = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-                int16_t compared = (int16_t)reg.Y - (int16_t)data;
-                reg.status.carry = compared >= 0;
-                set_nz(compared);
-            }
-            break;
-
-        NES_CPU_OP_CASE(DEC)
-            {
-                uint8_t data = bus_read(addr_or_data) - 1;
-                set_nz(data);
-                bus_write(addr_or_data, data);
-            }
-            break;
-
-        NES_CPU_OP_CASE(DEX)
-            reg.X -= 1;
-            set_nz(reg.X);
-            break;
-
-        NES_CPU_OP_CASE(DEY)
-            reg.Y -= 1;
-            set_nz(reg.Y);
-            break;
-
-        NES_CPU_OP_CASE(EOR)
-            {
-                uint8_t data = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-                reg.A = data ^ reg.A;
-                set_nz(reg.A);
-            }
-            break;
-
-        NES_CPU_OP_CASE(INC) 
-            {
-                uint8_t data = bus_read(addr_or_data) + 1;
-                set_nz(data);
-                bus_write(addr_or_data, data);
-            }
-            break;
-
-        NES_CPU_OP_CASE(INX)
-            reg.X += 1;
-            set_nz(reg.X);
-            break;
-
-        NES_CPU_OP_CASE(INY)
-            reg.Y += 1;
-            set_nz(reg.Y);
-            break;
-
-        NES_CPU_OP_CASE(LSR) 
-            {
-                uint8_t data = (op.addr_mode == Accum) ? reg.A : bus_read(addr_or_data);
-                reg.status.carry = data & 1;
-                data = (data >> 1) & 0x7f;
-                set_nz(data);
-                if (op.addr_mode == Accum) {
-                    reg.A = data;
-                }
-                else {
-                    bus_write(addr_or_data, data);
-                }
-            }
-            break;
-
-        NES_CPU_OP_CASE(ORA) 
-            {
-                uint8_t data = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-                reg.A = data | reg.A;
-                set_nz(reg.A);
-            }
-            break;
-
-        NES_CPU_OP_CASE(ROL) 
-            {
-                uint8_t data = (op.addr_mode == Accum) ? reg.A : bus_read(addr_or_data);
-                uint8_t carry = (data >> 7) & 1;
-                data = (data << 1) | reg.status.carry;
-                reg.status.carry = carry;
-                set_nz(data);
-                if (op.addr_mode == Accum) {
-                    reg.A = data;
-                }
-                else {
-                    bus_write(addr_or_data, data);
-                }
-            }
-            break;
-
-        NES_CPU_OP_CASE(ROR) 
-            {
-                uint8_t data = (op.addr_mode == Accum) ? reg.A : bus_read(addr_or_data);
-                uint8_t carry = data & 1;
-                data = ((data >> 1) & 0x7f) | (reg.status.carry << 7);
-                reg.status.carry = carry;
-                set_nz(data);
-                if (op.addr_mode == Accum) {
-                    reg.A = data;
-                }
-                else {
-                    bus_write(addr_or_data, data);
-                }
-            }
-            break;
-
-        NES_CPU_OP_CASE(SBC) 
-            {
-                int data = (op.addr_mode == Immediate) ? addr_or_data : bus_read(addr_or_data);
-                int operated = (int)reg.A - data - (reg.status.carry ? 0 : 1);
-                reg.status.overflow = (((reg.A ^ operated) & 0x80) != 0 && ((reg.A ^ data) & 0x80) != 0);
-                reg.status.carry = (operated >= 0) ? 1 : 0;
-                reg.A = operated;
-                set_nz(reg.A);
-            }
-            break;
-
-        NES_CPU_OP_CASE(PHA)
-            push(reg.A);
-            break;
-        
-        NES_CPU_OP_CASE(PHP) 
-            reg.status.breakmode = 1;
-            push(reg.status.raw);
-            break;
-        
-        NES_CPU_OP_CASE(PLA) 
-            reg.A = pop();
-            set_nz(reg.A);
-            break;
-        
-        NES_CPU_OP_CASE(PLP)
-            reg.status.raw = pop();
-            reg.status.reserved = 1;
-            break;
-
-        NES_CPU_OP_CASE(JMP)
-            reg.PC = addr_or_data;
-            break;
-        
-        NES_CPU_OP_CASE(JSR)
-            {
-                addr_t pc = reg.PC - 1;
-                push(pc >> 8);
-                push(pc & 0xff);
-                reg.PC = addr_or_data;
-            }
-            break;
-        
-        NES_CPU_OP_CASE(RTS)
-            reg.PC = (addr_t)pop();
-            reg.PC |= ((addr_t)pop() << 8);
-            reg.PC += 1;
-            break;
-
-        NES_CPU_OP_CASE(RTI)
-            reg.status.raw = pop();
-            reg.status.reserved = true;
-            reg.PC = (addr_t)pop();
-            reg.PC |= ((addr_t)pop() << 8);
-            break;
-
-        NES_CPU_OP_CASE(BCC)
-            if (!reg.status.carry) { 
-                reg.PC = addr_or_data;
-                cycle += 1;
-            }
-            break;
-        
-        NES_CPU_OP_CASE(BCS)
-            if (reg.status.carry) { 
-                reg.PC = addr_or_data;
-                cycle += 1;
-            }
-            break;
-        
-        NES_CPU_OP_CASE(BEQ)
-            if (reg.status.zero) { 
-                reg.PC = addr_or_data;
-                cycle += 1;
-            }
-            break;
-        
-        NES_CPU_OP_CASE(BMI)
-            if (reg.status.negative) { 
-                reg.PC = addr_or_data;
-                cycle += 1;
-            }
-            break;
-        
-        NES_CPU_OP_CASE(BNE)
-            if (!reg.status.zero) { 
-                reg.PC = addr_or_data;
-                cycle += 1;
-            }
-            break;
-            
-        NES_CPU_OP_CASE(BPL)
-            if (!reg.status.negative) { 
-                reg.PC = addr_or_data;
-                cycle += 1;
-            }
-            break;
-
-        NES_CPU_OP_CASE(BVS)
-            if (reg.status.overflow) { 
-                reg.PC = addr_or_data;
-                cycle += 1;
-            }
-            break;
-
-        NES_CPU_OP_CASE(BVC)
-            if (!reg.status.overflow) { 
-                reg.PC = addr_or_data;
-                cycle += 1;
-            }
-            break;
-        
-        NES_CPU_OP_CASE(CLD)
-            reg.status.decimalmode = 0;
-            break;
-
-        NES_CPU_OP_CASE(CLC)
-            reg.status.carry = 0;
-            break;
-        
-        NES_CPU_OP_CASE(CLI)
-            reg.status.interrupt = 0;
-            break;
-        
-        NES_CPU_OP_CASE(CLV)
-            reg.status.overflow = 0;
-            break;
-        
-        NES_CPU_OP_CASE(SEC)
-            reg.status.carry = 1;
-            break;
-        
-        NES_CPU_OP_CASE(SEI)
-            reg.status.interrupt = 1;
-            break;
-        
-        NES_CPU_OP_CASE(SED)
-            reg.status.decimalmode = 1;
-            break;
-        
-        NES_CPU_OP_CASE(BRK)
-            {
-                bool interrupt = reg.status.interrupt != 0;
-                push(reg.PC >> 8);
-                push(reg.PC & 0xff);
-                reg.status.breakmode = true;
-                push(reg.status.raw);
-                reg.status.interrupt = true;
-                if ( ! interrupt) {
-                    reg.PC = bus_read_w(VEC_IRQ);
-                }
-            }
-            break;
-
-        NES_CPU_OP_CASE(NOP)
-            break;
-
-        default:
-            NES_ERRORF("UNKNOWN INSTRUCTION: 0x%02x (PC=0x%04x)\n", (int)op_code, (int)reg.PC);
-            break;
-        }
-
-        //NES_PRINTF("[%04x] %-4s %-12s (0x%02x) 0x%04x A:%02x X:%02x Y:%02x P:%02x SP:%02x\n",
-        //    (int)op_addr, op_name, op_mode_str, (int)op_code, (int)addr_or_data,
-        //    (int)reg.A, (int)reg.X, (int)reg.Y, (int)reg.status.raw, (int)reg.SP);
-        total_cycle += cycle;
+static inline void cond_jump(bool cond, addr_t addr, int *cycle) {
+    if (cond) {
+        reg.PC = addr;
+        (*cycle)++;
     }
-    return total_cycle;
+}
+
+static inline void opBPL(addr_t addr, int *cycle) { cond_jump(!reg.status.negative, addr, cycle); }
+static inline void opBMI(addr_t addr, int *cycle) { cond_jump( reg.status.negative, addr, cycle); }
+static inline void opBVC(addr_t addr, int *cycle) { cond_jump(!reg.status.overflow, addr, cycle); }
+static inline void opBVS(addr_t addr, int *cycle) { cond_jump( reg.status.overflow, addr, cycle); }
+static inline void opBCC(addr_t addr, int *cycle) { cond_jump(!reg.status.carry, addr, cycle); }
+static inline void opBCS(addr_t addr, int *cycle) { cond_jump( reg.status.carry, addr, cycle); }
+static inline void opBNE(addr_t addr, int *cycle) { cond_jump(!reg.status.zero, addr, cycle); }
+static inline void opBEQ(addr_t addr, int *cycle) { cond_jump( reg.status.zero, addr, cycle); }
+
+static inline void opCLC() { reg.status.carry = 0; }
+static inline void opSEC() { reg.status.carry = 1; }
+static inline void opCLI() { reg.status.interrupt = 0; }
+static inline void opSEI() { reg.status.interrupt = 1; }
+static inline void opCLV() { reg.status.overflow = 0; }
+static inline void opCLD() { reg.status.decimalmode = 0; }
+static inline void opSED() { reg.status.decimalmode = 1; }
+        
+static inline void opTXA() { reg.A = set_nz(reg.X); }
+static inline void opTYA() { reg.A = set_nz(reg.Y); }
+static inline void opTXS() { reg.SP = reg.X; }
+static inline void opTAY() { reg.Y = set_nz(reg.A); }
+static inline void opTAX() { reg.X = set_nz(reg.A); }
+static inline void opTSX() { reg.X = set_nz(reg.SP); }
+
+static inline void opLDA(uint8_t data) { reg.A = set_nz(data); }
+static inline void opLDX(uint8_t data) { reg.X = set_nz(data); }
+static inline void opLDY(uint8_t data) { reg.Y = set_nz(data); }
+
+static inline void opSTA(addr_t addr) { bus_write(addr, reg.A); }
+static inline void opSTX(addr_t addr) { bus_write(addr, reg.X); }
+static inline void opSTY(addr_t addr) { bus_write(addr, reg.Y); }
+
+static inline void compare(uint8_t a, uint8_t b) {
+    int16_t compared = (int16_t)a - (int16_t)b;
+    reg.status.carry = compared >= 0;
+    set_nz(compared);
+}
+static inline void opCMP(uint8_t data) { compare(reg.A, data); }
+static inline void opCPX(uint8_t data) { compare(reg.X, data); }
+static inline void opCPY(uint8_t data) { compare(reg.Y, data); }
+
+static inline void opINX() { set_nz(++reg.X); }
+static inline void opINY() { set_nz(++reg.Y); }
+static inline void opDEX() { set_nz(--reg.X); }
+static inline void opDEY() { set_nz(--reg.Y); }
+
+static inline void opINC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) + 1)); }
+static inline void opDEC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) - 1)); }
+
+static inline void opAND(uint8_t data) { reg.A = set_nz(data & reg.A); }
+static inline void opORA(uint8_t data) { reg.A = set_nz(data | reg.A); }
+static inline void opEOR(uint8_t data) { reg.A = set_nz(data ^ reg.A); }
+
+static inline void opADC(uint8_t data) {
+    uint16_t operated = (uint16_t)reg.A + data + reg.status.carry;
+    reg.status.overflow = (!(((reg.A ^ data) & 0x80) != 0) && (((reg.A ^ operated) & 0x80)) != 0);
+    reg.status.carry = (operated >= 0x100) ? 1 : 0;
+    reg.A = set_nz(operated);
+}
+
+static inline void opSBC(uint8_t data) {
+    int operated = (int)reg.A - data - (reg.status.carry ? 0 : 1);
+    reg.status.overflow = (((reg.A ^ operated) & 0x80) != 0 && ((reg.A ^ data) & 0x80) != 0);
+    reg.status.carry = (operated >= 0) ? 1 : 0;
+    reg.A = set_nz(operated);
+}
+
+static inline uint8_t opASL(uint8_t data) {
+    reg.status.carry = (data >> 7) & 1;
+    return set_nz(data << 1);
+}
+static inline void opASL_a() { reg.A = opASL(reg.A); }
+static inline void opASL_m(addr_t addr) { bus_write(addr, opASL(bus_read(addr))); }
+
+static inline uint8_t opLSR(uint8_t data) {
+    reg.status.carry = data & 1;
+    return set_nz((data >> 1) & 0x7f);
+}
+static inline void opLSR_a() { reg.A = opLSR(reg.A); }
+static inline void opLSR_m(addr_t addr) { bus_write(addr, opLSR(bus_read(addr))); }
+
+static inline uint8_t opROL(uint8_t data) {
+    uint8_t carry = (data >> 7) & 1;
+    data = (data << 1) | reg.status.carry;
+    reg.status.carry = carry;
+    return set_nz(data);
+}
+static inline void opROL_a() { reg.A = opROL(reg.A); }
+static inline void opROL_m(addr_t addr) { bus_write(addr, opROL(bus_read(addr))); }
+
+static inline uint8_t opROR(uint8_t data) {
+    uint8_t carry = data & 1;
+    data = ((data >> 1) & 0x7f) | (reg.status.carry << 7);
+    reg.status.carry = carry;
+    return set_nz(data);
+}
+static inline void opROR_a() { reg.A = opROR(reg.A); }
+static inline void opROR_m(addr_t addr) { bus_write(addr, opROR(bus_read(addr))); }
+
+void render_next_line(uint8_t *line_buff) {
+    bool line_started = false;
+    bool line_ended = false;
+    constexpr int BATCH_SIZE = 3;
+
+    do {
+        input::update();
+
+        if (!line_started) {
+            line_started |= !ppu::is_in_hblank();
+        }
+        else if (!line_ended) {
+            line_ended |= ppu::is_in_hblank();
+        }
+
+        int cycle = 0;
+
+        if (stopped) {
+            cycle += 1; // nop
+        }
+        else if (dma::is_running()) {
+            cycle += dma::exec_next_cycle();
+        }
+        else if (interrupt::is_nmi_asserted()) {
+            interrupt::deassert_nmi();
+            reg.status.breakmode = false;
+            push(reg.PC >> 8);
+            push(reg.PC & 0xff);
+            push(reg.status.raw);
+            reg.status.interrupt = true;
+            reg.PC = bus_read_w(VEC_NMI);
+            //cycle += 5; // ?
+        }
+        else if (interrupt::is_irq_asserted() && !reg.status.interrupt) {
+            interrupt::deassert_irq();
+            reg.status.breakmode = false;
+            push(reg.PC >> 8);
+            push(reg.PC & 0xff);
+            push(reg.status.raw);
+            reg.status.interrupt = true;
+            reg.PC = bus_read_w(VEC_IRQ);
+            //cycle += 5; // ?
+        }
+        else {
+            int bs = BATCH_SIZE;
+            while (bs-- > 0) {
+                uint8_t op_code = fetch();
+
+                switch(op_code) {
+
+                case 0x00: opBRK();                                     cycle += 7; break;
+                case 0x20: opJSR(fetch_abs());                          cycle += 6; break;
+                case 0x40: opRTI();                                     cycle += 6; break;
+                case 0x60: opRTS();                                     cycle += 6; break;
+                case 0x4c: opJMP(fetch_abs());                          cycle += 3; break;
+                case 0x6c: opJMP(fetch_ind_abs());                      cycle += 5; break;
+
+                case 0x24: opBIT(fetch_zpg());                          cycle += 3; break;
+                case 0x2c: opBIT(fetch_abs());                          cycle += 4; break;
+
+                case 0x08: opPHP();                                     cycle += 3; break;
+                case 0x28: opPLP();                                     cycle += 4; break;
+                case 0x48: opPHA();                                     cycle += 3; break;
+                case 0x68: opPLA();                                     cycle += 4; break;
+
+                case 0x10: opBPL(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+                case 0x30: opBMI(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+                case 0x50: opBVC(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+                case 0x70: opBVS(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+                case 0x90: opBCC(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+                case 0xb0: opBCS(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+                case 0xd0: opBNE(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+                case 0xf0: opBEQ(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+
+                case 0x18: opCLC();                                     cycle += 2; break;
+                case 0x38: opSEC();                                     cycle += 2; break;
+                case 0x58: opCLI();                                     cycle += 2; break;
+                case 0x78: opSEI();                                     cycle += 2; break;
+                case 0xb8: opCLV();                                     cycle += 2; break;
+                case 0xd8: opCLD();                                     cycle += 2; break;
+                case 0xf8: opSED();                                     cycle += 2; break;
+
+                case 0x8a: opTXA();                                     cycle += 2; break;
+                case 0x98: opTYA();                                     cycle += 2; break;
+                case 0x9a: opTXS();                                     cycle += 2; break;
+                case 0xa8: opTAY();                                     cycle += 2; break;
+                case 0xaa: opTAX();                                     cycle += 2; break;
+                case 0xba: opTSX();                                     cycle += 2; break;
+
+                case 0x81: opSTA(fetch_pre_idx_ind(&cycle));            cycle += 6; break;
+                case 0x85: opSTA(fetch_zpg());                          cycle += 3; break;
+                case 0x8d: opSTA(fetch_abs());                          cycle += 4; break;
+                case 0x91: opSTA(fetch_post_idx_ind(&cycle));           cycle += 6; break;
+                case 0x95: opSTA(fetch_zpg_x());                        cycle += 4; break;
+                case 0x99: opSTA(fetch_abs_y(&cycle));                  cycle += 4; break;
+                case 0x9d: opSTA(fetch_abs_x(&cycle));                  cycle += 4; break;
+
+                case 0x86: opSTX(fetch_zpg());                          cycle += 3; break;
+                case 0x8e: opSTX(fetch_abs());                          cycle += 4; break;
+                case 0x96: opSTX(fetch_zpg_y());                        cycle += 4; break;
+
+                case 0x84: opSTY(fetch_zpg());                          cycle += 3; break;
+                case 0x8c: opSTY(fetch_abs());                          cycle += 4; break;
+                case 0x94: opSTY(fetch_zpg_x());                        cycle += 4; break;
+            
+                case 0xa1: opLDA(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+                case 0xa5: opLDA(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0xa9: opLDA(fetch_imm());                          cycle += 2; break;
+                case 0xad: opLDA(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0xb1: opLDA(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+                case 0xb5: opLDA(bus_read(fetch_zpg_x()));              cycle += 4; break;
+                case 0xb9: opLDA(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+                case 0xbd: opLDA(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+
+                case 0xa2: opLDX(fetch_imm());                          cycle += 2; break;
+                case 0xa6: opLDX(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0xae: opLDX(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0xb6: opLDX(bus_read(fetch_zpg_y()));              cycle += 4; break;
+                case 0xbe: opLDX(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+
+                case 0xa0: opLDY(fetch_imm());                          cycle += 2; break;
+                case 0xa4: opLDY(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0xac: opLDY(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0xb4: opLDY(bus_read(fetch_zpg_x()));              cycle += 4; break;
+                case 0xbc: opLDY(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+
+                case 0xc1: opCMP(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+                case 0xc5: opCMP(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0xc9: opCMP(fetch_imm());                          cycle += 2; break;
+                case 0xcd: opCMP(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0xd1: opCMP(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+                case 0xd5: opCMP(bus_read(fetch_zpg_x()));              cycle += 4; break;
+                case 0xd9: opCMP(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+                case 0xdd: opCMP(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+
+                case 0xe0: opCPX(fetch_imm());                          cycle += 2; break;
+                case 0xe4: opCPX(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0xec: opCPX(bus_read(fetch_abs()));                cycle += 4; break;
+
+                case 0xc0: opCPY(fetch_imm());                          cycle += 2; break;
+                case 0xc4: opCPY(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0xcc: opCPY(bus_read(fetch_abs()));                cycle += 4; break;
+
+                case 0xca: opDEX();                                     cycle += 2; break;
+                case 0x88: opDEY();                                     cycle += 2; break;
+                
+                case 0xe8: opINX();                                     cycle += 2; break;
+                case 0xc8: opINY();                                     cycle += 2; break;
+
+                case 0xc6: opDEC(fetch_zpg());                          cycle += 5; break;
+                case 0xce: opDEC(fetch_abs());                          cycle += 6; break;
+                case 0xd6: opDEC(fetch_zpg_x());                        cycle += 6; break;
+                case 0xde: opDEC(fetch_abs_x(&cycle));                  cycle += 7; break;
+
+                case 0xe6: opINC(fetch_zpg());                          cycle += 5; break;
+                case 0xee: opINC(fetch_abs());                          cycle += 6; break;
+                case 0xf6: opINC(fetch_zpg_x());                        cycle += 6; break;
+                case 0xfe: opINC(fetch_abs_x(&cycle));                  cycle += 7; break;
+
+                case 0x01: opORA(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+                case 0x05: opORA(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0x09: opORA(fetch_imm());                          cycle += 2; break;
+                case 0x0d: opORA(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0x11: opORA(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+                case 0x15: opORA(bus_read(fetch_zpg_x()));              cycle += 4; break;
+                case 0x19: opORA(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+                case 0x1d: opORA(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+
+                case 0x21: opAND(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+                case 0x25: opAND(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0x29: opAND(fetch_imm());                          cycle += 2; break;
+                case 0x2d: opAND(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0x31: opAND(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+                case 0x35: opAND(bus_read(fetch_zpg_x()));              cycle += 4; break;
+                case 0x39: opAND(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+                case 0x3d: opAND(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+
+                case 0x41: opEOR(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+                case 0x45: opEOR(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0x49: opEOR(fetch_imm());                          cycle += 2; break;
+                case 0x4d: opEOR(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0x51: opEOR(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+                case 0x55: opEOR(bus_read(fetch_zpg_x()));              cycle += 4; break;
+                case 0x59: opEOR(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+                case 0x5d: opEOR(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+
+                case 0x61: opADC(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+                case 0x65: opADC(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0x69: opADC(fetch_imm());                          cycle += 2; break;
+                case 0x6d: opADC(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0x71: opADC(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+                case 0x75: opADC(bus_read(fetch_zpg_x()));              cycle += 4; break;
+                case 0x79: opADC(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+                case 0x7d: opADC(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+
+                case 0xe1: opSBC(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+                case 0xe5: opSBC(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0xe9: opSBC(fetch_imm());                          cycle += 2; break;
+                case 0xed: opSBC(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0xf1: opSBC(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+                case 0xf5: opSBC(bus_read(fetch_zpg_x()));              cycle += 4; break;
+                case 0xf9: opSBC(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+                case 0xfd: opSBC(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+
+                case 0x06: opASL_m(fetch_zpg());                        cycle += 5; break;
+                case 0x0a: opASL_a();                                   cycle += 2; break;
+                case 0x0e: opASL_m(fetch_abs());                        cycle += 6; break;
+                case 0x16: opASL_m(fetch_zpg_x());                      cycle += 6; break;
+                case 0x1e: opASL_m(fetch_abs_x(&cycle));                cycle += 6; break;
+
+                case 0x26: opROL_m(fetch_zpg());                        cycle += 5; break;
+                case 0x2a: opROL_a();                                   cycle += 2; break;
+                case 0x2e: opROL_m(fetch_abs());                        cycle += 6; break;
+                case 0x36: opROL_m(fetch_zpg_x());                      cycle += 6; break;
+                case 0x3e: opROL_m(fetch_abs_x(&cycle));                cycle += 6; break;
+
+                case 0x46: opLSR_m(fetch_zpg());                        cycle += 5; break;
+                case 0x4a: opLSR_a();                                   cycle += 2; break;
+                case 0x4e: opLSR_m(fetch_abs());                        cycle += 6; break;
+                case 0x56: opLSR_m(fetch_zpg_x());                      cycle += 6; break;
+                case 0x5e: opLSR_m(fetch_abs_x(&cycle));                cycle += 6; break;
+
+                case 0x66: opROR_m(fetch_zpg());                        cycle += 5; break;
+                case 0x6a: opROR_a();                                   cycle += 2; break;
+                case 0x6e: opROR_m(fetch_abs());                        cycle += 6; break;
+                case 0x76: opROR_m(fetch_zpg_x());                      cycle += 6; break;
+                case 0x7e: opROR_m(fetch_abs_x(&cycle));                cycle += 6; break;
+
+                case 0xea: /* NOP */                                    cycle += 2; break;
+
+                default:
+                    NES_ERRORF("UNKNOWN INSTRUCTION: 0x%02x (PC=0x%04x)\n", (int)op_code, (int)reg.PC);
+                    break;
+                }
+            } // while (bs-- > 0)
+        } // if
+
+        ppu::render_next_block(line_buff, cycle * 3);
+
+    } while (!line_ended);
 }
 
 }

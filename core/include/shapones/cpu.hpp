@@ -67,7 +67,11 @@ struct OpDecRecord {
     uint8_t cycle;
 };
 
-int exec_next_inst(int batch_size);
+enum RegSel {
+    A, X, Y
+};
+
+void render_next_line(uint8_t *line_buff);
 
 void reset();
 void stop();
