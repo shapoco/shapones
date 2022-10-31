@@ -35,6 +35,7 @@ uint8_t read_latched(int player) {
 
 void write_control(uint8_t data) {
     reg.raw = data;
+    update();
 }
 
 }

@@ -338,9 +338,9 @@ void render_next_line(uint8_t *line_buff) {
     bool line_ended = false;
     constexpr int BATCH_SIZE = 3;
 
-    do {
-        input::update();
+    input::update();
 
+    do {
         if (!line_started) {
             line_started |= !ppu::is_in_hblank();
         }
