@@ -5,7 +5,7 @@
 
 namespace nes::ppu {
 
-static constexpr int STARTUP_DELAY_CYCLES = 29658 * 3;
+static constexpr int STARTUP_DELAY_CYCLES = 0;
 
 static constexpr int TILE_SIZE = 8;
 static constexpr int NUM_TILE_X = SCREEN_WIDTH / TILE_SIZE;
