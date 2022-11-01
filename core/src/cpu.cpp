@@ -50,7 +50,7 @@ void bus_write(addr_t addr, uint8_t data) {
     }
 }
 
-static inline uint16_t bus_read_w(addr_t addr) {
+NES_ALWAYS_INLINE uint16_t bus_read_w(addr_t addr) {
     return
         (uint16_t)bus_read(addr) | 
         ((uint16_t)bus_read(addr + 1) << 8);
@@ -77,54 +77,54 @@ void stop() {
     stopped = true;
 }
 
-static inline uint8_t fetch() { 
+NES_ALWAYS_INLINE uint8_t fetch() { 
     uint8_t retval = bus_read(reg.PC); 
     reg.PC += 1;
     return retval;
 }
 
-static inline uint16_t fetch_w() { 
+NES_ALWAYS_INLINE uint16_t fetch_w() { 
     uint16_t retval = bus_read_w(reg.PC) ;
     reg.PC += 2;
     return retval;
 }
 
-static inline uint8_t set_nz(uint8_t value) {
+NES_ALWAYS_INLINE uint8_t set_nz(uint8_t value) {
     reg.status.negative = (value >> 7) & 1;
     reg.status.zero = (value == 0) ? 1 : 0;
     return value;
 }
 
-static inline void push(uint8_t value) {
+NES_ALWAYS_INLINE void push(uint8_t value) {
     if (reg.SP == 0) {
         NES_ERRORF("Stack Overflow at push()\n");
     }
     bus_write(0x100 | reg.SP--, value);
 }
 
-static inline uint8_t pop() {
+NES_ALWAYS_INLINE uint8_t pop() {
     if (reg.SP >= 255) {
         NES_ERRORF("Stack Overflow at pop()\n");
     }
     return bus_read(0x100 | ++reg.SP);
 }
 
-static inline addr_t fetch_zpg() { return fetch(); }
-static inline addr_t fetch_zpg_x() { return (fetch() + reg.X) & 0xff; }
-static inline addr_t fetch_zpg_y() { return (fetch() + reg.Y) & 0xff; }
+NES_ALWAYS_INLINE addr_t fetch_zpg() { return fetch(); }
+NES_ALWAYS_INLINE addr_t fetch_zpg_x() { return (fetch() + reg.X) & 0xff; }
+NES_ALWAYS_INLINE addr_t fetch_zpg_y() { return (fetch() + reg.Y) & 0xff; }
 
-static inline addr_t fetch_imm() { 
+NES_ALWAYS_INLINE addr_t fetch_imm() { 
     return fetch();
 }
 
-static inline addr_t fetch_pre_idx_ind(int *cycle) {
+NES_ALWAYS_INLINE addr_t fetch_pre_idx_ind(int *cycle) {
     addr_t base = (fetch() + reg.X) & 0xff;
     addr_t addr = bus_read(base) | ((uint16_t)bus_read((base + 1) & 0xffu) << 8);
     if ((addr & 0xff00u) != (base & 0xff00u)) *cycle += 1;
     return addr;
 }
 
-static inline addr_t fetch_post_idx_ind(int *cycle) {
+NES_ALWAYS_INLINE addr_t fetch_post_idx_ind(int *cycle) {
     addr_t addrOrData = fetch();
     addr_t baseAddr = bus_read(addrOrData) | ((uint16_t)bus_read((addrOrData + 1) & 0xffu) << 8);
     addr_t addr = baseAddr + reg.Y;
@@ -132,32 +132,32 @@ static inline addr_t fetch_post_idx_ind(int *cycle) {
     return addr;
 }
 
-static inline addr_t fetch_abs() { 
+NES_ALWAYS_INLINE addr_t fetch_abs() { 
     return fetch_w();
 }
 
-static inline addr_t fetch_abs_x(int *cycle) { 
+NES_ALWAYS_INLINE addr_t fetch_abs_x(int *cycle) { 
     uint16_t base = fetch_w();
     uint16_t retval = base + reg.X;
     if ((base & 0xff00u) != (retval & 0xff00u)) *cycle += 1;
     return retval;
 }
             
-static inline addr_t fetch_abs_y(int *cycle) { 
+NES_ALWAYS_INLINE addr_t fetch_abs_y(int *cycle) { 
     uint16_t base = fetch_w();
     uint16_t retval = base + reg.Y;
     if ((base & 0xff00u) != (retval & 0xff00u)) *cycle += 1;
     return retval;
 }
 
-static inline addr_t fetch_ind_abs() {
+NES_ALWAYS_INLINE addr_t fetch_ind_abs() {
     addr_t addr_or_data = fetch_w();
     addr_t next_addr = (addr_or_data & 0xFF00) | (((addr_or_data & 0xFF) + 1) & 0xFF);
     addr_t addr = bus_read(addr_or_data) | ((uint16_t)bus_read(next_addr) << 8);
     return addr;
 }
 
-static inline addr_t fetch_rel(int *cycle) {    
+NES_ALWAYS_INLINE addr_t fetch_rel(int *cycle) {    
     int distance = fetch();
     if (distance >= 0x80) distance -= 256;
     addr_t retval = reg.PC + distance;
@@ -165,7 +165,7 @@ static inline addr_t fetch_rel(int *cycle) {
     return retval;
 }
 
-static inline void opBRK() {
+NES_ALWAYS_INLINE void opBRK() {
     bool interrupt = reg.status.interrupt != 0;
     push(reg.PC >> 8);
     push(reg.PC & 0xff);
@@ -177,161 +177,218 @@ static inline void opBRK() {
     }
 }
 
-static inline void opJMP(addr_t addr) {
+NES_ALWAYS_INLINE void opJMP(addr_t addr) {
     reg.PC = addr;
 }
 
-static inline void opJSR(addr_t addr) {
+NES_ALWAYS_INLINE void opJSR(addr_t addr) {
     addr_t pc = reg.PC - 1;
     push(pc >> 8);
     push(pc & 0xff);
     reg.PC = addr;
 }
 
-static inline void opRTI() {
+NES_ALWAYS_INLINE void opRTI() {
     reg.status.raw = pop();
     reg.status.reserved = true;
     reg.PC = (addr_t)pop();
     reg.PC |= ((addr_t)pop() << 8);
 }
 
-static inline void opRTS() {
+NES_ALWAYS_INLINE void opRTS() {
     reg.PC = (addr_t)pop();
     reg.PC |= ((addr_t)pop() << 8);
     reg.PC += 1;
 }
 
-static inline void opBIT(addr_t addr) {
+NES_ALWAYS_INLINE void opBIT(addr_t addr) {
     uint8_t data = bus_read(addr);
     reg.status.negative = (data >> 7) & 1;
     reg.status.overflow = (data >> 6) & 1;
     reg.status.zero = (reg.A & data) ? 0 : 1;
 }
 
-static inline void opPHP() {
+NES_ALWAYS_INLINE void opPHP() {
     reg.status.breakmode = 1;
     push(reg.status.raw);
 }
 
-static inline void opPLP() {
+NES_ALWAYS_INLINE void opPLP() {
     reg.status.raw = pop();
     reg.status.reserved = 1;
 }
         
-static inline void opPHA() {
+NES_ALWAYS_INLINE void opPHA() {
     push(reg.A);
 }
         
-static inline void opPLA() {
-    reg.A = pop();
-    set_nz(reg.A);
+NES_ALWAYS_INLINE void opPLA() {
+    reg.A = set_nz(pop());
 }
 
-static inline void cond_jump(bool cond, addr_t addr, int *cycle) {
+NES_ALWAYS_INLINE void cond_jump(bool cond, addr_t addr, int *cycle) {
     if (cond) {
         reg.PC = addr;
         (*cycle)++;
     }
 }
 
-static inline void opBPL(addr_t addr, int *cycle) { cond_jump(!reg.status.negative, addr, cycle); }
-static inline void opBMI(addr_t addr, int *cycle) { cond_jump( reg.status.negative, addr, cycle); }
-static inline void opBVC(addr_t addr, int *cycle) { cond_jump(!reg.status.overflow, addr, cycle); }
-static inline void opBVS(addr_t addr, int *cycle) { cond_jump( reg.status.overflow, addr, cycle); }
-static inline void opBCC(addr_t addr, int *cycle) { cond_jump(!reg.status.carry, addr, cycle); }
-static inline void opBCS(addr_t addr, int *cycle) { cond_jump( reg.status.carry, addr, cycle); }
-static inline void opBNE(addr_t addr, int *cycle) { cond_jump(!reg.status.zero, addr, cycle); }
-static inline void opBEQ(addr_t addr, int *cycle) { cond_jump( reg.status.zero, addr, cycle); }
+NES_ALWAYS_INLINE void opBPL(addr_t addr, int *cycle) { cond_jump(!reg.status.negative, addr, cycle); }
+NES_ALWAYS_INLINE void opBMI(addr_t addr, int *cycle) { cond_jump( reg.status.negative, addr, cycle); }
+NES_ALWAYS_INLINE void opBVC(addr_t addr, int *cycle) { cond_jump(!reg.status.overflow, addr, cycle); }
+NES_ALWAYS_INLINE void opBVS(addr_t addr, int *cycle) { cond_jump( reg.status.overflow, addr, cycle); }
+NES_ALWAYS_INLINE void opBCC(addr_t addr, int *cycle) { cond_jump(!reg.status.carry, addr, cycle); }
+NES_ALWAYS_INLINE void opBCS(addr_t addr, int *cycle) { cond_jump( reg.status.carry, addr, cycle); }
+NES_ALWAYS_INLINE void opBNE(addr_t addr, int *cycle) { cond_jump(!reg.status.zero, addr, cycle); }
+NES_ALWAYS_INLINE void opBEQ(addr_t addr, int *cycle) { cond_jump( reg.status.zero, addr, cycle); }
 
-static inline void opCLC() { reg.status.carry = 0; }
-static inline void opSEC() { reg.status.carry = 1; }
-static inline void opCLI() { reg.status.interrupt = 0; }
-static inline void opSEI() { reg.status.interrupt = 1; }
-static inline void opCLV() { reg.status.overflow = 0; }
-static inline void opCLD() { reg.status.decimalmode = 0; }
-static inline void opSED() { reg.status.decimalmode = 1; }
+NES_ALWAYS_INLINE void opCLC() { reg.status.carry = 0; }
+NES_ALWAYS_INLINE void opSEC() { reg.status.carry = 1; }
+NES_ALWAYS_INLINE void opCLI() { reg.status.interrupt = 0; }
+NES_ALWAYS_INLINE void opSEI() { reg.status.interrupt = 1; }
+NES_ALWAYS_INLINE void opCLV() { reg.status.overflow = 0; }
+NES_ALWAYS_INLINE void opCLD() { reg.status.decimalmode = 0; }
+NES_ALWAYS_INLINE void opSED() { reg.status.decimalmode = 1; }
         
-static inline void opTXA() { reg.A = set_nz(reg.X); }
-static inline void opTYA() { reg.A = set_nz(reg.Y); }
-static inline void opTXS() { reg.SP = reg.X; }
-static inline void opTAY() { reg.Y = set_nz(reg.A); }
-static inline void opTAX() { reg.X = set_nz(reg.A); }
-static inline void opTSX() { reg.X = set_nz(reg.SP); }
+NES_ALWAYS_INLINE void opTXA() { reg.A = set_nz(reg.X); }
+NES_ALWAYS_INLINE void opTYA() { reg.A = set_nz(reg.Y); }
+NES_ALWAYS_INLINE void opTXS() { reg.SP = reg.X; }
+NES_ALWAYS_INLINE void opTAY() { reg.Y = set_nz(reg.A); }
+NES_ALWAYS_INLINE void opTAX() { reg.X = set_nz(reg.A); }
+NES_ALWAYS_INLINE void opTSX() { reg.X = set_nz(reg.SP); }
 
-static inline void opLDA(uint8_t data) { reg.A = set_nz(data); }
-static inline void opLDX(uint8_t data) { reg.X = set_nz(data); }
-static inline void opLDY(uint8_t data) { reg.Y = set_nz(data); }
+NES_ALWAYS_INLINE void opLDA(uint8_t data) { reg.A = set_nz(data); }
+NES_ALWAYS_INLINE void opLDX(uint8_t data) { reg.X = set_nz(data); }
+NES_ALWAYS_INLINE void opLDY(uint8_t data) { reg.Y = set_nz(data); }
 
-static inline void opSTA(addr_t addr) { bus_write(addr, reg.A); }
-static inline void opSTX(addr_t addr) { bus_write(addr, reg.X); }
-static inline void opSTY(addr_t addr) { bus_write(addr, reg.Y); }
+NES_ALWAYS_INLINE void opSTA(addr_t addr) { bus_write(addr, reg.A); }
+NES_ALWAYS_INLINE void opSTX(addr_t addr) { bus_write(addr, reg.X); }
+NES_ALWAYS_INLINE void opSTY(addr_t addr) { bus_write(addr, reg.Y); }
 
-static inline void compare(uint8_t a, uint8_t b) {
+NES_ALWAYS_INLINE void compare(uint8_t a, uint8_t b) {
     int16_t compared = (int16_t)a - (int16_t)b;
     reg.status.carry = compared >= 0;
     set_nz(compared);
 }
-static inline void opCMP(uint8_t data) { compare(reg.A, data); }
-static inline void opCPX(uint8_t data) { compare(reg.X, data); }
-static inline void opCPY(uint8_t data) { compare(reg.Y, data); }
+NES_ALWAYS_INLINE void opCMP(uint8_t data) { compare(reg.A, data); }
+NES_ALWAYS_INLINE void opCPX(uint8_t data) { compare(reg.X, data); }
+NES_ALWAYS_INLINE void opCPY(uint8_t data) { compare(reg.Y, data); }
 
-static inline void opINX() { set_nz(++reg.X); }
-static inline void opINY() { set_nz(++reg.Y); }
-static inline void opDEX() { set_nz(--reg.X); }
-static inline void opDEY() { set_nz(--reg.Y); }
+NES_ALWAYS_INLINE void opINX() { set_nz(++reg.X); }
+NES_ALWAYS_INLINE void opINY() { set_nz(++reg.Y); }
+NES_ALWAYS_INLINE void opDEX() { set_nz(--reg.X); }
+NES_ALWAYS_INLINE void opDEY() { set_nz(--reg.Y); }
 
-static inline void opINC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) + 1)); }
-static inline void opDEC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) - 1)); }
+NES_ALWAYS_INLINE void opINC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) + 1)); }
+NES_ALWAYS_INLINE void opDEC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) - 1)); }
 
-static inline void opAND(uint8_t data) { reg.A = set_nz(data & reg.A); }
-static inline void opORA(uint8_t data) { reg.A = set_nz(data | reg.A); }
-static inline void opEOR(uint8_t data) { reg.A = set_nz(data ^ reg.A); }
+NES_ALWAYS_INLINE void opAND(uint8_t data) { reg.A = set_nz(data & reg.A); }
+NES_ALWAYS_INLINE void opORA(uint8_t data) { reg.A = set_nz(data | reg.A); }
+NES_ALWAYS_INLINE void opEOR(uint8_t data) { reg.A = set_nz(data ^ reg.A); }
 
-static inline void opADC(uint8_t data) {
+NES_ALWAYS_INLINE void opADC(uint8_t data) {
     uint16_t operated = (uint16_t)reg.A + data + reg.status.carry;
     reg.status.overflow = (!(((reg.A ^ data) & 0x80) != 0) && (((reg.A ^ operated) & 0x80)) != 0);
     reg.status.carry = (operated >= 0x100) ? 1 : 0;
     reg.A = set_nz(operated);
 }
 
-static inline void opSBC(uint8_t data) {
+NES_ALWAYS_INLINE void opSBC(uint8_t data) {
     int operated = (int)reg.A - data - (reg.status.carry ? 0 : 1);
     reg.status.overflow = (((reg.A ^ operated) & 0x80) != 0 && ((reg.A ^ data) & 0x80) != 0);
     reg.status.carry = (operated >= 0) ? 1 : 0;
     reg.A = set_nz(operated);
 }
 
-static inline uint8_t opASL(uint8_t data) {
+NES_ALWAYS_INLINE uint8_t opASL(uint8_t data) {
     reg.status.carry = (data >> 7) & 1;
     return set_nz(data << 1);
 }
-static inline void opASL_a() { reg.A = opASL(reg.A); }
-static inline void opASL_m(addr_t addr) { bus_write(addr, opASL(bus_read(addr))); }
+NES_ALWAYS_INLINE void opASL_a() { reg.A = opASL(reg.A); }
+NES_ALWAYS_INLINE void opASL_m(addr_t addr) { bus_write(addr, opASL(bus_read(addr))); }
 
-static inline uint8_t opLSR(uint8_t data) {
+NES_ALWAYS_INLINE uint8_t opLSR(uint8_t data) {
     reg.status.carry = data & 1;
     return set_nz((data >> 1) & 0x7f);
 }
-static inline void opLSR_a() { reg.A = opLSR(reg.A); }
-static inline void opLSR_m(addr_t addr) { bus_write(addr, opLSR(bus_read(addr))); }
+NES_ALWAYS_INLINE void opLSR_a() { reg.A = opLSR(reg.A); }
+NES_ALWAYS_INLINE void opLSR_m(addr_t addr) { bus_write(addr, opLSR(bus_read(addr))); }
 
-static inline uint8_t opROL(uint8_t data) {
+NES_ALWAYS_INLINE uint8_t opROL(uint8_t data) {
     uint8_t carry = (data >> 7) & 1;
     data = (data << 1) | reg.status.carry;
     reg.status.carry = carry;
     return set_nz(data);
 }
-static inline void opROL_a() { reg.A = opROL(reg.A); }
-static inline void opROL_m(addr_t addr) { bus_write(addr, opROL(bus_read(addr))); }
+NES_ALWAYS_INLINE void opROL_a() { reg.A = opROL(reg.A); }
+NES_ALWAYS_INLINE void opROL_m(addr_t addr) { bus_write(addr, opROL(bus_read(addr))); }
 
-static inline uint8_t opROR(uint8_t data) {
+NES_ALWAYS_INLINE uint8_t opROR(uint8_t data) {
     uint8_t carry = data & 1;
     data = ((data >> 1) & 0x7f) | (reg.status.carry << 7);
     reg.status.carry = carry;
     return set_nz(data);
 }
-static inline void opROR_a() { reg.A = opROR(reg.A); }
-static inline void opROR_m(addr_t addr) { bus_write(addr, opROR(bus_read(addr))); }
+NES_ALWAYS_INLINE void opROR_a() { reg.A = opROR(reg.A); }
+NES_ALWAYS_INLINE void opROR_m(addr_t addr) { bus_write(addr, opROR(bus_read(addr))); }
+
+NES_ALWAYS_INLINE void opNOP() { }
+
+NES_ALWAYS_INLINE void opSLO(addr_t addr) {
+    uint8_t data = bus_read(addr);
+    reg.status.carry = (data & 0x80) >> 7;
+    data <<= 1;
+    reg.A = set_nz(reg.A | data);
+    bus_write(addr, data);
+}
+NES_ALWAYS_INLINE void opRLA(addr_t addr) {
+    uint8_t data = bus_read(addr);
+    uint8_t carry = (data & 0x80) >> 7;
+    data = (data << 1) | reg.status.carry;
+    reg.status.carry = carry;
+    reg.A = set_nz(reg.A & data);
+    bus_write(addr, data);
+}
+NES_ALWAYS_INLINE void opSRE(addr_t addr) {
+    uint8_t data = bus_read(addr);
+    reg.status.carry = data & 0x1;
+    data >>= 1;
+    reg.A = set_nz(reg.A ^ data);
+    bus_write(addr, data);
+}
+NES_ALWAYS_INLINE void opRRA(addr_t addr) {
+    uint8_t data = bus_read(addr);
+    uint8_t carry = data & 0x1;
+    data = ((data >> 1) & 0x7f);
+    data |= reg.status.carry << 7;
+    uint16_t operated = (uint16_t)data + reg.A + carry;
+    reg.status.overflow = (!(((reg.A ^ data) & 0x80) != 0) && (((reg.A ^ operated) & 0x80)) != 0);
+    reg.A = set_nz(operated);
+    reg.status.carry = (operated >> 8) & 1;
+    bus_write(addr, data);
+}
+
+NES_ALWAYS_INLINE void opSAX(addr_t addr) {
+    bus_write(addr, reg.A & reg.X);
+}
+NES_ALWAYS_INLINE void opLAX(uint8_t data) {
+    reg.A = reg.X = set_nz(data);
+}
+
+NES_ALWAYS_INLINE void opDCP(addr_t addr) {
+    uint8_t operated = bus_read(addr) - 1;
+    set_nz(reg.A - operated);
+    bus_write(addr, operated);
+}
+
+NES_ALWAYS_INLINE void opISB(addr_t addr) {
+    uint8_t data = bus_read(addr) + 1;
+    uint16_t operated = (uint16_t)(~data & 0xff) + reg.A + reg.status.carry;
+    reg.status.overflow = (!(((reg.A ^ data) & 0x80) != 0) && (((reg.A ^ operated) & 0x80)) != 0);
+    reg.status.carry = (operated >> 8) & 1;
+    reg.A = set_nz(operated);
+    bus_write(addr, data);
+}
 
 void render_next_line(uint8_t *line_buff) {
     bool line_started = false;
@@ -364,7 +421,7 @@ void render_next_line(uint8_t *line_buff) {
             push(reg.status.raw);
             reg.status.interrupt = true;
             reg.PC = bus_read_w(VEC_NMI);
-            //cycle += 5; // ?
+            cycle += 7; // ?
         }
         else if (interrupt::is_irq_asserted() && !reg.status.interrupt) {
             interrupt::deassert_irq();
@@ -374,7 +431,7 @@ void render_next_line(uint8_t *line_buff) {
             push(reg.status.raw);
             reg.status.interrupt = true;
             reg.PC = bus_read_w(VEC_IRQ);
-            //cycle += 5; // ?
+            cycle += 7; // ?
         }
         else {
             int bs = BATCH_SIZE;
@@ -560,13 +617,139 @@ void render_next_line(uint8_t *line_buff) {
                 case 0x6e: opROR_m(fetch_abs());                        cycle += 6; break;
                 case 0x76: opROR_m(fetch_zpg_x());                      cycle += 6; break;
                 case 0x7e: opROR_m(fetch_abs_x(&cycle));                cycle += 6; break;
+                
+                case 0xea: opNOP();                                     cycle += 2; break;
+#if 0
+                // unofficial opcodes
+                case 0x03: opSLO(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
+                case 0x07: opSLO(fetch_zpg());                          cycle += 5; break;
+                case 0x0f: opSLO(fetch_abs());                          cycle += 6; break;
+                case 0x13: opSLO(fetch_post_idx_ind(&cycle));           cycle += 8; break;
+                case 0x17: opSLO(fetch_zpg_x());                        cycle += 6; break;
+                case 0x1b: opSLO(fetch_abs_y(&cycle));                  cycle += 7; break;
+                case 0x1f: opSLO(fetch_abs_x(&cycle));                  cycle += 7; break;
 
-                case 0xea: /* NOP */                                    cycle += 2; break;
+                case 0x23: opRLA(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
+                case 0x27: opRLA(fetch_zpg());                          cycle += 5; break;
+                case 0x2f: opRLA(fetch_abs());                          cycle += 6; break;
+                case 0x33: opRLA(fetch_post_idx_ind(&cycle));           cycle += 8; break;
+                case 0x37: opRLA(fetch_zpg_x());                        cycle += 6; break;
+                case 0x3b: opRLA(fetch_abs_y(&cycle));                  cycle += 7; break;
+                case 0x3f: opRLA(fetch_abs_x(&cycle));                  cycle += 7; break;
 
+                case 0x43: opSRE(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
+                case 0x47: opSRE(fetch_zpg());                          cycle += 5; break;
+                case 0x4f: opSRE(fetch_abs());                          cycle += 6; break;
+                case 0x53: opSRE(fetch_post_idx_ind(&cycle));           cycle += 8; break;
+                case 0x57: opSRE(fetch_zpg_x());                        cycle += 6; break;
+                case 0x5b: opSRE(fetch_abs_y(&cycle));                  cycle += 7; break;
+                case 0x5f: opSRE(fetch_abs_x(&cycle));                  cycle += 7; break;
+
+                case 0x63: opRRA(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
+                case 0x67: opRRA(fetch_zpg());                          cycle += 5; break;
+                case 0x6f: opRRA(fetch_abs());                          cycle += 6; break;
+                case 0x73: opRRA(fetch_post_idx_ind(&cycle));           cycle += 8; break;
+                case 0x77: opRRA(fetch_zpg_x());                        cycle += 6; break;
+                case 0x7b: opRRA(fetch_abs_y(&cycle));                  cycle += 7; break;
+                case 0x7f: opRRA(fetch_abs_x(&cycle));                  cycle += 7; break;
+
+                case 0x83: opSAX(fetch_pre_idx_ind(&cycle));            cycle += 6; break;
+                case 0x87: opSAX(fetch_zpg());                          cycle += 3; break;
+                case 0x8f: opSAX(fetch_abs());                          cycle += 4; break;
+                case 0x97: opSAX(fetch_zpg_y());                        cycle += 4; break;
+
+                case 0xa3: opLAX(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+                case 0xa7: opLAX(bus_read(fetch_zpg()));                cycle += 3; break;
+                case 0xab: opLAX(fetch_imm());                          cycle += 2; break;
+                case 0xaf: opLAX(bus_read(fetch_abs()));                cycle += 4; break;
+                case 0xb3: opLAX(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+                case 0xb7: opLAX(bus_read(fetch_zpg_y()));              cycle += 4; break;
+                case 0xbf: opLAX(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+
+                case 0xc3: opDCP(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
+                case 0xc7: opDCP(fetch_zpg());                          cycle += 5; break;
+                case 0xcf: opDCP(fetch_abs());                          cycle += 6; break;
+                case 0xd3: opDCP(fetch_post_idx_ind(&cycle));           cycle += 8; break;
+                case 0xd7: opDCP(fetch_zpg_x());                        cycle += 6; break;
+                case 0xdb: opDCP(fetch_abs_y(&cycle));                  cycle += 7; break;
+                case 0xdf: opDCP(fetch_abs_x(&cycle));                  cycle += 7; break;
+
+                case 0xe3: opISB(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
+                case 0xe7: opISB(fetch_zpg());                          cycle += 5; break;
+                case 0xef: opISB(fetch_abs());                          cycle += 6; break;
+                case 0xf3: opISB(fetch_post_idx_ind(&cycle));           cycle += 8; break;
+                case 0xf7: opISB(fetch_zpg_x());                        cycle += 6; break;
+                case 0xfb: opISB(fetch_abs_y(&cycle));                  cycle += 7; break;
+                case 0xff: opISB(fetch_abs_x(&cycle));                  cycle += 7; break;
+
+                case 0xeb: opSBC(fetch_imm());                          cycle += 2; break;
+
+                case 0x1a: opNOP();                                     cycle += 2; break;
+                case 0x3a: opNOP();                                     cycle += 2; break;
+                case 0x5a: opNOP();                                     cycle += 2; break;
+                case 0x7a: opNOP();                                     cycle += 2; break;
+                case 0xda: opNOP();                                     cycle += 2; break;
+                case 0xfa: opNOP();                                     cycle += 2; break;
+
+                case 0x02: opNOP();                                     cycle += 2; break; // STP
+                case 0x12: opNOP();                                     cycle += 2; break; // STP
+                case 0x22: opNOP();                                     cycle += 2; break; // STP
+                case 0x32: opNOP();                                     cycle += 2; break; // STP
+                case 0x42: opNOP();                                     cycle += 2; break; // STP
+                case 0x52: opNOP();                                     cycle += 2; break; // STP
+                case 0x62: opNOP();                                     cycle += 2; break; // STP
+                case 0x72: opNOP();                                     cycle += 2; break; // STP
+                case 0x92: opNOP();                                     cycle += 2; break; // STP
+                case 0xb2: opNOP();                                     cycle += 2; break; // STP
+                case 0xd2: opNOP();                                     cycle += 2; break; // STP
+                case 0xf2: opNOP();                                     cycle += 2; break; // STP
+
+                case 0x9c: fetch_abs_x(&cycle); opNOP();                cycle += 5; break; // SHY
+                case 0x9e: fetch_abs_y(&cycle); opNOP();                cycle += 5; break; // SHX
+                case 0x0b: fetch_imm(); opNOP();                        cycle += 2; break; // ANC
+                case 0x2b: fetch_imm(); opNOP();                        cycle += 2; break; // ANC
+                case 0x4b: fetch_imm(); opNOP();                        cycle += 2; break; // ALR
+                case 0x6b: fetch_imm(); opNOP();                        cycle += 2; break; // ARR
+                case 0x8b: fetch_imm(); opNOP();                        cycle += 2; break; // XAA
+                case 0xcb: fetch_imm(); opNOP();                        cycle += 2; break; // AXS
+
+                case 0x93: fetch_post_idx_ind(&cycle); opNOP();         cycle += 6; break; // AHX
+                case 0x9f: fetch_abs_y(&cycle); opNOP();                cycle += 5; break; // AHX
+
+                case 0x9b: fetch_abs_y(&cycle); opNOP();                cycle += 5; break; // TAS
+                case 0xbb: fetch_abs_y(&cycle); opNOP();                cycle += 4; break; // LAS
+
+                case 0x80: fetch_imm(); opNOP();                        cycle += 2; break; 
+                case 0x82: fetch_imm(); opNOP();                        cycle += 2; break; 
+                case 0x89: fetch_imm(); opNOP();                        cycle += 2; break; 
+                case 0xc2: fetch_imm(); opNOP();                        cycle += 2; break;
+                case 0xe2: fetch_imm(); opNOP();                        cycle += 3; break;
+
+                case 0x04: fetch_zpg(); opNOP();                        cycle += 3; break; 
+                case 0x44: fetch_zpg(); opNOP();                        cycle += 3; break; 
+                case 0x64: fetch_zpg(); opNOP();                        cycle += 3; break;
+
+                case 0x0c: fetch_abs(); opNOP();                        cycle += 4; break;
+
+                case 0x14: fetch_zpg_x(); opNOP();                      cycle += 4; break;
+                case 0x34: fetch_zpg_x(); opNOP();                      cycle += 4; break;
+                case 0x54: fetch_zpg_x(); opNOP();                      cycle += 4; break;
+                case 0x74: fetch_zpg_x(); opNOP();                      cycle += 4; break;
+                case 0xd4: fetch_zpg_x(); opNOP();                      cycle += 4; break;
+                case 0xf4: fetch_zpg_x(); opNOP();                      cycle += 4; break;
+
+                case 0x1c: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
+                case 0x3c: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
+                case 0x5c: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
+                case 0x7c: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
+                case 0xdc: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
+                case 0xfc: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
+#else
                 default:
                     NES_ERRORF("UNKNOWN INSTRUCTION: 0x%02x (PC=0x%04x)\n", (int)op_code, (int)reg.PC);
                     break;
                 }
+#endif
             } // while (bs-- > 0)
         } // if
 

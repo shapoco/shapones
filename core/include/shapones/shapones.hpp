@@ -7,6 +7,8 @@
 //#include "pico/stdlib.h"
 //#include "hardware/gpio.h"
 
+#define NES_ALWAYS_INLINE __attribute__((always_inline)) static inline
+
 #if 0
 
 #define NES_PRINTF(fmt, ...) \

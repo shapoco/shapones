@@ -56,12 +56,18 @@ int main() {
     multicore_launch_core1(lcd_driver_entry);
     
     for(;;) {
-        gpio_put(2, 1);
         vsync_flag = true;
         nes::vsync(line_buff_0);
         vsync_flag = false;
+        
+        gpio_put(2, 1);
+        for (int y = 0; y < 60; y++) {
+            nes::render_next_line(color_buff + y * 512);
+            nes::render_next_line(color_buff + y * 512 + 256);
+        }
+        
         gpio_put(2, 0);
-        for (int y = 0; y < 120; y++) {
+        for (int y = 60; y < 120; y++) {
             nes::render_next_line(color_buff + y * 512);
             nes::render_next_line(color_buff + y * 512 + 256);
         }

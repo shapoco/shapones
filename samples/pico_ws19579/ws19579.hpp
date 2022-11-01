@@ -221,8 +221,7 @@ public:
     
     void finish_write_data() {
         dma_channel_wait_for_finish_blocking(dma_tx);
-        //sleep_us(10);
-        while (spi_is_busy(spi)) { sleep_us(1); }
+        while (spi_is_busy(spi)) { }
         gpio_put(PIN_CS, 1);
     }
 

@@ -11,7 +11,8 @@ static constexpr int PRGROM_SIZE = 0x8000;
 
 extern const uint8_t *prgrom;
 extern const uint8_t *chrrom;
-extern uint16_t *chrrom_reordered;
+extern uint16_t *chrrom_reordered0;
+extern uint16_t *chrrom_reordered1;
 
 extern uint8_t wram[WRAM_SIZE];
 extern uint8_t vram[VRAM_SIZE];

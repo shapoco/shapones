@@ -374,8 +374,8 @@ static void render_bg_block(uint8_t *line_buff, int x0, int x1) {
         chrrom_index1 += 0x800;
         chrrom_index0 += 0x800;
     }
-    uint16_t chr0 = memory::chrrom_reordered[chrrom_index0];
-    uint16_t chr1 = memory::chrrom_reordered[chrrom_index1];
+    uint16_t chr0 = memory::chrrom_reordered0[chrrom_index0];
+    uint16_t chr1 = memory::chrrom_reordered0[chrrom_index1];
 
     uint32_t chr = (uint32_t)chr0 | ((uint32_t)chr1 << 16);
     
@@ -459,20 +459,30 @@ static void enum_visible_sprites() {
             
             // read CHRROM
             int chrrom_index = tile_index * 8 + (src_y & 0x7);
-            uint16_t chr = memory::chrrom_reordered[chrrom_index];
-
+            uint16_t chr;
             if (s.attr & OAM_ATTR_INVERT_H) {
-                // horizontal inversion
-                chr = 
-                    ((chr << 14) & 0xc000) |
-                    ((chr << 10) & 0x3000) |
-                    ((chr <<  6) & 0x0c00) |
-                    ((chr <<  2) & 0x0300) |
-                    ((chr >>  2) & 0x00c0) |
-                    ((chr >>  6) & 0x0030) |
-                    ((chr >> 10) & 0x000c) |
-                    ((chr >> 14) & 0x0003);
+                chr = memory::chrrom_reordered1[chrrom_index];
             }
+            else {
+                chr = memory::chrrom_reordered0[chrrom_index];
+            }
+
+            //if (s.attr & OAM_ATTR_INVERT_H) {
+            //    // horizontal inversion
+            //    uint32_t a = chr;
+            //    uint32_t b = a << 16;
+            //    a |= b;
+            //    b = a & 0xf0f0f0f0;
+            //    b >>= 8;
+            //    a &= 0x0f0f0f0f;
+            //    a |= b;
+            //    b = a & 0xcccccc;
+            //    b >>= 4;
+            //    a &= 0x333333;
+            //    a |= b;
+            //    a >>= 2;
+            //    chr = a & 0xffff;
+            //}
 
             // store sprite information
             SpriteLine sl;

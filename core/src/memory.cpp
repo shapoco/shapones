@@ -4,7 +4,8 @@ namespace nes::memory {
 
 const uint8_t *prgrom;
 const uint8_t *chrrom;
-uint16_t *chrrom_reordered;
+uint16_t *chrrom_reordered0;
+uint16_t *chrrom_reordered1;
 
 uint8_t wram[WRAM_SIZE];
 uint8_t vram[VRAM_SIZE];
@@ -64,31 +65,54 @@ bool map_ines(const uint8_t *ines) {
     
     // reorder CHRROM bits for fast access
     int num_chars = num_chr_rom_pages * 0x2000 / 16;
-    chrrom_reordered = new uint16_t[num_chars * 8];
+    chrrom_reordered0 = new uint16_t[num_chars * 8];
+    chrrom_reordered1 = new uint16_t[num_chars * 8];
     for (int ic = 0; ic < num_chars; ic++) {
         for (int iy = 0; iy < 8; iy++) {
             uint8_t chr0 = chrrom[ic * 16 + iy];
             uint8_t chr1 = chrrom[ic * 16 + iy + 8];
 
-            uint16_t chr = 0;
-            chr  = (uint16_t)(chr1 & 0x01) << 15;
-            chr |= (uint16_t)(chr0 & 0x01) << 14;
-            chr |= (uint16_t)(chr1 & 0x02) << 12;
-            chr |= (uint16_t)(chr0 & 0x02) << 11;
-            chr |= (uint16_t)(chr1 & 0x04) <<  9;
-            chr |= (uint16_t)(chr0 & 0x04) <<  8;
-            chr |= (uint16_t)(chr1 & 0x08) <<  6;
-            chr |= (uint16_t)(chr0 & 0x08) <<  5;
-            chr |= (uint16_t)(chr1 & 0x10) <<  3;
-            chr |= (uint16_t)(chr0 & 0x10) <<  2;
-            chr |= (uint16_t)(chr1 & 0x20);
-            chr |= (uint16_t)(chr0 & 0x20) >>  1;
-            chr |= (uint16_t)(chr1 & 0x40) >>  3;
-            chr |= (uint16_t)(chr0 & 0x40) >>  4;
-            chr |= (uint16_t)(chr1 & 0x80) >>  6;
-            chr |= (uint16_t)(chr0 & 0x80) >>  7;
-
-            chrrom_reordered[ic * 8 + iy] = chr;
+            {
+                uint16_t chr = 0;
+                chr  = (uint16_t)(chr1 & 0x01) << 15;
+                chr |= (uint16_t)(chr0 & 0x01) << 14;
+                chr |= (uint16_t)(chr1 & 0x02) << 12;
+                chr |= (uint16_t)(chr0 & 0x02) << 11;
+                chr |= (uint16_t)(chr1 & 0x04) <<  9;
+                chr |= (uint16_t)(chr0 & 0x04) <<  8;
+                chr |= (uint16_t)(chr1 & 0x08) <<  6;
+                chr |= (uint16_t)(chr0 & 0x08) <<  5;
+                chr |= (uint16_t)(chr1 & 0x10) <<  3;
+                chr |= (uint16_t)(chr0 & 0x10) <<  2;
+                chr |= (uint16_t)(chr1 & 0x20);
+                chr |= (uint16_t)(chr0 & 0x20) >>  1;
+                chr |= (uint16_t)(chr1 & 0x40) >>  3;
+                chr |= (uint16_t)(chr0 & 0x40) >>  4;
+                chr |= (uint16_t)(chr1 & 0x80) >>  6;
+                chr |= (uint16_t)(chr0 & 0x80) >>  7;
+                chrrom_reordered0[ic * 8 + iy] = chr;
+            }
+            
+            {
+                uint16_t chr = 0;
+                chr  = (uint16_t)(chr1 & 0x80) <<  8;
+                chr |= (uint16_t)(chr0 & 0x80) <<  7;
+                chr |= (uint16_t)(chr1 & 0x40) <<  7;
+                chr |= (uint16_t)(chr0 & 0x40) <<  6;
+                chr |= (uint16_t)(chr1 & 0x20) <<  6;
+                chr |= (uint16_t)(chr0 & 0x20) <<  5;
+                chr |= (uint16_t)(chr1 & 0x10) <<  5;
+                chr |= (uint16_t)(chr0 & 0x10) <<  4;
+                chr |= (uint16_t)(chr1 & 0x08) <<  4;
+                chr |= (uint16_t)(chr0 & 0x08) <<  3;
+                chr |= (uint16_t)(chr1 & 0x04) <<  3;
+                chr |= (uint16_t)(chr0 & 0x04) <<  2;
+                chr |= (uint16_t)(chr1 & 0x02) <<  2;
+                chr |= (uint16_t)(chr0 & 0x02) <<  1;
+                chr |= (uint16_t)(chr1 & 0x01) <<  1;
+                chr |= (uint16_t)(chr0 & 0x01);
+                chrrom_reordered1[ic * 8 + iy] = chr;
+            }
         }
     }
 
