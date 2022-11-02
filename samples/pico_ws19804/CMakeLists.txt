@@ -13,6 +13,8 @@ pico_sdk_init()
 
 add_executable(pico_nes_ws19804)
 
+pico_generate_pio_header(pico_nes_ws19804 ${CMAKE_CURRENT_LIST_DIR}/ws19804.pio)
+
 set(SHAPONES_PATH ../../core)
 
 target_sources(
@@ -34,5 +36,5 @@ target_include_directories(
     ${SHAPONES_PATH}/include
 )
 
-target_link_libraries(pico_nes_ws19804 PRIVATE pico_stdlib hardware_spi hardware_dma pico_multicore)
+target_link_libraries(pico_nes_ws19804 PRIVATE pico_stdlib hardware_pio hardware_dma pico_multicore)
 pico_add_extra_outputs(pico_nes_ws19804)
