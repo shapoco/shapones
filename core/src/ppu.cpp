@@ -4,17 +4,15 @@ namespace nes::ppu {
 
 static Registers reg;
 //static RenderContext ctx;
-static int lead_x;
-static int lead_y;
+
+static volatile cycle_t cycle_count;
+
 static int focus_x;
 static int focus_y;
-static int next_focus_x;
-static int shift_x;
 
 //static ScrollRegister scroll;
 static uint16_t scroll;
-
-static int startup_delay_counter;
+static int fine_x;
 
 static uint8_t bus_read_data_latest = 0;
 static uint8_t bus_read_data_delayed = 0;
@@ -29,8 +27,6 @@ static OamEntry oam[MAX_SPRITE_COUNT];
 static SpriteLine sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
-static void hold_reset_state();
-
 static uint8_t bus_read(addr_t addr);
 static void bus_write(addr_t addr, uint8_t data);
 static uint8_t oam_read(addr_t addr);
@@ -38,18 +34,12 @@ static void oam_write(addr_t addr, uint8_t data);
 static uint8_t palette_read(addr_t addr);
 static void palette_write(addr_t addr, uint8_t data);
 
-static void render_bg_block(uint8_t *line_buff, int x0, int x1);
-static void render_sprite_block(uint8_t *line_buff, int x0, int x1);
-static void update_scroll_counter(int step);
+static void render_bg(uint8_t *line_buff, int x0, int x1);
 static void enum_visible_sprites();
+static void render_sprite(uint8_t *line_buff, int x0, int x1);
 
 void reset() {
-    hold_reset_state();
-    startup_delay_counter = STARTUP_DELAY_CYCLES;
-}
-
-// https://www.nesdev.org/wiki/PPU_power_up_state
-static void hold_reset_state() {
+    // https://www.nesdev.org/wiki/PPU_power_up_state
     reg.control.raw = 0;
     reg.mask.raw = 0;
     reg.oam_addr = 0;
@@ -60,11 +50,8 @@ static void hold_reset_state() {
     bus_read_data_latest = 0;
     bus_read_data_delayed = 0;
 
-    lead_x = 0;
-    lead_y = 0;
     focus_x = 0;
     focus_y = 0;
-    next_focus_x = 0;
 
     num_visible_sprites = 0;
 
@@ -266,152 +253,228 @@ static void palette_write(addr_t addr, uint8_t data) {
     }
 }
 
-void render_next_block(uint8_t *line_buff, int num_cycles) {
-    if (startup_delay_counter > 0) {
-        startup_delay_counter--;
-        hold_reset_state();
-        return;
-    }
-
-    // step lead counter
-    lead_x += num_cycles;
-    if (lead_x >= LINE_CYCLES) {
-        lead_x -= LINE_CYCLES;
-        lead_y++;
-        if (lead_y == SCREEN_HEIGHT + 1) {
-            // vblank flag/interrupt
-            reg.status.vblank_flag = 1;
-            if (reg.control.vblank_irq_enable) {
-                interrupt::assert_nmi();
-            }
-        }
-        else if (lead_y == SCAN_LINES - 1) {
-            // clear flags
-            reg.status.vblank_flag = 0;
-            reg.status.sprite0_hit = 0;
-        }
-        else if (lead_y >= SCAN_LINES) {
-            // vertical recovery
-            lead_y = 0;
-        }
-    }
+bool service(uint8_t *line_buff) {
+    bool eol = false;
 
     while (true) {
-        // if the new focus does not overtake the lead counter, render the area
-        if (focus_y != lead_y || next_focus_x <= lead_x) {
-            if (focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) {
-                if (reg.mask.bg_enable) {
-                    // render background
-                    render_bg_block(line_buff, focus_x, next_focus_x);
-                }
-                else {
-                    // blank background
-                    uint8_t bg_color = palette_file[0].color[0];
-                    for (int x = focus_x; x < next_focus_x; x++) {
-                        line_buff[x] = bg_color;
-                    }
-                }
-
-                if (reg.mask.sprite_enable) {
-                    // render sprite
-                    if (focus_x == 0) {
-                        enum_visible_sprites();
-                    }
-                    render_sprite_block(line_buff, focus_x, next_focus_x);
-                }
-            }
-            
-            update_scroll_counter(next_focus_x - focus_x);
-
-            // update focus counter
-            focus_x = next_focus_x;
-            if (focus_x >= LINE_CYCLES) {
-                focus_x = 0;
-                focus_y = lead_y;
-            }
-        }
-        else {
+        cycle_t cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
+        if (cycle_diff <= 0) {
             break;
         }
 
-        // determine rendering block area
-        if (focus_x == 0 && focus_y < SCREEN_HEIGHT) {
-            // head of line
-            int coarse_x = reg.scroll & SCROLL_MASK_COARSE_X;
-            next_focus_x = BLOCK_SIZE - (((coarse_x * TILE_SIZE) + reg.fine_x) & (BLOCK_SIZE - 1));
-        }
-        else if (focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) {
-            // visible area
-            next_focus_x = focus_x + BLOCK_SIZE;
-            if (next_focus_x > SCREEN_WIDTH) {
-                next_focus_x = SCREEN_WIDTH;
+        // events
+        if (focus_x == 0) {
+            if (focus_y == SCREEN_HEIGHT + 1) {
+                // vblank flag/interrupt
+                reg.status.vblank_flag = 1;
+                if (reg.control.vblank_irq_enable) {
+                    interrupt::assert_nmi();
+                }
             }
-        }
-        else {
-            // blanking area
-            next_focus_x = focus_x + BLOCK_SIZE;
-            if (next_focus_x > LINE_CYCLES) {
-                next_focus_x = LINE_CYCLES;
+            else if (focus_y == SCAN_LINES - 1) {
+                // clear flags
+                reg.status.vblank_flag = 0;
+                reg.status.sprite0_hit = 0;    
             }
         }
 
+        // determine step count
+        int step_count;
+        int dist_to_end;
+        if (focus_y < SCREEN_HEIGHT && focus_x < SCREEN_WIDTH) {
+            // visible area
+            dist_to_end = SCREEN_WIDTH - focus_x;
+        }
+        else {
+            // blank_area
+            dist_to_end = LINE_CYCLES - focus_x;
+        }
+        step_count = dist_to_end < cycle_diff ? dist_to_end : cycle_diff;
+        step_count = step_count < MAX_DELAY_CYCLES/2 ? step_count : MAX_DELAY_CYCLES/2;
+
+        int next_focus_x = focus_x + step_count;
+
+        // render background
+        render_bg(line_buff, focus_x, next_focus_x);
+
+        if (reg.mask.sprite_enable && focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) {
+            if (focus_x == 0) {
+                // enumerate visible sprites in current line
+                enum_visible_sprites();
+            }
+            // render sprite
+            render_sprite(line_buff, focus_x, next_focus_x);
+        }
+        
+        // step focus
+        focus_x = next_focus_x;
+        if (focus_x >= LINE_CYCLES) {
+            focus_x -= LINE_CYCLES;
+            focus_y++;
+            if (focus_y >= SCAN_LINES) {
+                focus_y = 0;
+            }
+        }
+
+        // step cycle counter
+        cycle_count += step_count;
+        
+        eol = 
+            (focus_x == SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) ||
+            (focus_x == 0 && focus_y >= SCREEN_HEIGHT);
+        if (eol) {
+            //NES_PRINTF("EOL y=%d\n", focus_y);
+            break;
+        }
     }
+
+    return eol;
 }
 
-static void render_bg_block(uint8_t *line_buff, int x0, int x1) {
-    // read name table for two tiles
-    addr_t name_addr0 = scroll & 0xffeu;
-    addr_t name_addr1 = name_addr0 + 1;
-    uint8_t name0 = memory::vram_read(name_addr0);
-    uint8_t name1 = memory::vram_read(name_addr1);
+static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
+    bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
 
-    int fine_y = (scroll & SCROLL_MASK_FINE_Y) >> 12;
+    while (x0_block < x1_block) {
+        // determine step count
+        int x0, x1;
 
-    // read CHRROM
-    int chrrom_index0 = name0 * 8 + fine_y;
-    int chrrom_index1 = name1 * 8 + fine_y;
-    if (reg.control.bg_name_sel) {
-        chrrom_index1 += 0x800;
-        chrrom_index0 += 0x800;
-    }
-    uint16_t chr0 = memory::chrrom_reordered0[chrrom_index0];
-    uint16_t chr1 = memory::chrrom_reordered0[chrrom_index1];
-
-    uint32_t chr = (uint32_t)chr0 | ((uint32_t)chr1 << 16);
-    
-    // calc attr index
-    int attr_index = 
-        (scroll & SCROLL_MASK_NAME_SEL) |
-        0x3c0 |
-        ((scroll >> 2) & 0x7) |
-        ((scroll >> 4) & 0x38);
-    int attr_shift_size =
-        ((scroll >> 4) & 0x4) |
-        (scroll & 0x2);
-
-    // read attr table
-    uint8_t attr = memory::vram_read(attr_index);
-    attr = (attr >> attr_shift_size) & 0x3;
-    Palette palette = palette_file[attr];
-
-    // adjust CHR bit pos
-    int chr_shift_size =
-        ((scroll << 4) & 0x10) |
-        (shift_x << 1);
-    chr >>= chr_shift_size;
-
-    // render BG block
-    uint8_t bg_color = palette_file[0].color[0];
-    for (int x = x0; x < x1; x++) {
-        uint32_t palette_index = chr & 0x3;
-        chr >>= 2;
-        if (palette_index == 0) {
-            line_buff[x] = bg_color;
+        x0 = x0_block;
+        if (visible_area && reg.mask.bg_enable) {
+            x1 = x0 + (BLOCK_SIZE - ((scroll & 0x1) * TILE_SIZE + fine_x));
         }
         else {
-            line_buff[x] = palette.color[palette_index] | OPAQUE_FLAG;
+            x1 = x0 + 64;
         }
-    }
+        x1 = x1 < x1_block ? x1 : x1_block;
+
+        if (visible_area) {
+            if (reg.mask.bg_enable) {
+                // read name table for two tiles
+                addr_t name_addr0 = scroll & 0xffeu;
+                addr_t name_addr1 = name_addr0 + 1;
+                uint8_t name0 = memory::vram_read(name_addr0);
+                uint8_t name1 = memory::vram_read(name_addr1);
+
+                int fine_y = (scroll & SCROLL_MASK_FINE_Y) >> 12;
+
+                // read CHRROM
+                int chrrom_index0 = name0 * 8 + fine_y;
+                int chrrom_index1 = name1 * 8 + fine_y;
+                if (reg.control.bg_name_sel) {
+                    chrrom_index1 += 0x800;
+                    chrrom_index0 += 0x800;
+                }
+                uint16_t chr0 = memory::chrrom_reordered0[chrrom_index0];
+                uint16_t chr1 = memory::chrrom_reordered0[chrrom_index1];
+
+                uint32_t chr = (uint32_t)chr0 | ((uint32_t)chr1 << 16);
+                
+                // calc attr index
+                int attr_index = 
+                    (scroll & SCROLL_MASK_NAME_SEL) |
+                    0x3c0 |
+                    ((scroll >> 2) & 0x7) |
+                    ((scroll >> 4) & 0x38);
+                int attr_shift_size =
+                    ((scroll >> 4) & 0x4) |
+                    (scroll & 0x2);
+
+                // read attr table
+                uint8_t attr = memory::vram_read(attr_index);
+                attr = (attr >> attr_shift_size) & 0x3;
+                Palette palette = palette_file[attr];
+
+                // adjust CHR bit pos
+                int chr_shift_size =
+                    ((scroll << 4) & 0x10) |
+                    (fine_x << 1);
+                chr >>= chr_shift_size;
+
+                // render BG block
+                uint8_t bg_color = palette_file[0].color[0];
+                for (int x = x0; x < x1; x++) {
+                    uint32_t palette_index = chr & 0x3;
+                    chr >>= 2;
+                    if (palette_index == 0) {
+                        line_buff[x] = bg_color;
+                    }
+                    else {
+                        line_buff[x] = palette.color[palette_index] | OPAQUE_FLAG;
+                    }
+                }
+            }
+            else {
+                // blank background
+                uint8_t bg_color = palette_file[0].color[0];
+                for (int x = x0; x < x1; x++) {
+                    line_buff[x] = bg_color;
+                }
+            }
+        }
+
+        // update scroll counter
+        // see: https://www.nesdev.org/wiki/PPU_scrolling
+        if (reg.mask.bg_enable || reg.mask.sprite_enable) {
+            if (focus_y < SCREEN_HEIGHT) {
+                if (x0 < SCREEN_WIDTH) {
+                    // step scroll counter for x-axis
+                    fine_x += (x1 - x0);
+                    while (fine_x >= TILE_SIZE) {
+                        fine_x -= TILE_SIZE;
+                        // if coarse_x < 31
+                        if ((scroll & SCROLL_MASK_COARSE_X) < SCROLL_MASK_COARSE_X) {
+                            scroll++; // coarse_x++
+                        }
+                        else {
+                            // right edge of name table
+                            scroll &= ~SCROLL_MASK_COARSE_X; // coarse_x = 0
+                            scroll ^= 0x0400u; // switch name table horizontally
+                        }
+                    }
+                }    
+                else if (SCREEN_WIDTH < x1 && x0 <= SCREEN_WIDTH) {
+                    // step scroll counter for y-axis
+                    // if fine_y < 7
+                    if ((scroll & SCROLL_MASK_FINE_Y) < SCROLL_MASK_FINE_Y) {
+                        scroll += 0x1000u; // fine_y++
+                    }
+                    else {
+                        // bottom edge of tile
+                        scroll &= ~SCROLL_MASK_FINE_Y; // fine_y = 0
+                        // if coarse_y == 29
+                        if ((scroll & SCROLL_MASK_COARSE_Y) == ((NUM_TILE_Y - 1) << 5)) { 
+                            // bottom edge of name table
+                            scroll &= ~SCROLL_MASK_COARSE_Y; // coarse_y = 0
+                            scroll ^= 0x0800u; // switch name table vertically
+                        }
+                        // else if coarse_y == 31
+                        else if ((scroll & SCROLL_MASK_COARSE_Y) == SCROLL_MASK_COARSE_Y) {
+                            scroll &= ~SCROLL_MASK_COARSE_Y; // coarse_y = 0
+                        }
+                        else {
+                            scroll += NUM_TILE_X; // coarse_y++
+                        }
+                    }
+
+                    // horizontal recovery
+                    constexpr uint16_t copy_mask = 0x041fu;
+                    scroll &= ~copy_mask;
+                    scroll |= reg.scroll & copy_mask;
+                    fine_x = reg.fine_x;
+                } 
+            }
+            else if (focus_y == SCAN_LINES - 1) {
+                if (280 <= x1 && x0 <= 304) {
+                    // vertical recovery
+                    constexpr uint16_t copy_mask = 0x7be0u;
+                    scroll &= ~copy_mask;
+                    scroll |= reg.scroll & copy_mask;
+                }
+            }
+        } // if
+
+        x0_block = x1;
+    } // while
 }
 
 static void enum_visible_sprites() {
@@ -501,7 +564,7 @@ static void enum_visible_sprites() {
     }
 }
 
-static void render_sprite_block(uint8_t *line_buff, int x0_block, int x1_block) {
+static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block) {
     // sprite height
     int h = reg.control.sprite_size ? 16 : 8;
     for (int i = 0; i < num_visible_sprites; i++) {
@@ -524,65 +587,8 @@ static void render_sprite_block(uint8_t *line_buff, int x0_block, int x1_block) 
     }
 }
 
-static void update_scroll_counter(int step) {
-    if (!reg.mask.bg_enable && !reg.mask.sprite_enable) {
-        return;
-    }
-
-    if (focus_y < SCREEN_HEIGHT) {
-        if (focus_x < SCREEN_WIDTH) {
-            shift_x += step;
-            while (shift_x >= TILE_SIZE) {
-                shift_x -= TILE_SIZE;
-                // if coarse_x < 31
-                if ((scroll & SCROLL_MASK_COARSE_X) < SCROLL_MASK_COARSE_X) {
-                    scroll++; // coarse_x++
-                }
-                else {
-                    // right edge of name table
-                    scroll &= ~SCROLL_MASK_COARSE_X; // coarse_x = 0
-                    scroll ^= 0x0400u; // switch name table horizontally
-                }
-            }
-        }
-        else if (focus_x == SCREEN_WIDTH) {
-            // if fine_y < 7
-            if ((scroll & SCROLL_MASK_FINE_Y) < SCROLL_MASK_FINE_Y) {
-                scroll += 0x1000u; // fine_y++
-            }
-            else {
-                // bottom edge of tile
-                scroll &= ~SCROLL_MASK_FINE_Y; // fine_y = 0
-                // if coarse_y == 29
-                if ((scroll & SCROLL_MASK_COARSE_Y) == ((NUM_TILE_Y - 1) << 5)) { 
-                    // bottom edge of name table
-                    scroll &= ~SCROLL_MASK_COARSE_Y; // coarse_y = 0
-                    scroll ^= 0x0800u; // switch name table vertically
-                }
-                // else if coarse_y == 31
-                else if ((scroll & SCROLL_MASK_COARSE_Y) == SCROLL_MASK_COARSE_Y) {
-                    scroll &= ~SCROLL_MASK_COARSE_Y; // coarse_y = 0
-                }
-                else {
-                    scroll += NUM_TILE_X; // coarse_y++
-                }
-            }
-
-            // horizontal recovery
-            constexpr uint16_t copy_mask = 0x041fu;
-            scroll &= ~copy_mask;
-            scroll |= reg.scroll & copy_mask;
-            shift_x = reg.fine_x;
-        }
-    }
-    else if (focus_y == SCAN_LINES - 1) {
-        if (280 <= focus_x && focus_x <= 304) {
-            // vertical recovery
-            constexpr uint16_t copy_mask = 0x7be0u;
-            scroll &= ~copy_mask;
-            scroll |= reg.scroll & copy_mask;
-        }
-    }
+cycle_t cycle_following() {
+    return cycle_count;
 }
 
 }

@@ -71,13 +71,15 @@ enum RegSel {
     A, X, Y
 };
 
-void render_next_line(uint8_t *line_buff);
+void service();
 
 void reset();
 void stop();
 
 uint8_t bus_read(addr_t addr);
 void bus_write(addr_t addr, uint8_t data);
+
+cycle_t ppu_cycle_leading();
 
 }
 

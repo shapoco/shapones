@@ -44,8 +44,7 @@ public:
         gpio_set_function(PIN_DIN, GPIO_FUNC_SPI);
         
         // https://forums.raspberrypi.com/viewtopic.php?t=311664&start=25
-        // see also: ~/pico/pico-sdk/src/rp2_common/pico_stdlib/stdlib.c
-        hw_write_masked(&spi_get_hw(spi)->cr0, 1 << SPI_SSPCR0_SCR_LSB, SPI_SSPCR0_SCR_BITS);
+        //hw_write_masked(&spi_get_hw(spi)->cr0, 1 << SPI_SSPCR0_SCR_LSB, SPI_SSPCR0_SCR_BITS);
     }
 
     void init() {
@@ -69,7 +68,8 @@ public:
         }
 
         {
-            uint8_t data[] = { 0x05 };
+            //uint8_t data[] = { 0x05 }; // RGB565
+            uint8_t data[] = { 0x03 }; // RGB444
             write_command(0x3a, data, sizeof(data));
         }
         
@@ -135,8 +135,8 @@ public:
     }
 
     void clear(uint16_t color) {
-        uint16_t data[WIDTH];
-        for (int x = 0; x < WIDTH; x++) {
+        uint8_t data[WIDTH * 3 / 2];
+        for (int x = 0; x < WIDTH * 3 / 2; x++) {
             data[x] = color;
         }
         for (int y = 0; y < HEIGHT; y++) {
@@ -145,7 +145,7 @@ public:
         }
     }
 
-    void start_write_data(int x0, int y0, int w, int h, uint16_t *data) {
+    void start_write_data(int x0, int y0, int w, int h, uint8_t *data) {
         int x1 = x0 + w - 1;
         int y1 = y0 + h - 1;
         {
@@ -174,9 +174,9 @@ public:
             dma_channel_configure(dma_tx, &c,
                                   &spi_get_hw(spi1)->dr, // write address
                                   data, // read address
-                                  w * h * 2, // element count (each element is of size transfer_data_size)
+                                  w * h * 3 / 2, // element count (each element is of size transfer_data_size)
                                   false); // don't start yet
-        
+            
             gpio_put(PIN_DC, 0);
             gpio_put(PIN_CS, 0);
             uint8_t cmd = 0x2c;

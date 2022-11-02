@@ -5,7 +5,7 @@
 
 namespace nes::ppu {
 
-static constexpr int STARTUP_DELAY_CYCLES = 0;
+static constexpr cycle_t MAX_DELAY_CYCLES = 128;
 
 static constexpr int TILE_SIZE = 8;
 static constexpr int NUM_TILE_X = SCREEN_WIDTH / TILE_SIZE;
@@ -147,7 +147,9 @@ void reg_write(addr_t addr, uint8_t data);
 
 void oam_dma_write(addr_t offset, uint8_t data);
 
-void render_next_block(uint8_t *line_buff, int num_cycles);
+bool service(uint8_t *line_buff);
+
+cycle_t cycle_following();
 
 }
 

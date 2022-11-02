@@ -9,7 +9,7 @@
 
 #define NES_ALWAYS_INLINE __attribute__((always_inline)) static inline
 
-#if 0
+#if 1
 
 #define NES_PRINTF(fmt, ...) \
     do { \

@@ -6,6 +6,7 @@
 namespace nes {
 
 using addr_t = uint16_t;
+using cycle_t = unsigned int;
 
 static constexpr int SCREEN_WIDTH = 256;
 static constexpr int SCREEN_HEIGHT = 240;

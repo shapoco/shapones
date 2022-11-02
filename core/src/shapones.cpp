@@ -8,11 +8,15 @@ void reset() {
 }
 
 void render_next_line(uint8_t *line_buff) {
-    cpu::render_next_line(line_buff);
+    bool eol;
+    do {
+        cpu::service();
+        eol = ppu::service(line_buff);
+    } while (!eol);
 }
 
 void vsync(uint8_t *line_buff) {
-    while (ppu::current_focus_y() != 0) {
+    while (ppu::current_focus_y() != ppu::SCAN_LINES - 1) {
         render_next_line(line_buff);
     }
 }
