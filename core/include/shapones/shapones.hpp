@@ -36,7 +36,7 @@
 
 #endif
 
-#include "shapones/basic.hpp"
+#include "shapones/common.hpp"
 #include "shapones/input.hpp"
 #include "shapones/interrupt.hpp"
 #include "shapones/memory.hpp"
