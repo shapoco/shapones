@@ -753,7 +753,7 @@ void service() {
             }
         } // if
 
-        ppu_cycle_count += cycle * 2;
+        ppu_cycle_count += cycle * 3;
 
     } // while
 }

@@ -22,6 +22,22 @@ static const uint16_t COLOR_TABLE[] = {
     0xDD7, 0xBE7, 0xAE9, 0x9EB, 0xADE, 0xAAA, 0x000, 0x000, 
 };
 
+static constexpr int PIN_MONITOR = 1;
+
+static constexpr int PIN_A      = 2;
+static constexpr int PIN_B      = 3;
+static constexpr int PIN_START  = 4;
+static constexpr int PIN_SELECT = 6;
+static constexpr int PIN_RIGHT  = 7;
+static constexpr int PIN_DOWN   = 14;
+static constexpr int PIN_LEFT   = 26;
+static constexpr int PIN_UP     = 27;
+
+static const int input_pins[] = {
+    PIN_A, PIN_B, PIN_SELECT, PIN_START,
+    PIN_UP, PIN_DOWN, PIN_LEFT, PIN_RIGHT
+};
+
 uint8_t line_buff[nes::SCREEN_WIDTH];
 uint8_t frame_buff[240*240*3/2];
 
@@ -30,20 +46,27 @@ static volatile bool vsync_flag = false;
 static void lcd_driver_entry();
 
 int main() {
-    //vreg_set_voltage(VREG_VOLTAGE_1_30);
+    vreg_set_voltage(VREG_VOLTAGE_1_30);
     sleep_ms(100);
     stdio_init_all();
-    set_sys_clock_khz(250000, true);
+    //set_sys_clock_khz(250000, true);
     //set_sys_clock_khz(270000, true);
     //set_sys_clock_khz(275000, true);
-    //set_sys_clock_khz(280000, true);
+    set_sys_clock_khz(280000, true);
     //set_sys_clock_khz(290000, true);
     //set_sys_clock_khz(300000, true);
     setup_default_uart();
     
-    gpio_init(2);
-    gpio_set_dir(2, GPIO_OUT);
-    gpio_put(2, 0);
+    gpio_init(PIN_MONITOR);
+    gpio_set_dir(PIN_MONITOR, GPIO_OUT);
+    gpio_put(PIN_MONITOR, 0);
+    
+    for(int i = 0; i < 8; i++) {
+        int pin = input_pins[i];
+        gpio_init(pin);
+        gpio_set_dir(pin, GPIO_IN);
+        gpio_pull_up(pin);
+    }
     
     lcd.init();
     lcd.clear(0);
@@ -56,13 +79,21 @@ int main() {
     for(;;) {
         nes::cpu::service();
         
+        nes::input::InputStatus input_status;
+        input_status.raw = 0;
+        for(int i = 0; i < 8; i++) {
+            if ( ! gpio_get(input_pins[i])) {
+                input_status.raw |= (1 << i);
+            }
+        }
+        nes::input::set_raw(0, input_status);
+        
         if (vsync_flag) {
             vsync_flag = false;
             lcd.finish_write_data();
-            lcd.start_write_data(20, 0, 240, 240, frame_buff);
-            
+            lcd.start_write_data(25, 0, 240, 240, frame_buff);
             static int tmp = 0;
-            gpio_put(2, tmp);
+            gpio_put(PIN_MONITOR, tmp);
             tmp ^= 1;
         }
     }
