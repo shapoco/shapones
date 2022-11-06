@@ -43,6 +43,7 @@
 #include "shapones/cpu.hpp"
 #include "shapones/ppu.hpp"
 #include "shapones/dma.hpp"
+#include "shapones/apu.hpp"
 
 namespace nes {
 

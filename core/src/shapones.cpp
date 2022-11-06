@@ -5,6 +5,7 @@ namespace nes {
 void reset() {
     cpu::reset();
     ppu::reset();
+    apu::reset();
 }
 
 void render_next_line(uint8_t *line_buff) {

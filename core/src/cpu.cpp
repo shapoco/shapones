@@ -37,14 +37,17 @@ void bus_write(addr_t addr, uint8_t data) {
     else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
         ppu::reg_write(addr, data);
     }
-    else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + memory::WRAM_SIZE) {
-        memory::wram[addr - WRAM_MIRROR_BASE] = data;
+    else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_NOISE_REG3) {
+        apu::reg_write(addr, data);
     }
     else if (addr == OAM_DMA_REG) {
         dma::start(data);
     }
     else if (addr == INPUT_REG_0) {
         input::write_control(data);
+    }
+    else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + memory::WRAM_SIZE) {
+        memory::wram[addr - WRAM_MIRROR_BASE] = data;
     }
     else {
         //NES_PRINTF("*Warning: Invalid CPU bus write addr: 0x%04x\n", (int)addr);

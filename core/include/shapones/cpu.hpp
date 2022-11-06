@@ -5,6 +5,8 @@
 
 namespace nes::cpu {
 
+static constexpr int CLOCK_FREQUENCY = 1789773;
+
 static constexpr addr_t WRAM_BASE           = 0x0;
 static constexpr addr_t WRAM_MIRROR_BASE    = 0x800;
 static constexpr addr_t PPUREG_BASE         = 0x2000;

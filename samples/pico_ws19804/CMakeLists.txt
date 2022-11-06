@@ -27,6 +27,7 @@ target_sources(
     ${SHAPONES_PATH}/src/interrupt.cpp
     ${SHAPONES_PATH}/src/memory.cpp
     ${SHAPONES_PATH}/src/ppu.cpp
+    ${SHAPONES_PATH}/src/apu.cpp
     ${SHAPONES_PATH}/src/shapones.cpp
     ${SHAPONES_PATH}/src/utils_std.cpp
 )
@@ -36,5 +37,14 @@ target_include_directories(
     ${SHAPONES_PATH}/include
 )
 
-target_link_libraries(pico_nes_ws19804 PRIVATE pico_stdlib hardware_pio hardware_dma pico_multicore)
+target_link_libraries(
+    pico_nes_ws19804 PRIVATE
+    pico_stdlib
+    hardware_pio
+    hardware_pwm
+    hardware_dma
+    hardware_irq
+    pico_multicore
+)
+
 pico_add_extra_outputs(pico_nes_ws19804)
