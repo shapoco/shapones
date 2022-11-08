@@ -14,23 +14,27 @@ static constexpr uint32_t SYS_CLK_FREQ = 250 * MHZ;
 
 static constexpr int PIN_MONITOR = 1;
 
-static constexpr int PIN_A      = 2;
-static constexpr int PIN_B      = 3;
-static constexpr int PIN_START  = 4;
-static constexpr int PIN_SELECT = 6;
-static constexpr int PIN_RIGHT  = 7;
-static constexpr int PIN_DOWN   = 14;
-static constexpr int PIN_LEFT   = 26;
-static constexpr int PIN_UP     = 27;
+static constexpr int PIN_PAD_A      = 2;
+static constexpr int PIN_PAD_B      = 3;
+static constexpr int PIN_PAD_START  = 4;
+static constexpr int PIN_PAD_SELECT = 6;
+static constexpr int PIN_PAD_RIGHT  = 7;
+static constexpr int PIN_PAD_DOWN   = 14;
+static constexpr int PIN_PAD_LEFT   = 26;
+static constexpr int PIN_PAD_UP     = 27;
 
 static constexpr int PIN_SPEAKER = 28;
 static constexpr int SPK_LATENCY = 256;
 static constexpr int SPK_PWM_FREQ = 22050;
 
-static void fill_audio_buff(uint32_t *buff, int length);
+static void boot_nes();
+static void cpu_loop();
+static void ppu_loop();
+static void apu_dma_handler();
+static void apu_fill_buffer(PwmAudio::sample_t *buff);
 
 WS19804 lcd;
-PwmAudio speaker(PIN_SPEAKER, SPK_LATENCY, 8, (float)SYS_CLK_FREQ / SPK_PWM_FREQ, fill_audio_buff);
+PwmAudio speaker(PIN_SPEAKER, SPK_LATENCY, 8, (float)SYS_CLK_FREQ / SPK_PWM_FREQ, apu_dma_handler);
 
 static const uint16_t COLOR_TABLE[] = {
     0x555, 0x027, 0x019, 0x308, 0x406, 0x603, 0x500, 0x410, 
@@ -44,8 +48,8 @@ static const uint16_t COLOR_TABLE[] = {
 };
 
 static const int input_pins[] = {
-    PIN_A, PIN_B, PIN_SELECT, PIN_START,
-    PIN_UP, PIN_DOWN, PIN_LEFT, PIN_RIGHT
+    PIN_PAD_A, PIN_PAD_B, PIN_PAD_SELECT, PIN_PAD_START,
+    PIN_PAD_UP, PIN_PAD_DOWN, PIN_PAD_LEFT, PIN_PAD_RIGHT
 };
 
 uint8_t line_buff[nes::SCREEN_WIDTH];
@@ -53,8 +57,6 @@ uint8_t frame_buff[240*240*3/2];
 uint8_t spk_buff[SPK_LATENCY];
 
 static volatile bool vsync_flag = false;
-
-static void ppu_loop();
 
 int main() {
     vreg_set_voltage(VREG_VOLTAGE_1_30);
@@ -77,14 +79,26 @@ int main() {
     lcd.init();
     lcd.clear(0);
 
+    boot_nes();
+
+    return 0;
+}
+
+static void boot_nes() {
     nes::memory::map_ines(nes_rom);
     nes::reset();
     nes::apu::set_sampling_rate(SPK_PWM_FREQ);
 
+    apu_fill_buffer(speaker.get_buffer(0));
+    apu_fill_buffer(speaker.get_buffer(1));
     speaker.play();
     
     multicore_launch_core1(ppu_loop);
-    
+
+    cpu_loop();
+}
+
+static void cpu_loop() {
     for(;;) {
         nes::cpu::service();
         
@@ -106,8 +120,6 @@ int main() {
             tmp ^= 1;
         }
     }
-
-    return 0;
 }
 
 static void ppu_loop() {
@@ -134,9 +146,14 @@ static void ppu_loop() {
     }
 }
 
-static void fill_audio_buff(uint32_t *buff, int length) {
-    nes::apu::service(spk_buff, length);
-    for (int i = 0; i < length; i++) {
+static void apu_dma_handler() {
+    speaker.flip_buffer();
+    apu_fill_buffer(speaker.get_next_buffer());
+}
+
+static void apu_fill_buffer(PwmAudio::sample_t *buff) {
+    nes::apu::service(spk_buff, speaker.LATENCY);
+    for (int i = 0; i < speaker.LATENCY; i++) {
         buff[i] = spk_buff[i];
     }
 }

@@ -9,7 +9,7 @@
 #include "hardware/irq.h"
 #include "pico/stdlib.h"
 
-using PwmAudioCallback = std::function<void(uint32_t *buff, int length)>;
+using DmaFinishdedHandler = void(*)();
 
 class PwmAudio;
 static PwmAudio *inst;
@@ -28,20 +28,20 @@ public:
     const int SAMPLE_BITS;
     const float FREQUENCY;
     const int LATENCY;
-    PwmAudioCallback callback;
+    DmaFinishdedHandler dma_handler;
 
     sample_t *buff;
     int dma_ch;
     int playing_bank;
 
-    PwmAudio(int pin, int latency, int sample_bits, float freq_ratio, PwmAudioCallback callback) :
+    PwmAudio(int pin, int latency, int sample_bits, float freq_ratio, DmaFinishdedHandler dma_handler) :
         PIN(pin),
         SLICE_NUM(pwm_gpio_to_slice_num(pin)),
         SAMPLE_BITS(sample_bits),
         FREQUENCY(freq_ratio),
         LATENCY(latency),
         buff(new sample_t[latency]),
-        callback(callback)
+        dma_handler(dma_handler)
     {
         gpio_set_function(PIN, GPIO_FUNC_PWM);
 
@@ -61,11 +61,9 @@ public:
     void play() {
         dma_ch = dma_claim_unused_channel(true);
         dma_channel_set_irq0_enabled(dma_ch, true);
-        irq_set_exclusive_handler(DMA_IRQ_0, &PwmAudio::dma_finished_handler);
+        irq_set_exclusive_handler(DMA_IRQ_0, dma_handler);
         irq_set_enabled(DMA_IRQ_0, true);
 
-        fill_buffer(0);
-        fill_buffer(1);
         playing_bank = 0;
         start_dma();
     }
@@ -73,10 +71,6 @@ public:
     void stop() {
         dma_channel_unclaim(dma_ch);
         pwm_set_gpio_level(PIN, 1 << (SAMPLE_BITS-1));
-    }
-
-    void fill_buffer(int bank) {
-        callback(buff + (bank * LATENCY), LATENCY);
     }
 
     void start_dma() {
@@ -95,16 +89,20 @@ public:
         );
     }
 
-    void dma_finished() {
+    void flip_buffer() {
         int fill_bank = playing_bank;
         playing_bank = (playing_bank + 1) & 1;
         inst->start_dma();
         dma_hw->ints0 = (1u << dma_ch);
-        callback(buff + (fill_bank * LATENCY), LATENCY);
     }
 
-    static void dma_finished_handler() {
-        inst->dma_finished();
+    sample_t* get_buffer(int bank) {
+        return buff + (bank * LATENCY);
+    }
+
+    sample_t* get_next_buffer() {
+        int next_bank = (playing_bank + 1) & 1;
+        return get_buffer(next_bank);
     }
 };
 
