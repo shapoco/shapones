@@ -8,12 +8,14 @@ BIN_NAME=pico_nes_ws19804.uf2
 BIN=$(BUILD_DIR)/$(BIN_NAME)
 
 CORE_DIR=../../core
+FATFS_DIR=../fatfs/source
 
 SRC_LIST=\
 	$(wildcard $(SRC_DIR)/*.*) \
 	$(wildcard $(SRC_DIR)/../font/mono8x16/*.*) \
 	$(wildcard $(CORE_DIR)/src/*.*) \
-	$(wildcard $(CORE_DIR)/include/shapones/*.*) 
+	$(wildcard $(CORE_DIR)/include/shapones/*.*)  \
+	$(wildcard $(FATFS_DIR)/*.*) 
 
 all: $(BIN)
 

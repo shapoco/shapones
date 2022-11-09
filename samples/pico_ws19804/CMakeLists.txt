@@ -16,11 +16,13 @@ add_executable(pico_nes_ws19804)
 pico_generate_pio_header(pico_nes_ws19804 ${CMAKE_CURRENT_LIST_DIR}/ws19804.pio)
 
 set(SHAPONES_PATH ../../core)
+set(FATFS_PATH ../fatfs/source)
 
 target_sources(
     pico_nes_ws19804 PRIVATE 
     pico_nes_ws19804.cpp
     nes_rom.cpp
+    ws19804.cpp
     ${SHAPONES_PATH}/src/cpu.cpp
     ${SHAPONES_PATH}/src/dma.cpp
     ${SHAPONES_PATH}/src/input.cpp
@@ -30,13 +32,19 @@ target_sources(
     ${SHAPONES_PATH}/src/apu.cpp
     ${SHAPONES_PATH}/src/shapones.cpp
     ${SHAPONES_PATH}/src/utils_std.cpp
+    ${FATFS_PATH}/ff.c
+    ${FATFS_PATH}/ffsystem.c
+    ${FATFS_PATH}/ffunicode.c
+    ${FATFS_PATH}/mmc_pico_spi.c
     ../font/mono8x16/mono8x16.cpp
     ../font/mono8x16/mono8x16_bmp.cpp
 )
 
 target_include_directories(
     pico_nes_ws19804 PRIVATE
+    .
     ${SHAPONES_PATH}/include
+    ${FATFS_PATH}
     ../font/mono8x16
 )
 

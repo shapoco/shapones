@@ -3,5 +3,5 @@
 
 .wrap_target
     out pins, 1     side 0
-    nop             side 1
+    in pins, 1      side 1
 .wrap

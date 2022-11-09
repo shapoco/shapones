@@ -1,14 +1,23 @@
-#include "pico/stdlib.h"
-#include "pico/multicore.h"
-#include "pico/util/queue.h"
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
+#include "pico/stdlib.h"
+#include "pico/multicore.h"
+#include "pico/util/queue.h"
+
+#include <string.h>
 
 #include "ws19804.hpp"
+
 #include "pwm_audio.hpp"
+
 #include "shapones/shapones.hpp"
 #include "nes_rom.hpp"
+
+#include "mono8x16.hpp"
+
+#include "ff.h"
+#include "diskio.h"
 
 static constexpr uint32_t SYS_CLK_FREQ = 250 * MHZ;
 
@@ -27,13 +36,13 @@ static constexpr int PIN_SPEAKER = 28;
 static constexpr int SPK_LATENCY = 256;
 static constexpr int SPK_PWM_FREQ = 22050;
 
+static bool boot_menu();
 static void boot_nes();
 static void cpu_loop();
 static void ppu_loop();
 static void apu_dma_handler();
 static void apu_fill_buffer(PwmAudio::sample_t *buff);
 
-WS19804 lcd;
 PwmAudio speaker(PIN_SPEAKER, SPK_LATENCY, 8, (float)SYS_CLK_FREQ / SPK_PWM_FREQ, apu_dma_handler);
 
 static const uint16_t COLOR_TABLE[] = {
@@ -76,16 +85,200 @@ int main() {
         gpio_pull_up(pin);
     }
     
-    lcd.init();
-    lcd.clear(0);
+    ws19804::init(SYS_CLK_FREQ);
 
+    if ( ! boot_menu()) {
+        for(;;) sleep_ms(100);
+    }
     boot_nes();
 
     return 0;
 }
 
+static void draw_string(int x, int y, const char *str) {
+    mono8x16::draw_string_rgb444(
+        frame_buff, 240 * 3 / 2, 240, 240,
+        x, y, str, 0xfff);
+}
+
+extern uint8_t sd_resp[20];
+
+static void clear_frame_buff() {
+    for (int i = 0; i < 240 * 240 * 3 / 2; i++) {
+        frame_buff[i] = 0;
+    }
+}
+
+static void update_lcd() {
+    ws19804::start_write_data(25, 0, 240, 240, frame_buff);
+    ws19804::finish_write_data();
+}
+
+constexpr int MAX_FILES = 64;
+
+static int enum_files(FATFS *fs, char **fname_list, int *fsize_list) {
+    char tmp[16];
+    int y = 20;
+    constexpr int x_result = 120;
+
+    DSTATUS dsts;
+    FRESULT fres;
+
+    clear_frame_buff();
+
+    // Init FatFS
+    draw_string(0, y, "Init FatFS"); update_lcd();
+    dsts = disk_initialize(0);
+    if (dsts & STA_NOINIT) {
+        sprintf(tmp, "[NG] code=0x%x", (int)dsts);
+        draw_string(x_result, y, tmp); update_lcd();
+        return -1;
+    }
+    draw_string(x_result, y, "[OK]"); update_lcd();
+    y += 20;
+
+    // Mount
+    draw_string(0, y, "Disk Mount"); update_lcd();
+    fres = f_mount(fs, "", 0);
+    if (fres != FR_OK) {
+        sprintf(tmp, "[NG] code=0x%x", (int)fres);
+        draw_string(x_result, y, tmp); update_lcd();
+        return -1;
+    }
+    draw_string(x_result, y, "[OK]"); update_lcd();
+    y += 20;
+
+    // Enumerate File
+    draw_string(0, y, "File List"); update_lcd();
+
+    DIR dobj;
+    FILINFO finfo;    /* ファイル情報 */
+    fres = f_findfirst(&dobj, &finfo, "", "*.nes");
+    int num_files = 0;
+    while (fres == FR_OK && finfo.fname[0]) {
+        fname_list[num_files] = (char*)malloc(strlen(finfo.fname) + 1);
+        strcpy(fname_list[num_files], finfo.fname);
+        fsize_list[num_files] = finfo.fsize;
+        fres = f_findnext(&dobj, &finfo);
+        num_files++;
+    }
+    if (fres != FR_OK) {
+        sprintf(tmp, "[NG] code=0x%x", (int)fres);
+        draw_string(x_result, y, tmp); update_lcd();
+        return -1;
+    }
+    f_closedir(&dobj);
+    draw_string(x_result, y, "[OK]"); update_lcd();
+    y += 20;
+
+    return num_files;
+}
+
+static int wait_key() {
+    // wait all button released
+    int num_pushed;
+    do {
+        sleep_ms(10);
+        num_pushed = 0;
+        for (int i = 0; i < 8; i++) {
+            if ( ! gpio_get(input_pins[i])) {
+                num_pushed++;
+            }
+        }
+    } while(num_pushed != 0);
+
+    // wait any button pushed
+    for(;;) {
+        sleep_ms(10);
+        for (int i = 0; i < 8; i++) {
+            if ( ! gpio_get(input_pins[i])) {
+                return i;
+            }
+        }
+    }
+}
+
+static int rom_select(int num_files, char **file_list) {
+    int sel_index = 0;
+
+    for(;;) {
+        clear_frame_buff();
+        for(int i = 0; i < num_files; i++) {
+            draw_string(20, i * 20, file_list[i]);
+        }
+        draw_string(0, sel_index * 20, "=>");
+        update_lcd();
+
+        switch(wait_key()) {
+        case nes::input::BTN_UP:
+            sel_index = (sel_index + num_files - 1) % num_files;
+            break;
+        case nes::input::BTN_DOWN:
+            sel_index = (sel_index + 1) % num_files;
+            break;
+        case nes::input::BTN_A:
+        case nes::input::BTN_START:
+            return sel_index;
+        }
+    }
+}
+
+static bool load_nes(const char *fname, int size) {
+    FIL fil;
+    FRESULT fr;
+
+    clear_frame_buff();
+    draw_string(0, 0, "Loading...");
+    update_lcd();
+
+    fr = f_open(&fil, fname, FA_READ);
+    if (fr) {
+        draw_string(0, 20, "File open failed.");
+        update_lcd();
+        return false;
+    }
+
+    UINT sz;
+    uint8_t *ines = (uint8_t*)malloc(size);
+    fr = f_read(&fil, ines, size, &sz);
+    if (fr) {
+        draw_string(0, 20, "File read failed.");
+        update_lcd();
+        return false;
+    }
+
+    f_close(&fil);
+
+    nes::memory::map_ines(ines);
+    ws19804::set_speed(SYS_CLK_FREQ / 4);
+
+    return true;
+}
+
+static bool boot_menu() {
+    FATFS fs;
+    char *fname_list[MAX_FILES];
+    int fsize_list[MAX_FILES];
+    int num_files = enum_files(&fs, fname_list, fsize_list);
+    if (num_files < 0) {
+        return false;
+    }
+
+    int index = rom_select(num_files, fname_list);
+
+    if ( ! load_nes(fname_list[index], fsize_list[index])) {
+        return false;
+    }
+
+    for (int i = 0; i < num_files; i++) {
+        free(fname_list[i]);
+    }
+    
+    return true;
+}
+
 static void boot_nes() {
-    nes::memory::map_ines(nes_rom);
+    //nes::memory::map_ines(nes_rom);
     nes::reset();
     nes::apu::set_sampling_rate(SPK_PWM_FREQ);
 
@@ -113,8 +306,8 @@ static void cpu_loop() {
         
         if (vsync_flag) {
             vsync_flag = false;
-            lcd.finish_write_data();
-            lcd.start_write_data(25, 0, 240, 240, frame_buff);
+            ws19804::finish_write_data();
+            ws19804::start_write_data(25, 0, 240, 240, frame_buff);
             static int tmp = 0;
             gpio_put(PIN_MONITOR, tmp);
             tmp ^= 1;

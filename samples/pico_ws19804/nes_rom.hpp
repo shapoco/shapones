@@ -3,6 +3,6 @@
 
 #include "stdint.h"
 
-extern const uint8_t nes_rom[];
+//extern const uint8_t nes_rom[];
 
 #endif

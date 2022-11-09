@@ -5,6 +5,15 @@
 
 namespace nes::input {
 
+static constexpr int BTN_A      = 0;
+static constexpr int BTN_B      = 1;
+static constexpr int BTN_SELECT = 2;
+static constexpr int BTN_START  = 3;
+static constexpr int BTN_UP     = 4;
+static constexpr int BTN_DOWN   = 5;
+static constexpr int BTN_LEFT   = 6;
+static constexpr int BTN_RIGHT  = 7;
+
 union InputStatus {
     uint8_t raw;
     struct {
