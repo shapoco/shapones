@@ -21,7 +21,6 @@ set(FATFS_PATH ../fatfs/source)
 target_sources(
     pico_nes_ws19804 PRIVATE 
     pico_nes_ws19804.cpp
-    nes_rom.cpp
     ws19804.cpp
     ${SHAPONES_PATH}/src/cpu.cpp
     ${SHAPONES_PATH}/src/dma.cpp
