@@ -11,6 +11,7 @@ CORE_DIR=../../core
 
 SRC_LIST=\
 	$(wildcard $(SRC_DIR)/*.*) \
+	$(wildcard $(SRC_DIR)/../font/mono8x16/*.*) \
 	$(wildcard $(CORE_DIR)/src/*.*) \
 	$(wildcard $(CORE_DIR)/include/shapones/*.*) 
 

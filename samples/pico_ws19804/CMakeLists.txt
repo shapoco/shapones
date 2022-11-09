@@ -30,11 +30,14 @@ target_sources(
     ${SHAPONES_PATH}/src/apu.cpp
     ${SHAPONES_PATH}/src/shapones.cpp
     ${SHAPONES_PATH}/src/utils_std.cpp
+    ../font/mono8x16/mono8x16.cpp
+    ../font/mono8x16/mono8x16_bmp.cpp
 )
 
 target_include_directories(
     pico_nes_ws19804 PRIVATE
     ${SHAPONES_PATH}/include
+    ../font/mono8x16
 )
 
 target_link_libraries(
