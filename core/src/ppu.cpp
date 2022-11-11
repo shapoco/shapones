@@ -175,7 +175,7 @@ void oam_dma_write(addr_t offset, uint8_t data) {
 static uint8_t bus_read(addr_t addr) {
     if (CHRROM_BASE <= addr && addr < CHRROM_BASE + CHRROM_SIZE) {
         bus_read_data_delayed = bus_read_data_latest;
-        bus_read_data_latest = memory::chrrom[addr - CHRROM_BASE];
+        bus_read_data_latest = memory::chrrom_read(addr - CHRROM_BASE);
     }
     else if (VRAM_BASE <= addr && addr < VRAM_BASE + memory::VRAM_SIZE) {
         bus_read_data_delayed = bus_read_data_latest;
@@ -364,8 +364,8 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
                     chrrom_index1 += 0x800;
                     chrrom_index0 += 0x800;
                 }
-                uint16_t chr0 = memory::chrrom_reordered0[chrrom_index0];
-                uint16_t chr1 = memory::chrrom_reordered0[chrrom_index1];
+                uint16_t chr0 = memory::chrrom_read_w(chrrom_index0, false);
+                uint16_t chr1 = memory::chrrom_read_w(chrrom_index1, false);
 
                 uint32_t chr = (uint32_t)chr0 | ((uint32_t)chr1 << 16);
                 
@@ -523,29 +523,7 @@ static void enum_visible_sprites() {
             // read CHRROM
             int chrrom_index = tile_index * 8 + (src_y & 0x7);
             uint16_t chr;
-            if (s.attr & OAM_ATTR_INVERT_H) {
-                chr = memory::chrrom_reordered1[chrrom_index];
-            }
-            else {
-                chr = memory::chrrom_reordered0[chrrom_index];
-            }
-
-            //if (s.attr & OAM_ATTR_INVERT_H) {
-            //    // horizontal inversion
-            //    uint32_t a = chr;
-            //    uint32_t b = a << 16;
-            //    a |= b;
-            //    b = a & 0xf0f0f0f0;
-            //    b >>= 8;
-            //    a &= 0x0f0f0f0f;
-            //    a |= b;
-            //    b = a & 0xcccccc;
-            //    b >>= 4;
-            //    a &= 0x333333;
-            //    a |= b;
-            //    a >>= 2;
-            //    chr = a & 0xffff;
-            //}
+            chr = memory::chrrom_read_w(chrrom_index, s.attr & OAM_ATTR_INVERT_H);
 
             // store sprite information
             SpriteLine sl;

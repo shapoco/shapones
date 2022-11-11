@@ -50,7 +50,7 @@ void bus_write(addr_t addr, uint8_t data) {
         memory::wram[addr - WRAM_MIRROR_BASE] = data;
     }
     else {
-        //NES_PRINTF("*Warning: Invalid CPU bus write addr: 0x%04x\n", (int)addr);
+        memory::ext_write(addr, data);
     }
 }
 
