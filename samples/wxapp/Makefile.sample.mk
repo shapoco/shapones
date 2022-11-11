@@ -32,6 +32,7 @@ $(BIN): $(SRC_LIST)
 		-I. \
 		`wx-config --cflags` \
 		`wx-config --libs` \
+		-lpulse -lpulse-simple \
 		-o $(BIN)
 
 run: $(BIN)

@@ -54,8 +54,6 @@ void reset() {
     noise.lfsr = 1;
 
     quarter_frame_phase = 0;
-    pulse_timer_step = 0;
-    qframe_phase_step = 0;
     quarter_frame_count = 0;
     frame_step = false;
     half_frame_step = false;

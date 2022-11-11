@@ -3,11 +3,12 @@
 #include "shapones/cpu.hpp"
 #include "shapones/utils_std.hpp"
 #include "nes_screen.hpp"
+#include "nes_audio.hpp"
 
 enum {
     ID_FCFRAME = wxID_HIGHEST,
     ID_FCSCREEN,
-    ID_TIMER,
+    ID_TIMER
 };
 
 class FcFrame: public wxFrame {
@@ -15,6 +16,7 @@ public:
     FcFrame(const wxString &title);
     void OnMenuQuit(wxCommandEvent &event);
     void OnTimer(wxTimerEvent &event);
+    void OnClose(wxCloseEvent &event);
     
 private:
     wxMenuBar* menubar;
@@ -40,11 +42,14 @@ FcFrame::FcFrame(const wxString &title) :
     SetTitle(title);
     SetClientSize(wxSize(nes::SCREEN_WIDTH * 2, nes::SCREEN_HEIGHT * 2));
     CenterOnScreen();
+
+    nes_audio::play();
 }
 
 BEGIN_EVENT_TABLE(FcFrame, wxFrame)
     EVT_MENU(wxID_EXIT, FcFrame::OnMenuQuit)
     EVT_TIMER(ID_TIMER, FcFrame::OnTimer)
+    EVT_CLOSE(FcFrame::OnClose)
 END_EVENT_TABLE()
 
 void FcFrame::OnMenuQuit(wxCommandEvent &event) {
@@ -53,6 +58,11 @@ void FcFrame::OnMenuQuit(wxCommandEvent &event) {
 
 void FcFrame::OnTimer(wxTimerEvent &event) {
     screen->Render();
+}
+
+void FcFrame::OnClose(wxCloseEvent &event) {
+    nes_audio::stop();
+    event.Skip();
 }
 
 class FcApp: public wxApp {
