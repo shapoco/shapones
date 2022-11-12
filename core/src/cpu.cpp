@@ -37,7 +37,7 @@ void bus_write(addr_t addr, uint8_t data) {
     else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
         ppu::reg_write(addr, data);
     }
-    else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_NOISE_REG3) {
+    else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_NOISE_REG3 || addr == apu::REG_STATUS) {
         apu::reg_write(addr, data);
     }
     else if (addr == OAM_DMA_REG) {

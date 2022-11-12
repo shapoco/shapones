@@ -5,8 +5,6 @@
 
 namespace nes::apu {
 
-static constexpr int STEP_COEFF_PREC = 8;
-static constexpr int PULSE_PHASE_PREC = 24;
 static constexpr int TIMER_PREC = 16;
 
 static constexpr addr_t REG_PULSE1_REG0     = 0x4000;
@@ -23,6 +21,7 @@ static constexpr addr_t REG_TRIANGLE_REG3   = 0x400b;
 static constexpr addr_t REG_NOISE_REG0      = 0x400c;
 static constexpr addr_t REG_NOISE_REG2      = 0x400e;
 static constexpr addr_t REG_NOISE_REG3      = 0x400f;
+static constexpr addr_t REG_STATUS          = 0x4015;
 
 static constexpr int ENV_FLAG_START     = 0x1;
 static constexpr int ENV_FLAG_CONSTANT  = 0x2;
@@ -55,7 +54,6 @@ struct LinearCounter {
 };
 
 struct PulseState {
-    uint8_t reg2;
     uint8_t waveform;
     uint32_t timer;
     uint32_t timer_period;
@@ -66,7 +64,6 @@ struct PulseState {
 };
 
 struct TriangleState {
-    uint8_t reg2;
     uint32_t timer;
     uint32_t timer_period;
     uint32_t phase;
@@ -78,6 +75,20 @@ struct NoiseState {
     uint16_t lfsr;
     int length;
     Envelope envelope;
+};
+
+union Status {
+    uint8_t raw;
+    struct {
+        uint8_t pulse0_enable : 1;
+        uint8_t pulse1_enable : 1;
+        uint8_t triangle_enable : 1;
+        uint8_t noise_enable : 1;
+        uint8_t dmc_enable : 1;
+        uint8_t reserved : 1;
+        uint8_t frame_interrupt : 1;
+        uint8_t dmc_interrupt : 1;
+    };
 };
 
 void reset();
