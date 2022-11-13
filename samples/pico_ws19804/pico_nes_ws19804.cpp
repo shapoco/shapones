@@ -37,6 +37,9 @@ static constexpr int PIN_SPEAKER = 28;
 static constexpr int SPK_LATENCY = 256;
 static constexpr int SPK_PWM_FREQ = 22050;
 
+static constexpr int LINE_FIFO_DEPTH = 8;
+static constexpr int LINE_FIFO_STRIDE = nes::SCREEN_WIDTH + 1;
+
 static bool boot_menu();
 static void boot_nes();
 static void cpu_loop();
@@ -62,11 +65,11 @@ static const int input_pins[] = {
     PIN_PAD_UP, PIN_PAD_DOWN, PIN_PAD_LEFT, PIN_PAD_RIGHT
 };
 
-uint8_t line_buff[nes::SCREEN_WIDTH];
-uint8_t frame_buff[240*240*3/2];
-uint8_t spk_buff[SPK_LATENCY];
-
-static volatile bool vsync_flag = false;
+static uint8_t line_buff[LINE_FIFO_DEPTH * LINE_FIFO_STRIDE];
+static volatile int line_fifo_wptr = 0;
+static volatile int line_fifo_rptr = 0;
+static uint8_t frame_buff[240*240*3/2];
+static uint8_t spk_buff[SPK_LATENCY];
 
 int main() {
     vreg_set_voltage(VREG_VOLTAGE_1_30);
@@ -307,55 +310,57 @@ static void cpu_loop() {
             }
         }
         nes::input::set_raw(0, input_status);
-        
-        if (vsync_flag) {
-            vsync_flag = false;
 
-            // fps measurement
-            auto t_now = get_absolute_time();
-            if (frame_count < 60-1) {
-                frame_count++;
+        int fifo_rptr = line_fifo_rptr;
+        if (line_fifo_wptr != fifo_rptr) {
+            // convert color number to RGB444
+            int y = line_buff[fifo_rptr * LINE_FIFO_STRIDE];
+            uint8_t *rd_ptr = &line_buff[fifo_rptr * LINE_FIFO_STRIDE + 9];
+            uint8_t *wr_ptr = frame_buff + (y * (240 * 3 / 2));
+            for (int x = 0; x < 240; x+=2) {
+                uint16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+                uint16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+                *(wr_ptr++) = (c0 >> 4) & 0xff;
+                *(wr_ptr++) = ((c0 << 4) & 0xf0) | (c1 >> 8) & 0xf;
+                *(wr_ptr++) = c1 & 0xff;
             }
-            else {
-                auto t_diff = absolute_time_diff_us(t_last_frame, t_now);
-                float fps = (60.0f * 1000000) / t_diff;
-                sprintf(fps_str, "%5.2ffps", fps);
-                t_last_frame = t_now;
-                frame_count = 0;
-            }
+            line_fifo_rptr = (fifo_rptr + 1) % LINE_FIFO_DEPTH;
+            
+            if (y == nes::SCREEN_HEIGHT-1) {
+                // fps measurement
+                auto t_now = get_absolute_time();
+                if (frame_count < 60-1) {
+                    frame_count++;
+                }
+                else {
+                    auto t_diff = absolute_time_diff_us(t_last_frame, t_now);
+                    float fps = (60.0f * 1000000) / t_diff;
+                    sprintf(fps_str, "%5.2ffps", fps);
+                    t_last_frame = t_now;
+                    frame_count = 0;
+                }
 
-            // DMA transfer
-            ws19804::finish_write_data();
-            draw_string(0, 0, fps_str);
-            ws19804::start_write_data(25, 0, 240, 240, frame_buff);
-            static int tmp = 0;
-            gpio_put(PIN_MONITOR, tmp);
-            tmp ^= 1;
+                // DMA transfer
+                ws19804::finish_write_data();
+                draw_string(0, 0, fps_str);
+                ws19804::start_write_data(25, 0, 240, 240, frame_buff);
+                static int tmp = 0;
+                gpio_put(PIN_MONITOR, tmp);
+                tmp ^= 1;
+            }
         }
     }
 }
 
 static void ppu_loop() {
     for(;;) {
-        bool eol = nes::ppu::service(line_buff);
-        if (eol) {
-            int y = nes::ppu::current_focus_y();
-            if (y < nes::SCREEN_HEIGHT) {
-                uint8_t *rd_ptr = line_buff + 8;
-                uint8_t *wr_ptr = frame_buff + (y * (240 * 3 / 2));
-                for (int x = 0; x < 240; x+=2) {
-                    uint16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
-                    uint16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
-                    *(wr_ptr++) = (c0 >> 4) & 0xff;
-                    *(wr_ptr++) = ((c0 << 4) & 0xf0) | (c1 >> 8) & 0xf;
-                    *(wr_ptr++) = c1 & 0xff;
-                }
-            }
-            else if (y == nes::SCREEN_HEIGHT) {
-                vsync_flag = true;
-            }
+        int wptr = line_fifo_wptr;
+        bool eol = nes::ppu::service(&line_buff[wptr * LINE_FIFO_STRIDE + 1]);
+        int y = nes::ppu::current_focus_y();
+        if (eol && y < nes::SCREEN_HEIGHT) {
+            line_buff[wptr * LINE_FIFO_STRIDE] = y;
+            line_fifo_wptr = (wptr + 1) % LINE_FIFO_DEPTH;
         }
-        
     }
 }
 
