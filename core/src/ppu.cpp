@@ -3,12 +3,14 @@
 namespace nes::ppu {
 
 static Registers reg;
+//static RenderContext ctx;
 
 static volatile cycle_t cycle_count;
 
 static int focus_x;
 static int focus_y;
 
+//static ScrollRegister scroll;
 static uint16_t scroll;
 static int fine_x;
 
@@ -17,11 +19,13 @@ static uint8_t bus_read_data_delayed = 0;
 
 static bool scroll_ppuaddr_high_stored = false;
 
-static uint8_t sprite_buff[SCREEN_WIDTH + TILE_SIZE];
- 
-static uint8_t palette_file[PALETTE_FILE_SIZE];
+//static uint8_t line_buff[SCREEN_WIDTH];
+
+static Palette palette_file[PALETTE_NUM_BANK];
 
 static OamEntry oam[MAX_SPRITE_COUNT];
+static SpriteLine sprite_lines[MAX_VISIBLE_SPRITES];
+static int num_visible_sprites;
 
 static uint8_t bus_read(addr_t addr);
 static void bus_write(addr_t addr, uint8_t data);
@@ -32,7 +36,7 @@ static void palette_write(addr_t addr, uint8_t data);
 
 static void render_bg(uint8_t *line_buff, int x0, int x1);
 static void enum_visible_sprites();
-static void render_sprites();
+static void render_sprite(uint8_t *line_buff, int x0, int x1);
 
 void reset() {
     // https://www.nesdev.org/wiki/PPU_power_up_state
@@ -48,6 +52,8 @@ void reset() {
 
     focus_x = 0;
     focus_y = 0;
+
+    num_visible_sprites = 0;
 
     scroll_ppuaddr_high_stored = false;
 }
@@ -226,11 +232,11 @@ static void oam_write(addr_t addr, uint8_t data) {
 static uint8_t palette_read(addr_t addr) {
     addr %= PALETTE_FILE_SIZE;
     switch (addr) {
-    case 0x10: return palette_file[0];
-    case 0x14: return palette_file[4];
-    case 0x18: return palette_file[8];
-    case 0x1c: return palette_file[12];
-    default: return palette_file[addr];
+    case 0x10: return palette_file[0].color[0];
+    case 0x14: return palette_file[1].color[0];
+    case 0x18: return palette_file[2].color[0];
+    case 0x1c: return palette_file[3].color[0];
+    default: return palette_file[addr / 4].color[addr & 0x3];
     }
 }
 
@@ -239,11 +245,11 @@ static void palette_write(addr_t addr, uint8_t data) {
     data &= 0x3f;
 
     switch (addr) {
-    case 0x10: palette_file[0] = data; break;
-    case 0x14: palette_file[4] = data; break;
-    case 0x18: palette_file[8] = data; break;
-    case 0x1c: palette_file[12] = data; break;
-    default: palette_file[addr] = data; break;
+    case 0x10: palette_file[0].color[0] = data; break;
+    case 0x14: palette_file[1].color[0] = data; break;
+    case 0x18: palette_file[2].color[0] = data; break;
+    case 0x1c: palette_file[3].color[0] = data; break;
+    default: palette_file[addr / 4].color[addr & 0x3] = data; break;
     }
 }
 
@@ -288,14 +294,18 @@ bool service(uint8_t *line_buff) {
 
         int next_focus_x = focus_x + step_count;
 
-        // render sprites
-        if (reg.mask.sprite_enable && focus_x == 0) {
-            render_sprites();
-        }
-
         // render background
         render_bg(line_buff, focus_x, next_focus_x);
 
+        if (reg.mask.sprite_enable && focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) {
+            if (focus_x == 0) {
+                // enumerate visible sprites in current line
+                enum_visible_sprites();
+            }
+            // render sprite
+            render_sprite(line_buff, focus_x, next_focus_x);
+        }
+        
         // step focus
         focus_x = next_focus_x;
         if (focus_x >= LINE_CYCLES) {
@@ -313,92 +323,12 @@ bool service(uint8_t *line_buff) {
             (focus_x == SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) ||
             (focus_x == 0 && focus_y >= SCREEN_HEIGHT);
         if (eol) {
+            //NES_PRINTF("EOL y=%d\n", focus_y);
             break;
         }
     }
 
     return eol;
-}
-
-static void render_sprites() {
-    // init sprite buff
-    {
-        uint32_t *sb = (uint32_t*)sprite_buff;
-        int n = SCREEN_WIDTH / sizeof(uint32_t);
-        while (n--) *(sb++) = 0;
-    }
-
-    int num_sprites = 0;
-    uint8_t h = reg.control.sprite_size ? TILE_SIZE * 2 : TILE_SIZE;
-    for (int i = 0; i < MAX_SPRITE_COUNT; i++) {
-        auto s = oam[i];
-
-        // vertical hit test
-        if (s.y + SPRITE_Y_OFFSET <= focus_y && focus_y < s.y + h + SPRITE_Y_OFFSET) {
-            int src_y = focus_y - (s.y + SPRITE_Y_OFFSET);
-            
-            if (s.attr & OAM_ATTR_INVERT_V) {
-                // vertical inversion
-                if (reg.control.sprite_size) {
-                    src_y ^= 0xf;
-                }
-                else {
-                    src_y ^= 0x7;
-                }
-            }
-            
-            // tile index calculation
-            int tile_index;
-            if (reg.control.sprite_size) {
-                // 8x16 sprite
-                if (src_y < 8) {
-                    tile_index = s.tile & 0xfe;
-                }
-                else {
-                    tile_index = s.tile | 0x01;
-                }
-            
-                if (s.tile & 0x1) {
-                    tile_index += 0x1000 / 16;
-                }
-            }
-            else {
-                // 8x8 sprite
-                tile_index = s.tile;
-                if (reg.control.sprite_name_sel) {
-                    tile_index += 0x1000 / 16;
-                }
-            }
-            
-            // read CHRROM
-            int chrrom_index = tile_index * 8 + (src_y & 0x7);
-            uint16_t chr = memory::chrrom_read_w(chrrom_index, s.attr & OAM_ATTR_INVERT_H);
-
-            uint8_t palette_offset = (4 + (s.attr & OAM_ATTR_PALETTE)) << 2;
-
-            if (i == 0) {
-                palette_offset |= SPRITE_BUFF_FLAG_ZERO;
-            }
-
-            if ( ! (s.attr & OAM_ATTR_PRIORITY)) {
-                palette_offset |= SPRITE_BUFF_FLAG_FORE;
-            }
-
-            uint8_t *ptr = sprite_buff + s.x;
-            for (int i = 0; i < TILE_SIZE; i++) {
-                uint8_t p = (chr & 0x3);
-                if (p != 0 && ptr[i] == 0) {
-                    ptr[i] = palette_offset | p;
-                }
-                chr >>= 2;
-            }
-
-            num_sprites++;
-            if (num_sprites >= MAX_VISIBLE_SPRITES) {
-                break;
-            }
-        }
-    }
 }
 
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
@@ -407,6 +337,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
     while (x0_block < x1_block) {
         // determine step count
         int x0, x1;
+
         x0 = x0_block;
         if (visible_area && reg.mask.bg_enable) {
             x1 = x0 + (BLOCK_SIZE - ((scroll & 0x1) * TILE_SIZE + fine_x));
@@ -449,9 +380,9 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
                     (scroll & 0x2);
 
                 // read attr table
-                uint8_t bg_offset = memory::vram_read(attr_index);
-                bg_offset = (bg_offset >> attr_shift_size) & 0x3;
-                bg_offset <<= 2;
+                uint8_t attr = memory::vram_read(attr_index);
+                attr = (attr >> attr_shift_size) & 0x3;
+                Palette palette = palette_file[attr];
 
                 // adjust CHR bit pos
                 int chr_shift_size =
@@ -460,33 +391,23 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
                 chr >>= chr_shift_size;
 
                 // render BG block
+                uint8_t bg_color = palette_file[0].color[0];
                 for (int x = x0; x < x1; x++) {
-                    uint32_t bg = chr & 0x3;
-                    uint8_t sp = sprite_buff[x];
+                    uint32_t palette_index = chr & 0x3;
                     chr >>= 2;
-                    if (sp & SPRITE_BUFF_FLAG_FORE) {
-                        // foreground sprite
-                        line_buff[x] = palette_file[sp & 0x1f];
-                    }
-                    else if (bg) {
-                        // background
-                        line_buff[x] = palette_file[bg_offset | bg];
+                    if (palette_index == 0) {
+                        line_buff[x] = bg_color;
                     }
                     else {
-                        // backside sprite
-                        line_buff[x] = palette_file[sp & 0x1f];
-                    }
-                    
-                    // sprite0 hit test
-                    if (bg && (sp & SPRITE_BUFF_FLAG_ZERO)) {
-                        reg.status.sprite0_hit = 1;
+                        line_buff[x] = palette.color[palette_index] | OPAQUE_FLAG;
                     }
                 }
             }
             else {
                 // blank background
+                uint8_t bg_color = palette_file[0].color[0];
                 for (int x = x0; x < x1; x++) {
-                    line_buff[x] = palette_file[sprite_buff[x] & 0x1f];
+                    line_buff[x] = bg_color;
                 }
             }
         }
@@ -554,6 +475,94 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
 
         x0_block = x1;
     } // while
+}
+
+static void enum_visible_sprites() {
+    num_visible_sprites = 0;
+    uint8_t h = reg.control.sprite_size ? 16 : 8;
+    for (int i = 0; i < MAX_SPRITE_COUNT; i++) {
+        auto s = oam[i];
+
+        // vertical hit test
+        if (s.y + SPRITE_Y_OFFSET <= focus_y && focus_y < s.y + h + SPRITE_Y_OFFSET) {
+            int src_y = focus_y - (s.y + SPRITE_Y_OFFSET);
+            
+            if (s.attr & OAM_ATTR_INVERT_V) {
+                // vertical inversion
+                if (reg.control.sprite_size) {
+                    src_y ^= 0xf;
+                }
+                else {
+                    src_y ^= 0x7;
+                }
+            }
+            
+            // tile index calculation
+            int tile_index;
+            if (reg.control.sprite_size) {
+                // 8x16 sprite
+                if (src_y < 8) {
+                    tile_index = s.tile & 0xfe;
+                }
+                else {
+                    tile_index = s.tile | 0x01;
+                }
+            
+                if (s.tile & 0x1) {
+                    tile_index += 0x1000 / 16;
+                }
+            }
+            else {
+                // 8x8 sprite
+                tile_index = s.tile;
+                if (reg.control.sprite_name_sel) {
+                    tile_index += 0x1000 / 16;
+                }
+            }
+            
+            // read CHRROM
+            int chrrom_index = tile_index * 8 + (src_y & 0x7);
+            uint16_t chr;
+            chr = memory::chrrom_read_w(chrrom_index, s.attr & OAM_ATTR_INVERT_H);
+
+            // store sprite information
+            SpriteLine sl;
+            sl.chr = chr;
+            sl.x = s.x;
+            sl.palette = palette_file[4 + (s.attr & OAM_ATTR_PALETTE)];
+            sl.attr = 0;
+            if (s.attr & OAM_ATTR_PRIORITY) sl.attr |= SL_ATTR_BEHIND;
+            if (i == 0) sl.attr |= SL_ATTR_ZERO;
+            sprite_lines[num_visible_sprites++] = sl;
+
+            if (num_visible_sprites >= MAX_VISIBLE_SPRITES) {
+                break;
+            }
+        }
+    }
+}
+
+static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block) {
+    // sprite height
+    int h = reg.control.sprite_size ? 16 : 8;
+    for (int i = 0; i < num_visible_sprites; i++) {
+        auto sl = sprite_lines[i];
+        int x0 = x0_block > sl.x ? x0_block : sl.x;
+        int x1 = x1_block < sl.x + TILE_SIZE ? x1_block : sl.x + TILE_SIZE;
+        uint16_t chr = sl.chr >> (2 * (x0 - sl.x));
+        for (int x = x0; x < x1; x++) {
+            uint16_t palette_index = chr & 0x3;
+            chr >>= 2;
+            bool sprite_opaque = (palette_index != 0);
+            bool bg_opaque = (line_buff[x] & OPAQUE_FLAG) != 0;
+            if (sprite_opaque && (!bg_opaque || !(sl.attr & SL_ATTR_BEHIND))) {
+                line_buff[x] = sl.palette.color[palette_index];
+            }
+            if ((sl.attr & SL_ATTR_ZERO) && sprite_opaque && bg_opaque) {
+                reg.status.sprite0_hit = 1;
+            }
+        }
+    }
 }
 
 cycle_t cycle_following() {
