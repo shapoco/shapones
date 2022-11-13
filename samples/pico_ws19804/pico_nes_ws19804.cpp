@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "pico/util/queue.h"
+#include "pico/time.h"
 
 #include <string.h>
 
@@ -292,6 +293,9 @@ static void boot_nes() {
 }
 
 static void cpu_loop() {
+    auto t_last_frame = get_absolute_time();
+    int frame_count = 0;
+    char fps_str[16];
     for(;;) {
         nes::cpu::service();
         
@@ -306,7 +310,23 @@ static void cpu_loop() {
         
         if (vsync_flag) {
             vsync_flag = false;
+
+            // fps measurement
+            auto t_now = get_absolute_time();
+            if (frame_count < 60-1) {
+                frame_count++;
+            }
+            else {
+                auto t_diff = absolute_time_diff_us(t_last_frame, t_now);
+                float fps = (60.0f * 1000000) / t_diff;
+                sprintf(fps_str, "%5.2ffps", fps);
+                t_last_frame = t_now;
+                frame_count = 0;
+            }
+
+            // DMA transfer
             ws19804::finish_write_data();
+            draw_string(0, 0, fps_str);
             ws19804::start_write_data(25, 0, 240, 240, frame_buff);
             static int tmp = 0;
             gpio_put(PIN_MONITOR, tmp);
