@@ -27,7 +27,8 @@ static constexpr int PALETTE_NUM_BANK = 8;
 static constexpr int PALETTE_FILE_SIZE = PALETTE_SIZE * PALETTE_NUM_BANK;
 static constexpr int PALETTE_FILE_SIZE_WITH_MIRROR = 0x100;
 
-static constexpr uint8_t OPAQUE_FLAG = 0x80;
+static constexpr uint8_t SPRITE_BUFF_FLAG_ZERO = 0x80;
+static constexpr uint8_t SPRITE_BUFF_FLAG_FORE = 0x40;
 
 static constexpr addr_t CHRROM_BASE = 0x0000;
 static constexpr addr_t CHRROM_SIZE = 0x2000;
@@ -112,26 +113,11 @@ static constexpr uint8_t OAM_ATTR_PRIORITY = 0x20;
 static constexpr uint8_t OAM_ATTR_INVERT_H = 0x40;
 static constexpr uint8_t OAM_ATTR_INVERT_V = 0x80;
 
-union Palette {
-    uint32_t packed;
-    uint8_t color[4];
-};
-
 struct OamEntry {
     uint8_t y;
     uint8_t tile;
     uint8_t attr;
     uint8_t x;
-};
-
-static constexpr uint8_t SL_ATTR_BEHIND = 0x1;
-static constexpr uint8_t SL_ATTR_ZERO   = 0x2;
-
-struct SpriteLine {
-    uint8_t x;
-    uint8_t attr;
-    uint16_t chr;
-    Palette palette;
 };
 
 static constexpr int FOCUS_HBLANK = 1;
