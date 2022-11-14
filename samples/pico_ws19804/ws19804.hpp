@@ -2,6 +2,11 @@
 #define WS19804_HPP
 
 #include "stdint.h"
+#include "pico/stdlib.h"
+#include "hardware/pio.h"
+#include "hardware/gpio.h"
+#include "hardware/clocks.h"
+#include "hardware/dma.h"
 
 namespace ws19804 {
 
@@ -20,18 +25,31 @@ enum direction_t {
     EMPTY, TX, RX
 };
 
+// setup GPIO, PIO, LCD
 void init(int sys_clk_hz);
-void setup_pio(direction_t new_dir, int new_speed);
-void set_direction(direction_t new_dir);
-void set_speed(int new_speed);
 
+// set SPI clock frequency
+void set_spi_speed(int new_speed);
+
+// clear display
 void clear(uint16_t color);
 
+// start DMA
 void start_write_data(int x0, int y0, int w, int h, uint8_t *data);
+
+// wait DMA to finish
 void finish_write_data();
+
+// write LCD command
 void write_command(uint8_t cmd, const uint8_t *data, int len);
+
+// write LCD command
 void write_command(uint8_t cmd);
+
+// SPI write
 void write_blocking(const uint8_t *data, int len);
+
+// SPI read
 void read_blocking(uint8_t tx_repeat, uint8_t *buff, int len);
 
 }

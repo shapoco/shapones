@@ -20,8 +20,10 @@ set(FATFS_PATH ../fatfs/source)
 
 target_sources(
     pico_nes_ws19804 PRIVATE 
-    pico_nes_ws19804.cpp
+    common.cpp
     ws19804.cpp
+    pico_nes_ws19804.cpp
+    boot_menu.cpp
     ${SHAPONES_PATH}/src/cpu.cpp
     ${SHAPONES_PATH}/src/dma.cpp
     ${SHAPONES_PATH}/src/input.cpp

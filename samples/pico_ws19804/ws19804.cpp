@@ -1,15 +1,7 @@
-#include "stdint.h"
-#include "pico/stdlib.h"
-#include "hardware/pio.h"
-#include "hardware/gpio.h"
-#include "hardware/clocks.h"
-#include "hardware/dma.h"
 
 #include "ws19804.hpp"
 #include "ws19804_c.h"
 #include "ws19804.pio.h"
-
-#include <algorithm>
 
 namespace ws19804 {
 
@@ -22,9 +14,20 @@ static uint spi_sm;
 static uint spi_offset;
 static uint dma_tx;
 
+// SPI push byte
 static void pio_push(uint8_t data);
+
+// SPI pop byte
 static uint8_t pio_pop();
+
+// wait for SPI to idle
 static void pio_wait_idle();
+
+// setup SPI direction and speed
+static void setup_pio(direction_t new_dir, int new_speed);
+
+// set SPI direction
+static void set_spi_direction(direction_t new_dir);
 
 void init(int sys_clk_hz) {
     sys_clock_hz = sys_clk_hz;
@@ -147,29 +150,12 @@ void init(int sys_clk_hz) {
 void setup_pio(direction_t new_dir, int new_speed) {
     if (new_dir == curr_dir && new_speed == curr_speed) return;
 
-    //// unload current PIO
-    //if (curr_dir == TX) {
-    //    pio_sm_set_enabled(spi_pio, spi_sm, false);
-    //    pio_remove_program(spi_pio, &ws19804_tx_program, spi_offset);
-    //    pio_sm_unclaim(spi_pio, spi_sm);
-    //}
-    //else if (curr_dir == RX) {
-    //    pio_sm_set_enabled(spi_pio, spi_sm, false);
-    //    pio_remove_program(spi_pio, &ws19804_rx_program, spi_offset);
-    //    pio_sm_unclaim(spi_pio, spi_sm);
-    //}
-
     float div = sys_clock_hz / 2.f / new_speed;
     
     pio_sm_set_enabled(spi_pio, spi_sm, false);
 
     // load new PIO
     if (new_dir == TX) {
-        //spi_offset = pio_add_program(spi_pio, &ws19804_tx_program);
-        //pio_gpio_init(spi_pio, PIN_MOSI);
-        //pio_gpio_init(spi_pio, PIN_SCK);
-        //pio_sm_set_consecutive_pindirs(spi_pio, spi_sm, PIN_MOSI, 1, true);
-        //pio_sm_set_consecutive_pindirs(spi_pio, spi_sm, PIN_SCK, 1, true);
         pio_sm_config pio_cfg = ws19804_program_get_default_config(spi_offset);
         sm_config_set_out_pins(&pio_cfg, PIN_MOSI, 1);
         sm_config_set_sideset_pins(&pio_cfg, PIN_SCK);
@@ -196,11 +182,11 @@ void setup_pio(direction_t new_dir, int new_speed) {
     curr_speed = new_speed;
 }
 
-void set_direction(direction_t new_dir) {
+void set_spi_direction(direction_t new_dir) {
     setup_pio(new_dir, curr_speed);
 }
 
-void set_speed(int new_speed) {
+void set_spi_speed(int new_speed) {
     setup_pio(curr_dir, new_speed);
 }
 
@@ -266,7 +252,7 @@ void finish_write_data() {
 }
 
 void write_command(uint8_t cmd, const uint8_t *data, int len) {
-    set_direction(TX);
+    set_spi_direction(TX);
     gpio_put(PIN_DC, 0); // command mode
     gpio_put(PIN_LCD_CS, 0);
     write_blocking(&cmd, 1);
@@ -278,12 +264,12 @@ void write_command(uint8_t cmd, const uint8_t *data, int len) {
 }
 
 void write_command(uint8_t cmd) {
-    set_direction(TX);
+    set_spi_direction(TX);
     write_command(cmd, nullptr, 0);
 }
 
 void write_blocking(const uint8_t *data, int len) {
-    set_direction(TX);
+    set_spi_direction(TX);
     for(int i = 0; i < len; i++) {
         pio_push(data[i]);
     }
@@ -291,7 +277,7 @@ void write_blocking(const uint8_t *data, int len) {
 }
 
 void read_blocking(uint8_t tx_repeat, uint8_t *buff, int len) {
-    set_direction(RX);
+    set_spi_direction(RX);
     int tx_remain = len, rx_remain = len;
     io_rw_8 *txfifo = (io_rw_8 *) &spi_pio->txf[spi_sm];
     io_rw_8 *rxfifo = (io_rw_8 *) &spi_pio->rxf[spi_sm];
