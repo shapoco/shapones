@@ -63,10 +63,12 @@ void reset() {
     quarter_frame_step = false;
 }
 
+// todo: exclusive control
 uint8_t reg_read(addr_t addr) {
     return 0;
 }
 
+// todo: exclusive control
 void reg_write(addr_t addr, uint8_t value) {
     switch (addr) {
     case REG_PULSE1_REG0: pulse_write_reg0(&pulse[0], value); break;

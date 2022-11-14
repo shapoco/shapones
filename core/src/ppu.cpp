@@ -66,6 +66,7 @@ int current_focus_y() {
     return focus_y; 
 }
 
+// todo: exclusive control
 uint8_t reg_read(addr_t addr) {
     uint8_t retval;
     switch(addr) {
@@ -101,6 +102,7 @@ uint8_t reg_read(addr_t addr) {
     return retval;
 }
 
+// todo: exclusive control
 void reg_write(addr_t addr, uint8_t data) {
     switch(addr) {
     case REG_PPUCTRL:
