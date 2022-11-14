@@ -6,6 +6,7 @@ an NES emulator for programming my study.
 
 a sample using WAVESHARE-19804, supporting NES loading from SD card.
 
+![](img/bootmenu.jpg)
 ![](img/cover.jpg)
 ![](img/backside.jpg)
 ![](img/circuit.png)
