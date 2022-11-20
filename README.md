@@ -1,6 +1,6 @@
 # ShapoNES
 
-an NES emulator for programming my study.
+an NES emulator for my programming study.
 
 ## Raspberry Pi Pico
 
