@@ -1,9 +1,15 @@
 #ifndef WS19804_HPP
 #define WS19804_HPP
 
+#define SHAPONES_USE_PIO (1)
+
 #include "stdint.h"
 #include "pico/stdlib.h"
+#if SHAPONES_USE_PIO
 #include "hardware/pio.h"
+#else
+#include "hardware/spi.h"
+#endif
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"

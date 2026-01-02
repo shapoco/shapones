@@ -53,6 +53,7 @@ target_link_libraries(
     pico_nes_ws19804 PRIVATE
     pico_stdlib
     hardware_pio
+    hardware_spi
     hardware_pwm
     hardware_dma
     hardware_irq
