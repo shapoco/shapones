@@ -1,0 +1,106 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/core/include",
+                "${workspaceFolder}/samples/wxapp"
+            ],
+            "defines": [
+                "SHAPONES_ENABLE_LOG=1"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "gnu++14",
+            "intelliSenseMode": "linux-gcc-x64"
+        },
+        {
+            "name": "Pico2",
+            "includePath": [
+                "${PICO_SDK_PATH}/lib/cyw43-driver/src",
+                "${PICO_SDK_PATH}/lib/lwip/src/include",
+                "${PICO_SDK_PATH}/src/rp2350/pico_platform/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_stdio/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_base/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_gpio/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_pio/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_dma/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_uart/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_timer/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_irq/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_clocks/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_vreg/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_resets/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_spi/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_i2c/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_pwm/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_adc/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_dma/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_sync/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_flash/include",
+                "${PICO_SDK_PATH}/src/rp2_common/hardware_sync_spin_lock/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_platform_common/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_platform_compiler/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_platform_sections/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_platform_panic/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_multicore/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_cyw43_arch/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_cyw43_driver/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_lwip/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_rand/include",
+                "${PICO_SDK_PATH}/src/rp2_common/pico_async_context/include",
+                "${PICO_SDK_PATH}/src/rp2350/hardware_regs/include",
+                "${PICO_SDK_PATH}/src/rp2350/hardware_structs/include",
+                "${PICO_SDK_PATH}/src/common/pico_base_headers/include",
+                "${PICO_SDK_PATH}/src/common/pico_util/include",
+                "${PICO_SDK_PATH}/src/common/pico_time/include",
+                "${PICO_SDK_PATH}/src/common/pico_stdlib_headers/include",
+                "${PICO_SDK_PATH}/src/common/pico_sync/include",
+                "${PICO_SDK_PATH}/src/common/pico_binary_info/include",
+                "${workspaceFolder}/core/include",
+                "${workspaceFolder}/samples/fatfs/source",
+                "${workspaceFolder}/samples/font/mono8x16",
+                "${workspaceFolder}/samples/pico_ws19804",
+                "${workspaceFolder}/samples/pico_ws19804/build/pico2",
+                "${workspaceFolder}/samples/pico_ws19804/build/pico2/generated/pico_base"
+            ],
+            "defines": [
+                "FIXBROT_ITER_12BIT=1",
+                "FIXBROT_ARGB4444_BSWAP=1"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        },
+        {
+            "name": "PicoPad",
+            "includePath": [
+                "${PICOLIBSDK_PATH}",
+                "${PICOLIBSDK_PATH}/_display",
+                "${PICOLIBSDK_PATH}/_display/st7789",
+                "${PICOLIBSDK_PATH}/_devices/picopad",
+                "${PICOLIBSDK_PATH}/_sdk/inc",
+                "${workspaceFolder}/core/include",
+                "${workspaceFolder}/samples/picopad/EMU/SHAPONES",
+                "${workspaceFolder}/samples/picopad/EMU/SHAPONES/src"
+            ],
+            "defines": [
+                "USE_PICOPAD=1",
+                "SHAPOFONT_INCLUDE_GFXFONT",
+                "PICO_ROOT_PATH=\"${PICOLIBSDK_PATH}\"",
+                "PICOLIBSDK_DISPLAY_DIR=\"${PICOLIBSDK_DISPLAY_DIR}\"",
+                "PICOLIBSDK_FONT_DIR=\"${PICOLIBSDK_FONT_DIR}\"",
+                "PICOLIBSDK_LIB_DIR=\"${PICOLIBSDK_LIB_DIR}\"",
+                "PICOLIBSDK_SDK_DIR=\"${PICOLIBSDK_SDK_DIR}\"",
+                "INCLUDES_H=\"${PICOLIBSDK_PATH}/includes.h\"",
+                "CONFIG_DEF_H=\"${PICOLIBSDK_PATH}/config_def.h\""
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

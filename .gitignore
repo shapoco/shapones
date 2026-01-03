@@ -1,5 +1,5 @@
-.vscode/
 build/
 bin/
 *.nes
 nes_rom.cpp
+settings.json
