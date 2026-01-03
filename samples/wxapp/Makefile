@@ -1,11 +1,5 @@
 .PHONY: all install clean
 
-WXWIDGETS_PATH := $(shell echo $$HOME)/local/wxWidgets-3.2.1
-
-export PATH = $(shell echo $$PATH):$(WXWIDGETS_PATH)/bin
-export LIBRARY_PATH = $(shell echo $$LIBRARY_PATH):$(WXWIDGETS_PATH)/lib
-export LD_LIBRARY_PATH = $(shell echo $$LD_LIBRARY_PATH):$(WXWIDGETS_PATH)/lib
-
 SRC_DIR = .
 BIN_DIR = build
 ROM := ../../roms/nestest.nes
@@ -30,6 +24,8 @@ $(BIN): $(SRC_LIST)
 		-O4 \
 		-I$(CORE_DIR)/include \
 		-I. \
+		-DSHAPONES_SUPPORT_INES_FILE=1 \
+		-DSHAPONES_ENABLE_LOG=1 \
 		`wx-config --cflags` \
 		`wx-config --libs` \
 		-lpulse -lpulse-simple \

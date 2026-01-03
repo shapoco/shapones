@@ -1,15 +1,14 @@
 #ifndef SHAPONES_HPP
 #define SHAPONES_HPP
 
-#include "stdio.h"
-#include "stdlib.h"
-
-//#include "pico/stdlib.h"
-//#include "hardware/gpio.h"
-
 #define NES_ALWAYS_INLINE __attribute__((always_inline)) static inline
 
-#if 1
+#if SHAPONES_ENABLE_LOG
+
+#if !(SHAPONES_NO_STDLIB)
+#include "stdio.h"
+#include "stdlib.h"
+#endif
 
 #define NES_PRINTF(fmt, ...) \
     do { \

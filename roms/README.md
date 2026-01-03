@@ -1,3 +1,5 @@
+## Memo
+
 - helloworld.nes, SHOOT.nes
     - http://hp.vector.co.jp/authors/VA042397/nes/sample.html
 - nestest.nes

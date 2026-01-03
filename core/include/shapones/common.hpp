@@ -1,7 +1,9 @@
 #ifndef SHAPONES_BASIC_HPP
 #define SHAPONES_BASIC_HPP
 
+#if !(SHAPONES_NO_STDLIB)
 #include "stdint.h"
+#endif
 
 namespace nes {
 

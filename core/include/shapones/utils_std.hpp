@@ -3,7 +3,9 @@
 
 namespace nes {
 
+#if SHAPONES_SUPPORT_INES_FILE
 void load_ines_file(const char* path);
+#endif
 
 }
 
