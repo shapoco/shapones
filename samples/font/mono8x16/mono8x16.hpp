@@ -1,7 +1,9 @@
 #ifndef MONO8X16_HPP
 #define MONO8X16_HPP
 
+#if !(SHAPONES_NO_STDLIB)
 #include "stdint.h"
+#endif
 
 namespace mono8x16 {
 

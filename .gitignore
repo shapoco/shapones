@@ -3,3 +3,5 @@ bin/
 *.nes
 nes_rom.cpp
 settings.json
+tmp.*
+tmp.*/

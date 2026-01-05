@@ -82,6 +82,7 @@
                 "${PICOLIBSDK_PATH}/_devices/picopad",
                 "${PICOLIBSDK_PATH}/_sdk/inc",
                 "${workspaceFolder}/core/include",
+                "${workspaceFolder}/samples/font/mono8x16",
                 "${workspaceFolder}/samples/picopad/EMU/SHAPONES",
                 "${workspaceFolder}/samples/picopad/EMU/SHAPONES/src"
             ],

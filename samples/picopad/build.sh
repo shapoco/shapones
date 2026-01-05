@@ -42,6 +42,7 @@ set -u
 APP_DIR=$(pwd)
 REPO_DIR=$(cd ../.. && pwd)
 
+FONT_DIR="${REPO_DIR}/samples/font/mono8x16"
 SRC_TARGET_DIR="${APP_DIR}/${ARG_GRPDIR}/${ARG_TARGET}"
 CORE_DIR="${REPO_DIR}/core"
 
@@ -61,6 +62,7 @@ pushd "${PICOLIBSDK_PATH}/PicoPad"
   pushd "./${ARG_GRPDIR}/${ARG_TARGET}"
     cp -rp ${CORE_DIR}/include/* .
     cp -rp ${CORE_DIR}/src/* src/.
+    cp -rp ${FONT_DIR}/* src/.
     cp -rp ${SRC_TARGET_DIR}/* .
     touch src/*.cpp
     ./c.sh "${ARG_DEVICE}"

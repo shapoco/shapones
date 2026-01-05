@@ -1,4 +1,7 @@
+#if !(SHAPONES_NO_STDLIB)
 #include "stdint.h"
+#endif
+
 #include "mono8x16.hpp"
 
 namespace mono8x16 {
