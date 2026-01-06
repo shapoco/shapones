@@ -363,7 +363,6 @@ static void disp_wait_vsync() {
 static const uint8_t *sound_refill() {
     uint8_t *ptr = sound_buff + sound_buff_index * SOUND_BUFF_SIZE;
     nes::apu::service(ptr, SOUND_BUFF_SIZE);
-    SoundStreamSetNext(0, ptr, SOUND_BUFF_SIZE);
     sound_buff_index = (sound_buff_index + 1) & 1;
     return ptr;
 }
