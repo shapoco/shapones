@@ -6,16 +6,16 @@
 
 #include "mono8x16.hpp"
 #include "shapones/shapones.hpp"
-#include "tmp.rom.hpp"
+//#include "tmp.rom.hpp"
 
-static constexpr uint16_t NUM_WORKERS = 2;
-
-static int feed_index = 0;
+static constexpr int MAX_FILES = 100;
 
 static constexpr int FRAME_BUFF_STRIDE = nes::SCREEN_WIDTH * 3 / 2;
 
 static uint8_t line_buff[nes::SCREEN_WIDTH];
 static uint8_t frame_buff[FRAME_BUFF_STRIDE * nes::SCREEN_HEIGHT];
+
+static uint8_t *ines_rom = nullptr;
 
 static int fps_frame_count = 0;
 static uint64_t fps_last_meas_ms = 0;
@@ -32,6 +32,8 @@ static const uint16_t COLOR_TABLE[] = {
     0x3BD, 0x444, 0x000, 0x000, 0xFFF, 0xADF, 0xCCF, 0xDBF, 0xFBF, 0xFBD, 0xFBB,
     0xEC9, 0xDD7, 0xBE7, 0xAE9, 0x9EB, 0xADE, 0xAAA, 0x000, 0x000,
 };
+
+static void boot_menu();
 
 static void core1_main();
 
@@ -53,11 +55,12 @@ int main() {
     set_sys_clock_khz(250000, true);
 #endif
 
-    disp_enable_rgb444();
+    boot_menu();
 
     disp_spi_hw = SPI_GetHw(DISP_SPI);
+    disp_enable_rgb444();
 
-    nes::memory::map_ines(nes_rom);
+    //nes::memory::map_ines(nes_rom);
     nes::apu::set_sampling_rate(22050);
     nes::reset();
 
@@ -66,6 +69,78 @@ int main() {
     while (True) {
         uint64_t now_ms = Time64() / 1000;
         nes::cpu::service();
+    }
+}
+
+static void boot_menu() {
+    if (!DiskMount()) {
+        DispDrawText("Insert disk.", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
+    }
+
+    while (!DiskMount()) {
+        if (KeyGet() == KEY_Y) {
+            ResetToBootLoader();
+        }
+    }
+
+    const char *dir = "/EMU/SHAPONES/";
+
+    sFile find;
+    if (!FindOpen(&find, dir)) {
+        DispDrawText("Directory not found.", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
+        WaitMs(3000);
+        ResetToBootLoader();
+    }
+
+    sFileInfo fi;
+    char **file_names = new char *[MAX_FILES];
+    int *file_sizes = new int[MAX_FILES];
+    int num_files = 0;
+    do {
+        while (num_files < MAX_FILES &&
+               FindNext(&find, &fi, ATTR_ARCH, "*.NES")) {
+            if (fi.namelen < 4) continue;
+            file_names[num_files] = new char[fi.namelen + 1];
+            memcpy(file_names[num_files], fi.name, fi.namelen + 1);
+            file_sizes[num_files] = fi.size;
+            num_files++;
+        }
+
+        FindClose(&find);
+
+        if (num_files == 0) {
+            DispDrawText("No NES file found.", 0, 0, 0, 0, COL_WHITE,
+                         COL_BLACK);
+            WaitMs(3000);
+            ResetToBootLoader();
+            break;
+        }
+
+        int selected_index = 0;
+
+        char path[256];
+        sFile ines_file;
+        snprintf(path, sizeof(path), "%s%s", dir, file_names[selected_index]);
+        if (!FileOpen(&ines_file, path)) {
+            DispDrawText("File open failed.", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
+            WaitMs(3000);
+            ResetToBootLoader();
+            break;
+        }
+
+        ines_rom = new uint8_t[file_sizes[selected_index]];
+        FileRead(&ines_file, ines_rom, file_sizes[selected_index]);
+        FileClose(&ines_file);
+
+        nes::memory::map_ines(ines_rom);
+    } while (false);
+
+    if (file_names) {
+        for (int i = 0; i < num_files; i++) {
+            delete[] file_names[i];
+        }
+        delete[] file_names;
+        delete[] file_sizes;
     }
 }
 
@@ -113,7 +188,9 @@ static void core1_main() {
                 GPIO_Out1(DISP_CS_PIN);
 
                 // select window
-                DispWindow(0, nes::SCREEN_WIDTH, 0, nes::SCREEN_HEIGHT);
+                constexpr int x_offset = (WIDTH - nes::SCREEN_WIDTH) / 2;
+                DispWindow(x_offset, x_offset + nes::SCREEN_WIDTH, 0,
+                           nes::SCREEN_HEIGHT);
 
                 // kick new DMA
                 GPIO_Out0(DISP_CS_PIN);

@@ -14,8 +14,9 @@
 // *********
 
 #define USE_FRAMEBUF 0
-#define SHAPONES_NO_STDLIB 1
 #define DISP_SPI_BAUD 62500000
+
+#define SHAPONES_NO_STDLIB 1
 
 //#define FONT			FontBold8x8	// default system font
 //#define FONTW			8		// width of system font
