@@ -64,7 +64,6 @@ pushd "${PICOLIBSDK_PATH}/PicoPad"
     cp -rp ${CORE_DIR}/src/* src/.
     cp -rp ${FONT_DIR}/* src/.
     cp -rp ${SRC_TARGET_DIR}/* .
-    touch src/*.cpp
     ./c.sh "${ARG_DEVICE}"
     mkdir -p "${ARG_OUTDIR}"
     cp *.hex *.bin *.lst *.sym *.siz *.uf2 "${ARG_OUTDIR}/."

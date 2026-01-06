@@ -7,12 +7,15 @@
 #include "mono8x16.hpp"
 #include "shapones/shapones.hpp"
 
-static constexpr int MAX_FILES = 100;
-
 static constexpr int FRAME_BUFF_STRIDE = nes::SCREEN_WIDTH * 3 / 2;
+static constexpr int SOUND_FREQ = 22050;
+static constexpr int SOUND_BUFF_SIZE = 256;
 
 static uint8_t line_buff[nes::SCREEN_WIDTH];
 static uint8_t frame_buff[FRAME_BUFF_STRIDE * nes::SCREEN_HEIGHT];
+
+static uint8_t sound_buff[SOUND_BUFF_SIZE * 2];
+static int sound_buff_index = 0;
 
 static uint8_t *ines_rom = nullptr;
 
@@ -33,15 +36,20 @@ static const uint16_t COLOR_TABLE[] = {
 };
 
 static void boot_menu();
+static void boot_error(const char *line1, const char *line2 = "");
 
+static void core0_main();
 static void core1_main();
 
 static void disp_clear(uint16_t color = COL_BLACK);
 static void disp_fill_rect(int x, int y, int w, int h, uint16_t color);
 static void disp_enable_rgb444();
+static void disp_flip();
 static void disp_dma_start();
 static void disp_dma_complete();
 static void disp_wait_vsync();
+
+static const uint8_t *sound_refill();
 
 static int disp_dma_ch;
 static spi_hw_t *disp_spi_hw = nullptr;
@@ -56,22 +64,154 @@ int main() {
     set_sys_clock_khz(250000, true);
 #endif
 
+    PWMSndInit();
+
     boot_menu();
 
-    disp_clear();
+    core0_main();
 
+    return 0;
+}
+
+static void boot_menu() {
+    constexpr int LINE_H = 16;
+    constexpr int MAX_FILES = HEIGHT / LINE_H;
+    const char *INES_DIR = "/EMU/SHAPONES/";
+    char ines_path[256];
+    int ines_size = 0;
+
+    int num_files = 0;
+    char **names = new char *[MAX_FILES];
+    int *sizes = new int[MAX_FILES];
+
+    do {
+        disp_clear(COL_WHITE);
+
+        // Mount disk
+        if (!DiskMount()) {
+            DispDrawText("INSERT DISK.", 64, (HEIGHT - LINE_H) / 2, 0, 0,
+                         COL_BLACK, COL_WHITE);
+        }
+        while (!DiskMount()) {
+            if (KeyGet() == KEY_Y) {
+                boot_error("Boot cancelled.");
+            }
+        }
+
+        // List up NES files
+        sFile find;
+        if (!FindOpen(&find, INES_DIR)) {
+            boot_error("DIRECTORY NOT FOUND:", INES_DIR);
+        }
+        sFileInfo fi;
+        while (num_files < MAX_FILES &&
+               FindNext(&find, &fi, ATTR_ARCH, "*.NES")) {
+            if (fi.namelen < 4) continue;
+            names[num_files] = new char[fi.namelen + 1];
+            memcpy(names[num_files], fi.name, fi.namelen + 1);
+            sizes[num_files] = fi.size;
+            num_files++;
+        }
+        FindClose(&find);
+
+        if (num_files == 0) {
+            boot_error("NO NES FILE FOUND IN:", INES_DIR);
+        }
+
+        // Render file list
+        for (int i = 0; i < num_files; i++) {
+            DispDrawText(names[i], 32, i * LINE_H, 0, 0, COL_BLACK, COL_WHITE);
+        }
+        DispDrawText("=>", 8, 0, 0, 0, COL_BLUE, COL_WHITE);
+
+        // Wait file to be selected
+        int sel_index = 0;
+        while (true) {
+            uint8_t key = KeyGet();
+            if (key == KEY_UP || key == KEY_DOWN) {
+                disp_fill_rect(0, sel_index * LINE_H, 32, LINE_H, COL_WHITE);
+                if (key == KEY_UP) {
+                    sel_index = (sel_index + num_files - 1) % num_files;
+                } else {
+                    sel_index = (sel_index + 1) % num_files;
+                }
+                DispDrawText("=>", 8, sel_index * LINE_H, 0, 0, COL_BLUE,
+                             COL_WHITE);
+            } else if (key == KEY_A) {
+                snprintf(ines_path, sizeof(ines_path), "%s%s", INES_DIR,
+                         names[sel_index]);
+                ines_size = sizes[sel_index];
+                break;
+            } else if (key == KEY_Y) {
+                break;
+            }
+        };
+    } while (false);
+
+    // Free file list
+    for (int i = 0; i < num_files; i++) {
+        delete[] names[i];
+    }
+    delete[] names;
+    delete[] sizes;
+
+    // Load NES file
+    sFile ines_file;
+    if (!FileOpen(&ines_file, ines_path)) {
+        boot_error("FAILED TO OPEN FILE.");
+    }
+    ines_rom = new uint8_t[ines_size];
+    int ret = FileRead(&ines_file, ines_rom, ines_size);
+    if (ret < ines_size) {
+        char ret_str[32];
+        snprintf(ret_str, sizeof(ret_str), "Code: %d", ret);
+        boot_error("FAILED TO LOAD FILE.", ret_str);
+    }
+    FileClose(&ines_file);
+
+    // Map NES file to memory
+    nes::memory::map_ines(ines_rom);
+}
+
+static void boot_error(const char *line1, const char *line2) {
+    constexpr int CHAR_W = 8;
+    constexpr int LINE_H = 16;
+    disp_clear(COL_WHITE);
+    DispDrawText(line1, 64, HEIGHT / 2 - LINE_H, 0, 0, COL_RED, COL_WHITE);
+    DispDrawText(line2, 64, HEIGHT / 2, 0, 0, COL_RED, COL_WHITE);
+    DispDrawText("Puress Y to exit.", (WIDTH - (CHAR_W * 16)) / 2,
+                 HEIGHT - LINE_H * 2, 0, 0, COL_BLACK, COL_WHITE);
+    while (KeyGet() != KEY_Y) {
+    }
+    ResetToBootLoader();
+}
+
+static void core0_main() {
+    disp_clear(COL_BLACK);
+
+    // Change display mode to RGB444
     disp_spi_hw = SPI_GetHw(DISP_SPI);
     disp_enable_rgb444();
 
-    nes::apu::set_sampling_rate(22050);
+    // Setup NES core
+    nes::apu::set_sampling_rate(SOUND_FREQ);
     nes::reset();
 
+    // Run PPU
     Core1Exec(core1_main);
 
-    while (True) {
+    // Start Sound
+    {
+        const uint8_t *sound = sound_refill();
+        PlaySoundChan(0, sound, SOUND_BUFF_SIZE, SNDREPEAT_STREAM,
+                      SOUND_FREQ / SOUNDRATE, 1.0f, SNDFORM_PCM, 0);
+    }
+
+    // Run CPU/APU
+    while (true) {
         uint64_t now_ms = Time64() / 1000;
 
-        nes::input::InputStatus is ;
+        nes::input::InputStatus is;
         is.raw = 0;
         if (KeyPressedFast(KEY_LEFT)) is.left = 1;
         if (KeyPressedFast(KEY_RIGHT)) is.right = 1;
@@ -84,111 +224,12 @@ int main() {
         nes::input::set_raw(0, is);
 
         nes::cpu::service();
-    }
-}
 
-static void boot_menu() {
-    disp_clear();
-
-    if (!DiskMount()) {
-        DispDrawText("Insert disk.", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
-    }
-    while (!DiskMount()) {
-        if (KeyGet() == KEY_Y) {
-            ResetToBootLoader();
+        // stream sound
+        if (SoundStreamIsEmpty(0)) {
+            const uint8_t *sound = sound_refill();
+            SoundStreamSetNext(0, sound, SOUND_BUFF_SIZE);
         }
-    }
-
-    const char *dir = "/EMU/SHAPONES/";
-
-    sFile find;
-    if (!FindOpen(&find, dir)) {
-        disp_clear();
-        DispDrawText("Directory not found.", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
-        WaitMs(3000);
-        ResetToBootLoader();
-    }
-
-    sFileInfo fi;
-    char **file_names = new char *[MAX_FILES];
-    int *file_sizes = new int[MAX_FILES];
-    int num_files = 0;
-    do {
-        while (num_files < MAX_FILES &&
-               FindNext(&find, &fi, ATTR_ARCH, "*.NES")) {
-            if (fi.namelen < 4) continue;
-            file_names[num_files] = new char[fi.namelen + 1];
-            memcpy(file_names[num_files], fi.name, fi.namelen + 1);
-            file_sizes[num_files] = fi.size;
-            num_files++;
-        }
-
-        FindClose(&find);
-
-        if (num_files == 0) {
-            disp_clear();
-            DispDrawText("No NES file found.", 0, 0, 0, 0, COL_WHITE,
-                         COL_BLACK);
-            WaitMs(3000);
-            ResetToBootLoader();
-            break;
-        }
-
-        constexpr int line_height = 16;
-
-        for (int i = 0; i < num_files; i++) {
-            DispDrawText(file_names[i], 32, i * line_height, 0, 0, COL_WHITE,
-                         COL_BLACK);
-        }
-        DispDrawText("=>", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
-
-        int selected_index = 0;
-
-        while (true) {
-            uint8_t key = KeyGet();
-            if (key == KEY_UP || key == KEY_DOWN) {
-                disp_fill_rect(0, selected_index * line_height, 32, line_height,
-                               COL_BLACK);
-                if (key == KEY_UP) {
-                    selected_index =
-                        (selected_index + num_files - 1) % num_files;
-                } else {
-                    selected_index = (selected_index + 1) % num_files;
-                }
-                DispDrawText("=>", 0, selected_index * line_height, 0, 0,
-                             COL_WHITE, COL_BLACK);
-            } else if (key == KEY_A) {
-                break;
-            } else if (key == KEY_Y) {
-                ResetToBootLoader();
-                break;
-            }
-        };
-
-        char path[256];
-        sFile ines_file;
-        snprintf(path, sizeof(path), "%s%s", dir, file_names[selected_index]);
-        if (!FileOpen(&ines_file, path)) {
-            disp_clear();
-            DispDrawText("File open failed.", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
-            WaitMs(3000);
-            ResetToBootLoader();
-            break;
-        }
-
-        ines_rom = new uint8_t[file_sizes[selected_index]];
-        FileRead(&ines_file, ines_rom, file_sizes[selected_index]);
-        FileClose(&ines_file);
-
-        nes::memory::map_ines(ines_rom);
-    } while (false);
-
-    if (file_names) {
-        for (int i = 0; i < num_files; i++) {
-            delete[] file_names[i];
-        }
-        delete[] file_names;
-        delete[] file_sizes;
     }
 }
 
@@ -215,36 +256,7 @@ static void core1_main() {
 
             // end of frame
             if (y == 0) {
-                uint64_t now_ms = Time64() / 1000;
-
-                // measure FPS
-                fps_frame_count += 1;
-                uint32_t t_elapsed = now_ms - fps_last_meas_ms;
-                if (t_elapsed >= 1000) {
-                    float fps = (float)(fps_frame_count * 1000) / t_elapsed;
-                    snprintf(fps_str, sizeof(fps_str), "%5.2f FPS", fps);
-                    fps_last_meas_ms = now_ms;
-                    fps_frame_count = 0;
-                }
-
-                mono8x16::draw_string_rgb444(
-                    frame_buff, FRAME_BUFF_STRIDE, nes::SCREEN_WIDTH,
-                    nes::SCREEN_HEIGHT, 0, 0, fps_str, 0x000);
-
-                // complete previous DMA
-                disp_dma_complete();
-                GPIO_Out1(DISP_CS_PIN);
-
-                // select window
-                constexpr int x_offset = (WIDTH - nes::SCREEN_WIDTH) / 2;
-                DispWindow(x_offset, x_offset + nes::SCREEN_WIDTH, 0,
-                           nes::SCREEN_HEIGHT);
-
-                // kick new DMA
-                GPIO_Out0(DISP_CS_PIN);
-                GPIO_Out1(DISP_DC_PIN);
-                disp_dma_start();
-
+                disp_flip();
                 disp_wait_vsync();
             }
         }
@@ -274,11 +286,41 @@ static void disp_enable_rgb444() {
     GPIO_Out1(DISP_CS_PIN);
 }
 
+static void disp_flip() {
+    uint64_t now_ms = Time64() / 1000;
+
+    // measure FPS
+    fps_frame_count += 1;
+    uint32_t t_elapsed = now_ms - fps_last_meas_ms;
+    if (t_elapsed >= 1000) {
+        float fps = (float)(fps_frame_count * 1000) / t_elapsed;
+        snprintf(fps_str, sizeof(fps_str), "%5.2f FPS", fps);
+        fps_last_meas_ms = now_ms;
+        fps_frame_count = 0;
+    }
+
+    mono8x16::draw_string_rgb444(frame_buff, FRAME_BUFF_STRIDE,
+                                 nes::SCREEN_WIDTH, nes::SCREEN_HEIGHT, 0, 0,
+                                 fps_str, 0x000);
+
+    // complete previous DMA
+    disp_dma_complete();
+    GPIO_Out1(DISP_CS_PIN);
+
+    // select window
+    constexpr int x_offset = (WIDTH - nes::SCREEN_WIDTH) / 2;
+    DispWindow(x_offset, x_offset + nes::SCREEN_WIDTH, 0, nes::SCREEN_HEIGHT);
+
+    // kick new DMA
+    GPIO_Out0(DISP_CS_PIN);
+    GPIO_Out1(DISP_DC_PIN);
+    disp_dma_start();
+}
+
 static void disp_dma_start() {
     disp_dma_ch = DMA_TEMP_CHAN();
     disp_dma_hw = DMA_GetHw(disp_dma_ch);
 
-    // configure DMA
     DMA_Abort(disp_dma_ch);
     DMA_ClearError_hw(disp_dma_hw);
     DMA_SetRead_hw(disp_dma_hw, frame_buff);
@@ -316,4 +358,12 @@ static void disp_wait_vsync() {
     } else {
         disp_next_vsync_us = now_us;
     }
+}
+
+static const uint8_t *sound_refill() {
+    uint8_t *ptr = sound_buff + sound_buff_index * SOUND_BUFF_SIZE;
+    nes::apu::service(ptr, SOUND_BUFF_SIZE);
+    SoundStreamSetNext(0, ptr, SOUND_BUFF_SIZE);
+    sound_buff_index = (sound_buff_index + 1) & 1;
+    return ptr;
 }
