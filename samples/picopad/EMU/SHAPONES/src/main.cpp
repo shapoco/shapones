@@ -6,7 +6,6 @@
 
 #include "mono8x16.hpp"
 #include "shapones/shapones.hpp"
-//#include "tmp.rom.hpp"
 
 static constexpr int MAX_FILES = 100;
 
@@ -37,6 +36,8 @@ static void boot_menu();
 
 static void core1_main();
 
+static void disp_clear(uint16_t color = COL_BLACK);
+static void disp_fill_rect(int x, int y, int w, int h, uint16_t color);
 static void disp_enable_rgb444();
 static void disp_dma_start();
 static void disp_dma_complete();
@@ -50,17 +51,18 @@ uint64_t disp_next_vsync_us = 0;
 
 int main() {
 #if USE_PICOPAD10 || USE_PICOPAD20
-    vreg_set_voltage(VREG_VOLTAGE_1_20);
+    vreg_set_voltage(VREG_VOLTAGE_1_30);
     WaitMs(100);
     set_sys_clock_khz(250000, true);
 #endif
 
     boot_menu();
 
+    disp_clear();
+
     disp_spi_hw = SPI_GetHw(DISP_SPI);
     disp_enable_rgb444();
 
-    //nes::memory::map_ines(nes_rom);
     nes::apu::set_sampling_rate(22050);
     nes::reset();
 
@@ -68,15 +70,29 @@ int main() {
 
     while (True) {
         uint64_t now_ms = Time64() / 1000;
+
+        nes::input::InputStatus is ;
+        is.raw = 0;
+        if (KeyPressedFast(KEY_LEFT)) is.left = 1;
+        if (KeyPressedFast(KEY_RIGHT)) is.right = 1;
+        if (KeyPressedFast(KEY_UP)) is.up = 1;
+        if (KeyPressedFast(KEY_DOWN)) is.down = 1;
+        if (KeyPressedFast(KEY_A)) is.B = 1;
+        if (KeyPressedFast(KEY_B)) is.A = 1;
+        if (KeyPressedFast(KEY_X)) is.select = 1;
+        if (KeyPressedFast(KEY_Y)) is.start = 1;
+        nes::input::set_raw(0, is);
+
         nes::cpu::service();
     }
 }
 
 static void boot_menu() {
+    disp_clear();
+
     if (!DiskMount()) {
         DispDrawText("Insert disk.", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
     }
-
     while (!DiskMount()) {
         if (KeyGet() == KEY_Y) {
             ResetToBootLoader();
@@ -87,6 +103,7 @@ static void boot_menu() {
 
     sFile find;
     if (!FindOpen(&find, dir)) {
+        disp_clear();
         DispDrawText("Directory not found.", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
         WaitMs(3000);
         ResetToBootLoader();
@@ -109,6 +126,7 @@ static void boot_menu() {
         FindClose(&find);
 
         if (num_files == 0) {
+            disp_clear();
             DispDrawText("No NES file found.", 0, 0, 0, 0, COL_WHITE,
                          COL_BLACK);
             WaitMs(3000);
@@ -116,12 +134,42 @@ static void boot_menu() {
             break;
         }
 
+        constexpr int line_height = 16;
+
+        for (int i = 0; i < num_files; i++) {
+            DispDrawText(file_names[i], 32, i * line_height, 0, 0, COL_WHITE,
+                         COL_BLACK);
+        }
+        DispDrawText("=>", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
+
         int selected_index = 0;
+
+        while (true) {
+            uint8_t key = KeyGet();
+            if (key == KEY_UP || key == KEY_DOWN) {
+                disp_fill_rect(0, selected_index * line_height, 32, line_height,
+                               COL_BLACK);
+                if (key == KEY_UP) {
+                    selected_index =
+                        (selected_index + num_files - 1) % num_files;
+                } else {
+                    selected_index = (selected_index + 1) % num_files;
+                }
+                DispDrawText("=>", 0, selected_index * line_height, 0, 0,
+                             COL_WHITE, COL_BLACK);
+            } else if (key == KEY_A) {
+                break;
+            } else if (key == KEY_Y) {
+                ResetToBootLoader();
+                break;
+            }
+        };
 
         char path[256];
         sFile ines_file;
         snprintf(path, sizeof(path), "%s%s", dir, file_names[selected_index]);
         if (!FileOpen(&ines_file, path)) {
+            disp_clear();
             DispDrawText("File open failed.", 0, 0, 0, 0, COL_WHITE, COL_BLACK);
             WaitMs(3000);
             ResetToBootLoader();
@@ -201,6 +249,18 @@ static void core1_main() {
             }
         }
     }
+}
+
+static void disp_clear(uint16_t color) {
+    disp_fill_rect(0, 0, WIDTH, HEIGHT, color);
+}
+
+static void disp_fill_rect(int x, int y, int w, int h, uint16_t color) {
+    DispStartImg(x, x + w, y, y + w);
+    for (int i = 0; i < w * h; i++) {
+        DispSendImg2(color);
+    }
+    DispStopImg();
 }
 
 static void disp_enable_rgb444() {
