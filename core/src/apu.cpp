@@ -212,7 +212,6 @@ static void pulse_write_reg3(PulseState *s, uint8_t reg3) {
     s->timer = 0;
     s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
     s->phase = 0;
-    NES_PRINTF("P s->timer_period = %d, length = %d\n", (int)(s->timer_period), (int)(s->length));
 }
 
 static void triangle_write_reg0(TriangleState *s, uint8_t reg0) {
@@ -233,7 +232,6 @@ static void triangle_write_reg3(TriangleState *s, uint8_t reg3) {
     s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
     s->phase = 0;
     s->linear.flags |= LIN_FLAG_RELOAD;
-    NES_PRINTF("T s->timer_period = %d, length = %d\n", (int)(s->timer_period), (int)(s->length));
 }
 
 static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
