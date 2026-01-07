@@ -21,6 +21,10 @@ static constexpr addr_t REG_TRIANGLE_REG3   = 0x400b;
 static constexpr addr_t REG_NOISE_REG0      = 0x400c;
 static constexpr addr_t REG_NOISE_REG2      = 0x400e;
 static constexpr addr_t REG_NOISE_REG3      = 0x400f;
+static constexpr addr_t REG_DMC_REG0        = 0x4010;
+static constexpr addr_t REG_DMC_REG1        = 0x4011;
+static constexpr addr_t REG_DMC_REG2        = 0x4012;
+static constexpr addr_t REG_DMC_REG3        = 0x4013;
 static constexpr addr_t REG_STATUS          = 0x4015;
 
 static constexpr int ENV_FLAG_START     = 0x1;
@@ -75,6 +79,21 @@ struct NoiseState {
     uint16_t lfsr;
     int length;
     Envelope envelope;
+};
+
+struct DmcState {
+    bool silence;
+    bool irq_enabled;
+    bool loop;
+    uint32_t timer_step;
+    uint32_t timer;
+    addr_t sample_addr;
+    int sample_length;
+    addr_t addr_counter;
+    int bytes_remaining;
+    uint8_t shift_reg;
+    int bits_remaining;
+    uint8_t out_level;
 };
 
 union Status {

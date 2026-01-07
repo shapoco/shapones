@@ -9,10 +9,13 @@ static volatile cycle_t ppu_cycle_count;
 
 uint8_t bus_read(addr_t addr) {
     uint8_t retval;
-    if (PRGROM_BASE <= addr && addr < PRGROM_BASE + memory::PRGROM_SIZE ) {
+    if (PRGROM_BASE <= addr && addr < PRGROM_BASE + PRGROM_RANGE ) {
         retval = memory::prgrom_read(addr - PRGROM_BASE);
     }
-    else if (WRAM_BASE <= addr && addr < WRAM_BASE + memory::WRAM_SIZE) {
+    else if (PRGRAM_BASE <= addr && addr < PRGRAM_BASE + PRGRAM_RANGE ) {
+        retval = memory::prgram_read(addr - PRGRAM_BASE);
+    }
+    else if (WRAM_BASE <= addr && addr < WRAM_BASE + WRAM_SIZE) {
         retval = memory::wram[addr - WRAM_BASE];
     }
     else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
@@ -21,7 +24,7 @@ uint8_t bus_read(addr_t addr) {
     else if (INPUT_REG_0 <= addr && addr <= INPUT_REG_1) {
         retval = input::read_latched(addr - INPUT_REG_0);
     }
-    else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + memory::WRAM_SIZE) {
+    else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + WRAM_SIZE) {
         retval = memory::wram[addr - WRAM_MIRROR_BASE];
     }
     else {
@@ -31,13 +34,16 @@ uint8_t bus_read(addr_t addr) {
 }
 
 void bus_write(addr_t addr, uint8_t data) {
-    if (WRAM_BASE <= addr && addr < WRAM_BASE + memory::WRAM_SIZE) {
+    if (WRAM_BASE <= addr && addr < WRAM_BASE + WRAM_SIZE) {
         memory::wram[addr - WRAM_BASE] = data;
+    }
+    else if (PRGRAM_BASE <= addr && addr < PRGRAM_BASE + PRGRAM_RANGE ) {
+        memory::prgram_write(addr - PRGRAM_BASE, data);
     }
     else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
         ppu::reg_write(addr, data);
     }
-    else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_NOISE_REG3 || addr == apu::REG_STATUS) {
+    else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_DMC_REG3 || addr == apu::REG_STATUS) {
         apu::reg_write(addr, data);
     }
     else if (addr == OAM_DMA_REG) {
@@ -46,7 +52,7 @@ void bus_write(addr_t addr, uint8_t data) {
     else if (addr == INPUT_REG_0) {
         input::write_control(data);
     }
-    else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + memory::WRAM_SIZE) {
+    else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + WRAM_SIZE) {
         memory::wram[addr - WRAM_MIRROR_BASE] = data;
     }
     else {

@@ -175,11 +175,11 @@ void oam_dma_write(addr_t offset, uint8_t data) {
 }
 
 static uint8_t bus_read(addr_t addr) {
-    if (CHRROM_BASE <= addr && addr < CHRROM_BASE + CHRROM_SIZE) {
+    if (CHRROM_BASE <= addr && addr < CHRROM_BASE + CHRROM_RANGE) {
         bus_read_data_delayed = bus_read_data_latest;
         bus_read_data_latest = memory::chrrom_read(addr - CHRROM_BASE);
     }
-    else if (VRAM_BASE <= addr && addr < VRAM_BASE + memory::VRAM_SIZE) {
+    else if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
         bus_read_data_delayed = bus_read_data_latest;
         bus_read_data_latest = memory::vram_read(addr - VRAM_BASE);
     }
@@ -199,7 +199,7 @@ static uint8_t bus_read(addr_t addr) {
 }
 
 static void bus_write(addr_t addr, uint8_t data) {
-    if (VRAM_BASE <= addr && addr < VRAM_BASE + memory::VRAM_SIZE) {
+    if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
         memory::vram_write(addr - VRAM_BASE, data);
     }
     else if (PALETTE_FILE_BASE <= addr && addr < PALETTE_FILE_BASE + PALETTE_FILE_SIZE_WITH_MIRROR) {
@@ -277,6 +277,18 @@ bool service(uint8_t *line_buff) {
                 // clear flags
                 reg.status.vblank_flag = 0;
                 reg.status.sprite0_hit = 0;    
+            }
+        }
+        else if (memory::mapper.id == 4 && focus_x == 260) {
+            // MMC3 IRQ counter clock
+            if (memory::mapper.mmc3_irq_counter == 0) {
+                memory::mapper.mmc3_irq_counter = memory::mapper.mmc3_irq_latch;
+            }
+            else {
+                memory::mapper.mmc3_irq_counter--;
+                if (memory::mapper.mmc3_irq_counter == 0 && memory::mapper.mmc3_irq_enable) {
+                    interrupt::assert_irq();
+                }
             }
         }
 

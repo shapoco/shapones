@@ -4,11 +4,13 @@ namespace nes::apu {
 
 static constexpr int QUARTER_FRAME_FREQUENCY = 240;
 static constexpr int QUARTER_FRAME_PHASE_PREC = 16;
-static constexpr uint32_t QUARTER_FRAME_PHASE_PERIOD = 1ul << QUARTER_FRAME_PHASE_PREC;
+static constexpr uint32_t QUARTER_FRAME_PHASE_PERIOD =
+    1ul << QUARTER_FRAME_PHASE_PREC;
 
-static int sampling_rate;
+static uint32_t sampling_rate;
 static uint32_t pulse_timer_step;
 static uint32_t triangle_timer_step;
+static uint32_t dmc_step_coeff;
 static int qframe_phase_step;
 
 static int quarter_frame_phase;
@@ -18,14 +20,20 @@ static bool half_frame_step;
 static bool quarter_frame_step;
 
 // see: https://www.nesdev.org/wiki/APU_Length_Counter
-static uint8_t LENGTH_TABLE[] = {
-    10,254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
-    12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
+static constexpr uint8_t LENGTH_TABLE[] = {
+    10, 254, 20, 2,  40, 4,  80, 6,  160, 8,  60, 10, 14, 12, 26, 14,
+    12, 16,  24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
+};
+
+// see: https://www.nesdev.org/wiki/APU_DMC
+static constexpr uint16_t DMC_RATE_TABLE[16] = {
+    428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
 };
 
 PulseState pulse[2];
 TriangleState triangle;
 NoiseState noise;
+DmcState dmc;
 Status status;
 
 static void pulse_write_reg0(PulseState *s, uint8_t reg0);
@@ -37,11 +45,16 @@ static void triangle_write_reg2(TriangleState *s, uint8_t reg3);
 static void triangle_write_reg3(TriangleState *s, uint8_t reg3);
 static void noise_write_reg0(NoiseState *s, uint8_t reg0);
 static void noise_write_reg3(NoiseState *s, uint8_t reg3);
+static void dmc_write_reg0(DmcState *s, uint8_t reg0);
+static void dmc_write_reg1(DmcState *s, uint8_t reg1);
+static void dmc_write_reg2(DmcState *s, uint8_t reg2);
+static void dmc_write_reg3(DmcState *s, uint8_t reg3);
 static int step_envelope(Envelope *e);
 static int step_sweep(PulseState *s);
 static int sample_pulse(PulseState *s);
 static int sample_triangle(TriangleState *s);
 static int sample_noise(NoiseState *s);
+static int sample_dmc(DmcState *s);
 
 void reset() {
     for (int i = 0; i < 2; i++) {
@@ -56,6 +69,19 @@ void reset() {
     noise.length = 0;
     noise.lfsr = 1;
 
+    dmc.silence = true;
+    dmc.irq_enabled = false;
+    dmc.loop = false;
+    dmc.timer_step = 0;
+    dmc.timer = 0;
+    dmc.sample_addr = 0;
+    dmc.sample_length = 0;
+    dmc.addr_counter = 0;
+    dmc.bytes_remaining = 0;
+    dmc.shift_reg = 0;
+    dmc.bits_remaining = 0;
+    dmc.out_level = 0;
+
     quarter_frame_phase = 0;
     quarter_frame_count = 0;
     frame_step = false;
@@ -64,42 +90,58 @@ void reset() {
 }
 
 // todo: exclusive control
-uint8_t reg_read(addr_t addr) {
-    return 0;
-}
+uint8_t reg_read(addr_t addr) { return 0; }
 
 // todo: exclusive control
 void reg_write(addr_t addr, uint8_t value) {
     switch (addr) {
-    case REG_PULSE1_REG0: pulse_write_reg0(&pulse[0], value); break;
-    case REG_PULSE1_REG1: pulse_write_reg1(&pulse[0], value); break;
-    case REG_PULSE1_REG2: pulse_write_reg2(&pulse[0], value); break;
-    case REG_PULSE1_REG3: pulse_write_reg3(&pulse[0], value); break;
-    case REG_PULSE2_REG0: pulse_write_reg0(&pulse[1], value); break;
-    case REG_PULSE2_REG1: pulse_write_reg1(&pulse[1], value); break;
-    case REG_PULSE2_REG2: pulse_write_reg2(&pulse[1], value); break;
-    case REG_PULSE2_REG3: pulse_write_reg3(&pulse[1], value); break;
-    case REG_TRIANGLE_REG0: triangle_write_reg0(&triangle, value); break;
-    case REG_TRIANGLE_REG2: triangle_write_reg2(&triangle, value); break;
-    case REG_TRIANGLE_REG3: triangle_write_reg3(&triangle, value); break;
-    case REG_NOISE_REG0: noise_write_reg0(&noise, value); break;
-    case REG_NOISE_REG3: noise_write_reg3(&noise, value); break;
-    case REG_STATUS:
-        status.raw = value;
-        if ( ! status.pulse0_enable) pulse[0].length = 0;
-        if ( ! status.pulse1_enable) pulse[1].length = 0;
-        if ( ! status.triangle_enable) triangle.length = 0;
-        if ( ! status.noise_enable) noise.length = 0;
-        status.dmc_interrupt = 0;
-        break;
+        case REG_PULSE1_REG0: pulse_write_reg0(&pulse[0], value); break;
+        case REG_PULSE1_REG1: pulse_write_reg1(&pulse[0], value); break;
+        case REG_PULSE1_REG2: pulse_write_reg2(&pulse[0], value); break;
+        case REG_PULSE1_REG3: pulse_write_reg3(&pulse[0], value); break;
+        case REG_PULSE2_REG0: pulse_write_reg0(&pulse[1], value); break;
+        case REG_PULSE2_REG1: pulse_write_reg1(&pulse[1], value); break;
+        case REG_PULSE2_REG2: pulse_write_reg2(&pulse[1], value); break;
+        case REG_PULSE2_REG3: pulse_write_reg3(&pulse[1], value); break;
+        case REG_TRIANGLE_REG0: triangle_write_reg0(&triangle, value); break;
+        case REG_TRIANGLE_REG2: triangle_write_reg2(&triangle, value); break;
+        case REG_TRIANGLE_REG3: triangle_write_reg3(&triangle, value); break;
+        case REG_NOISE_REG0: noise_write_reg0(&noise, value); break;
+        case REG_NOISE_REG3: noise_write_reg3(&noise, value); break;
+        case REG_DMC_REG0: dmc_write_reg0(&dmc, value); break;
+        case REG_DMC_REG1: dmc_write_reg1(&dmc, value); break;
+        case REG_DMC_REG2: dmc_write_reg2(&dmc, value); break;
+        case REG_DMC_REG3: dmc_write_reg3(&dmc, value); break;
+        case REG_STATUS:
+            status.raw = value;
+            if (!status.pulse0_enable) pulse[0].length = 0;
+            if (!status.pulse1_enable) pulse[1].length = 0;
+            if (!status.triangle_enable) triangle.length = 0;
+            if (!status.noise_enable) noise.length = 0;
+            if (status.dmc_enable) {
+                if (dmc.bytes_remaining == 0) {
+                    dmc.addr_counter = dmc.sample_addr;
+                    dmc.bytes_remaining = dmc.sample_length;
+                    dmc.silence = false;
+                }
+            } else {
+                dmc.bytes_remaining = 0;
+                dmc.silence = true;
+            }
+            status.dmc_interrupt = 0;
+            break;
     }
 }
 
 void set_sampling_rate(int rate_hz) {
     sampling_rate = rate_hz;
-    pulse_timer_step = (1ULL << TIMER_PREC) * cpu::CLOCK_FREQUENCY / sampling_rate / 2;
-    triangle_timer_step = (1ULL << TIMER_PREC) * cpu::CLOCK_FREQUENCY / sampling_rate;
-    qframe_phase_step = (QUARTER_FRAME_FREQUENCY * QUARTER_FRAME_PHASE_PERIOD) / rate_hz;
+    pulse_timer_step =
+        (1ULL << TIMER_PREC) * cpu::CLOCK_FREQUENCY / sampling_rate / 2;
+    triangle_timer_step =
+        (1ULL << TIMER_PREC) * cpu::CLOCK_FREQUENCY / sampling_rate;
+    qframe_phase_step =
+        (QUARTER_FRAME_FREQUENCY * QUARTER_FRAME_PHASE_PERIOD) / rate_hz;
+    dmc_step_coeff = ((uint64_t)cpu::CLOCK_FREQUENCY << TIMER_PREC) / rate_hz;
 }
 
 void service(uint8_t *buff, int len) {
@@ -111,31 +153,32 @@ void service(uint8_t *buff, int len) {
             frame_step = (quarter_frame_count & 3) == 3;
             half_frame_step = (quarter_frame_count & 1) == 1;
             quarter_frame_step = true;
-            
+
             quarter_frame_count = (quarter_frame_count + 1) & 0x3;
-        }
-        else {
+        } else {
             frame_step = false;
             half_frame_step = false;
             quarter_frame_step = false;
         }
 
-        buff[i] = 4 * (
-            sample_pulse(&pulse[0]) +
-            sample_pulse(&pulse[1]) +
-            sample_triangle(&triangle) +
-            sample_noise(&noise)
-        );
+        uint8_t sample = 0;
+        sample += sample_pulse(&pulse[0]);
+        sample += sample_pulse(&pulse[1]);
+        sample += sample_triangle(&triangle);
+        sample += sample_noise(&noise);
+        sample *= 2;
+        sample += sample_dmc(&dmc);
+        buff[i] = sample;
     }
 }
 
 static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
     // duty pattern
     switch ((reg0 >> 6) & 0x3) {
-    case 0 : s->waveform = 0b00000001; break;
-    case 1 : s->waveform = 0b00000011; break;
-    case 2 : s->waveform = 0b00001111; break;
-    default: s->waveform = 0b11111100; break;
+        case 0: s->waveform = 0b00000001; break;
+        case 1: s->waveform = 0b00000011; break;
+        case 2: s->waveform = 0b00001111; break;
+        default: s->waveform = 0b11111100; break;
     }
 
     s->envelope.flags = 0;
@@ -160,15 +203,16 @@ static void pulse_write_reg1(PulseState *s, uint8_t reg1) {
 
 static void pulse_write_reg2(PulseState *s, uint8_t reg2) {
     s->timer_period &= ~(0xff << TIMER_PREC);
-    s->timer_period |= reg2 << TIMER_PREC;
+    s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
 }
 
 static void pulse_write_reg3(PulseState *s, uint8_t reg3) {
     s->timer_period &= ~(0x700 << TIMER_PREC);
-    s->timer_period |= (reg3 & 0x7) << (TIMER_PREC + 8);
-    s->timer = s->timer_period;
+    s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
+    s->timer = 0;
     s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
     s->phase = 0;
+    NES_PRINTF("P s->timer_period = %d, length = %d\n", (int)(s->timer_period), (int)(s->length));
 }
 
 static void triangle_write_reg0(TriangleState *s, uint8_t reg0) {
@@ -179,16 +223,17 @@ static void triangle_write_reg0(TriangleState *s, uint8_t reg0) {
 
 static void triangle_write_reg2(TriangleState *s, uint8_t reg2) {
     s->timer_period &= ~(0xff << TIMER_PREC);
-    s->timer_period |= reg2 << TIMER_PREC;
+    s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
 }
 
 static void triangle_write_reg3(TriangleState *s, uint8_t reg3) {
     s->timer_period &= ~(0x700 << TIMER_PREC);
-    s->timer_period |= (reg3 & 0x7) << (TIMER_PREC + 8);
-    s->timer = s->timer_period;
+    s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
+    s->timer = 0;
     s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
     s->phase = 0;
     s->linear.flags |= LIN_FLAG_RELOAD;
+    NES_PRINTF("T s->timer_period = %d, length = %d\n", (int)(s->timer_period), (int)(s->length));
 }
 
 static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
@@ -207,23 +252,38 @@ static void noise_write_reg3(NoiseState *s, uint8_t reg3) {
     s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
 }
 
+static void dmc_write_reg0(DmcState *s, uint8_t reg0) {
+    s->irq_enabled = (reg0 & 0x80) != 0;
+    s->loop = (reg0 & 0x40) != 0;
+    s->timer_step = dmc_step_coeff / DMC_RATE_TABLE[reg0 & 0x0f];
+}
+
+static void dmc_write_reg1(DmcState *s, uint8_t reg0) {
+    s->out_level = reg0 & 0x7f;
+}
+
+static void dmc_write_reg2(DmcState *s, uint8_t reg0) {
+    s->sample_addr = 0xc000 + ((addr_t)reg0 << 6);
+}
+
+static void dmc_write_reg3(DmcState *s, uint8_t reg0) {
+    s->sample_length = ((int)reg0 << 4) + 1;
+}
+
 // see: https://www.nesdev.org/wiki/APU_Envelope
 static int step_envelope(Envelope *e) {
     if (quarter_frame_step) {
         if (e->flags & ENV_FLAG_START) {
-            e->flags &= ~ENV_FLAG_START; // clear start flag
+            e->flags &= ~ENV_FLAG_START;  // clear start flag
             e->decay = 15;
             e->divider = e->volume;
-        }
-        else if (e->divider > 0) {
+        } else if (e->divider > 0) {
             e->divider--;
-        }
-        else {
+        } else {
             e->divider = e->volume;
             if (e->decay > 0) {
                 e->decay--;
-            }
-            else if (e->flags & ENV_FLAG_HALT_LOOP) {
+            } else if (e->flags & ENV_FLAG_HALT_LOOP) {
                 e->decay = 15;
             }
         }
@@ -231,8 +291,7 @@ static int step_envelope(Envelope *e) {
 
     if (e->flags & ENV_FLAG_CONSTANT) {
         return e->volume;
-    }
-    else {
+    } else {
         return e->decay;
     }
 }
@@ -244,8 +303,7 @@ static int step_sweep(PulseState *s) {
         if (half_frame_step) {
             if (s->sweep.divider < s->sweep.period) {
                 s->sweep.divider++;
-            }
-            else {
+            } else {
                 s->sweep.divider = 0;
                 int change_amount = s->timer_period;
                 change_amount >>= s->sweep.shift;
@@ -255,8 +313,7 @@ static int step_sweep(PulseState *s) {
                 int target = s->timer_period + change_amount;
                 if (target < 0) {
                     target = 0;
-                }
-                else if (target >= (0x7ff << TIMER_PREC)) {
+                } else if (target >= (0x7ff << TIMER_PREC)) {
                     target = (0x7ff << TIMER_PREC);
                     gate = 0;
                 }
@@ -273,13 +330,12 @@ static int step_linear_counter(LinearCounter *c) {
     if (quarter_frame_step) {
         if (c->flags & LIN_FLAG_RELOAD) {
             c->counter = c->reload_value;
-        }
-        else if (c->counter > 0) {
+        } else if (c->counter > 0) {
             c->counter--;
         }
 
         if (!(c->flags & LIN_FLAG_CONTROL)) {
-            c->flags &= ~LIN_FLAG_RELOAD; // clear reload flag
+            c->flags &= ~LIN_FLAG_RELOAD;  // clear reload flag
         }
     }
     return c->counter > 0 ? 1 : 0;
@@ -290,11 +346,12 @@ static int sample_pulse(PulseState *s) {
     // envelope unit
     int vol = step_envelope(&(s->envelope));
 
-    // sweep unit    
+    // sweep unit
     vol *= step_sweep(s);
 
     // length counter
-    if (half_frame_step && s->length > 0 && !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
+    if (half_frame_step && s->length > 0 &&
+        !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
         s->length--;
     }
 
@@ -303,18 +360,19 @@ static int sample_pulse(PulseState *s) {
     if (s->length <= 0) vol = 0;
 
     // sequencer
-    if (s->timer >= pulse_timer_step) {
-        s->timer -= pulse_timer_step;
+    s->timer += pulse_timer_step;
+    int step = 0;
+    if (s->timer_period != 0) {
+        step = s->timer / s->timer_period;
     }
-    else {
-        s->timer = s->timer + s->timer_period - pulse_timer_step;
-        s->phase = (s->phase + 1) & 0x7;
-    }
+    s->timer -= step * s->timer_period;
+    s->phase = (s->phase + step) & 0x7;
     int amp = (s->waveform >> s->phase) & 1;
 
     return amp * vol;
 }
 
+// see: https://www.nesdev.org/wiki/APU_Triangle
 static int sample_triangle(TriangleState *s) {
     int vol = 1;
 
@@ -327,14 +385,14 @@ static int sample_triangle(TriangleState *s) {
     vol *= step_linear_counter(&(s->linear));
 
     // phase counter
-    if (s->timer >= triangle_timer_step) {
-        s->timer -= triangle_timer_step;
+    s->timer += pulse_timer_step;
+    int step = 0;
+    if (s->timer_period != 0) {
+        step = s->timer / s->timer_period;
     }
-    else {
-        s->timer = s->timer + s->timer_period - triangle_timer_step;
-        s->phase = (s->phase + 1) & 0x1f;
-    }
-    
+    s->timer -= step * s->timer_period;
+    s->phase = (s->phase + step) & 0x1f;
+
     // mute
     if (s->timer_period < 8) vol = 0;
     if (s->length <= 0) vol = 0;
@@ -342,19 +400,19 @@ static int sample_triangle(TriangleState *s) {
     // sequencer
     if (s->phase <= 15) {
         return (15 - s->phase) * vol;
-    }
-    else {
+    } else {
         return (s->phase - 16) * vol;
     }
 }
 
-// see: https://www.nesdev.org/wiki/APU_Pulse
+// see: https://www.nesdev.org/wiki/APU_Noise
 static int sample_noise(NoiseState *s) {
     // envelope unit
     int vol = step_envelope(&(s->envelope));
 
     // length counter
-    if (half_frame_step && s->length > 0 && !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
+    if (half_frame_step && s->length > 0 &&
+        !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
         s->length--;
     }
 
@@ -369,4 +427,48 @@ static int sample_noise(NoiseState *s) {
     return (amp * vol) >> 4;
 }
 
+// see: https://www.nesdev.org/wiki/APU_DMC
+static int sample_dmc(DmcState *s) {
+    s->timer += s->timer_step;
+    int step = s->timer >> TIMER_PREC;
+    s->timer &= (1 << TIMER_PREC) - 1;
+
+    for (int i = 0; i < step; i++) {
+        if (s->bits_remaining == 0) {
+            if (s->bytes_remaining > 0) {
+                s->shift_reg = cpu::bus_read(s->addr_counter | 0x8000);
+                s->addr_counter++;
+                s->bytes_remaining--;
+                if (s->bytes_remaining == 0) {
+                    if (s->loop) {
+                        s->addr_counter = s->sample_addr;
+                        s->bytes_remaining = s->sample_length;
+                    } else if (s->irq_enabled) {
+                        status.dmc_interrupt = 1;
+                        interrupt::assert_irq();
+                    }
+                }
+            }
+            s->bits_remaining = 8;
+        }
+        if (s->bits_remaining > 0) {
+            if (!s->silence) {
+                if (s->shift_reg & 1) {
+                    if (s->out_level <= 125) {
+                        s->out_level += 2;
+                    }
+                } else {
+                    if (s->out_level >= 2) {
+                        s->out_level -= 2;
+                    }
+                }
+                s->shift_reg >>= 1;
+            }
+            s->bits_remaining--;
+        }
+    }
+
+    return s->out_level;
 }
+
+}  // namespace nes::apu

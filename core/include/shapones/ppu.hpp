@@ -30,7 +30,6 @@ static constexpr int PALETTE_FILE_SIZE_WITH_MIRROR = 0x100;
 static constexpr uint8_t OPAQUE_FLAG = 0x80;
 
 static constexpr addr_t CHRROM_BASE = 0x0000;
-static constexpr addr_t CHRROM_SIZE = 0x2000;
 static constexpr addr_t VRAM_BASE = 0x2000;
 static constexpr addr_t VRAM_MIRROR_BASE = 0x3000;
 static constexpr addr_t VRAM_MIRROR_SIZE = 0xf00;
