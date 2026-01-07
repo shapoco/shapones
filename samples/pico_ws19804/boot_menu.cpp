@@ -1,6 +1,8 @@
 #include "boot_menu.hpp"
 
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "ws19804.hpp"
 #include "mono8x16.hpp"

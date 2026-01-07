@@ -1,10 +1,12 @@
 #ifndef COMMON_HPP
 #define COMMON_HPP
 
-#include "stdint.h"
+#include <stdint.h>
+
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
+
 #include "shapones/shapones.hpp"
 #include "ws19804.hpp"
 #include "mono8x16.hpp"

@@ -81,7 +81,7 @@
                 "${PICOLIBSDK_PATH}/_display/st7789",
                 "${PICOLIBSDK_PATH}/_devices/picopad",
                 "${PICOLIBSDK_PATH}/_sdk/inc",
-                "${PICOLIBSDK_PATH}/PicoPad/DUMMY/DUMMY",
+                "${PICOLIBSDK_PATH}/PicoPad/NEW/NEW",
                 "${workspaceFolder}/core/include",
                 "${workspaceFolder}/samples/font/mono8x16",
                 "${workspaceFolder}/samples/picopad/EMU/SHAPONES",
