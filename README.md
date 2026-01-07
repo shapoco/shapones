@@ -15,7 +15,7 @@ an NES emulator for my programming study.
 
 ## for Raspberry Pi Pico/Pico2 + Waveshare LCD module
 
-A sample application using [Waveshare 2.8inch Touch Display Module for Raspberry Pi Pico](https://www.waveshare.com/pico-restouch-lcd-2.8.htm) supports loading iNES file from SD card.
+A sample application for [Waveshare 2.8inch Touch Display Module for Raspberry Pi Pico](https://www.waveshare.com/pico-restouch-lcd-2.8.htm) supports loading iNES file from SD card.
 
 [![](img/video-thumb-wslcd.jpg)](https://x.com/shapoco/status/1834727724797378585)
 
@@ -47,7 +47,7 @@ A sample application using [Waveshare 2.8inch Touch Display Module for Raspberry
 
 ## for PicoPad
 
-A sample application using [PicoPad](https://picopad.eu/en/) supports loading iNES file from SD card.
+A sample application for [PicoPad](https://picopad.eu/en/) supports loading iNES file from SD card.
 
 [![](img/video-thumb-picopad.jpg)](https://x.com/shapoco/status/2008424795881488452)
 
