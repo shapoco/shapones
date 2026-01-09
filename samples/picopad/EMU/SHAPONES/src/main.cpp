@@ -1,6 +1,7 @@
 #include "../include.h"
 
 #include "../../../_sdk/inc/sdk_dma.h"
+#include "../../../_sdk/inc/sdk_flash.h"
 #include "../../../_sdk/inc/sdk_gpio.h"
 #include "../../../_sdk/inc/sdk_spi.h"
 
@@ -10,6 +11,8 @@
 static constexpr int FRAME_BUFF_STRIDE = nes::SCREEN_WIDTH * 3 / 2;
 static constexpr int SOUND_FREQ = 22050;
 static constexpr int SOUND_BUFF_SIZE = 256;
+
+static constexpr uint32_t ROM_OFFSET = 0x100F0000;
 
 static uint8_t line_buff[nes::SCREEN_WIDTH];
 static uint8_t frame_buff[FRAME_BUFF_STRIDE * nes::SCREEN_HEIGHT];
@@ -63,8 +66,6 @@ int main() {
     WaitMs(100);
     set_sys_clock_khz(250000, true);
 #endif
-
-    PWMSndInit();
 
     boot_menu();
 
@@ -160,12 +161,39 @@ static void boot_menu() {
     if (!FileOpen(&ines_file, ines_path)) {
         boot_error("FAILED TO OPEN FILE.");
     }
-    ines_rom = new uint8_t[ines_size];
-    int ret = FileRead(&ines_file, ines_rom, ines_size);
-    if (ret < ines_size) {
+    if (ines_size < (128 + 1) * 1024) {
+        // Load to RAM
+        ines_rom = new uint8_t[ines_size];
+        int ret = FileRead(&ines_file, ines_rom, ines_size);
+        if (ret < ines_size) {
+            char ret_str[32];
+            snprintf(ret_str, sizeof(ret_str), "Code: %d", ret);
+            boot_error("FAILED TO LOAD FILE.", ret_str);
+        }
+    } else if (ines_size < (1024 + 1) * 1024) {
+        // Load to Flash
+        constexpr int CHUNK_SIZE = 4096;
+        FlashErase(ROM_OFFSET, ines_size);
+        uint8_t *buff = new uint8_t[CHUNK_SIZE];
+        int remaining = ines_size;
+        while (remaining > 0) {
+            int to_read = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
+            int ret = FileRead(&ines_file, buff, to_read);
+            if (ret <= 0) {
+                char ret_str[32];
+                snprintf(ret_str, sizeof(ret_str), "Code: %d", ret);
+                boot_error("FAILED TO LOAD FILE.", ret_str);
+            }
+            FlashProgram(ROM_OFFSET + (ines_size - remaining), buff, ret);
+            remaining -= ret;
+        }
+        delete[] buff;
+        ines_rom = (uint8_t *)ROM_OFFSET;
+    } else {
         char ret_str[32];
-        snprintf(ret_str, sizeof(ret_str), "Code: %d", ret);
-        boot_error("FAILED TO LOAD FILE.", ret_str);
+        snprintf(ret_str, sizeof(ret_str), "NES FILE TOO LARGE (%d KB)",
+                 ines_size / 1024);
+        boot_error(ret_str);
     }
     FileClose(&ines_file);
 
@@ -301,7 +329,7 @@ static void disp_flip() {
 
     mono8x16::draw_string_rgb444(frame_buff, FRAME_BUFF_STRIDE,
                                  nes::SCREEN_WIDTH, nes::SCREEN_HEIGHT, 0, 0,
-                                 fps_str, 0x000);
+                                 fps_str, 0xFFF);
 
     // complete previous DMA
     disp_dma_complete();

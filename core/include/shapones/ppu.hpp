@@ -28,6 +28,7 @@ static constexpr int PALETTE_FILE_SIZE = PALETTE_SIZE * PALETTE_NUM_BANK;
 static constexpr int PALETTE_FILE_SIZE_WITH_MIRROR = 0x100;
 
 static constexpr uint8_t OPAQUE_FLAG = 0x80;
+static constexpr uint8_t BEHIND_FLAG = 0x40;
 
 static constexpr addr_t CHRROM_BASE = 0x0000;
 static constexpr addr_t VRAM_BASE = 0x2000;
