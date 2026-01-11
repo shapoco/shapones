@@ -1,10 +1,5 @@
 #include "../include.h"
 
-#include "../../../_sdk/inc/sdk_dma.h"
-#include "../../../_sdk/inc/sdk_flash.h"
-#include "../../../_sdk/inc/sdk_gpio.h"
-#include "../../../_sdk/inc/sdk_spi.h"
-
 #include "mono8x16.hpp"
 #include "shapones/shapones.hpp"
 
