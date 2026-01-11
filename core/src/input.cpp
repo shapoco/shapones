@@ -1,4 +1,4 @@
-#include "shapones/shapones.hpp"
+#include "shapones/input.hpp"
 
 namespace nes::input {
 

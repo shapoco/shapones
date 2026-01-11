@@ -1,4 +1,6 @@
-#include "shapones/shapones.hpp"
+#include "shapones/cpu.hpp"
+#include "shapones/ppu.hpp"
+#include "shapones/apu.hpp"
 
 namespace nes {
 

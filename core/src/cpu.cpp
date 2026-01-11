@@ -1,19 +1,32 @@
-#include "stdint.h"
-#include "shapones/shapones.hpp"
+#include "shapones/common.hpp"
+#include "shapones/memory.hpp"
+#include "shapones/ppu.hpp"
+#include "shapones/input.hpp"
+#include "shapones/apu.hpp"
+#include "shapones/dma.hpp"
+#include "shapones/mapper.hpp"
+#include "shapones/interrupt.hpp"
+
+#define NES_IRQ_PENDING_SUPPORT (1)
 
 namespace nes::cpu {
 
 static Registers reg;
 static bool stopped = false;
+#if NES_IRQ_PENDING_SUPPORT
+static int irq_pending = 0;
+#else
+static constexpr int irq_pending = 0;
+#endif
 static volatile cycle_t ppu_cycle_count;
 
 uint8_t bus_read(addr_t addr) {
     uint8_t retval;
     if (PRGROM_BASE <= addr && addr < PRGROM_BASE + PRGROM_RANGE ) {
-        retval = memory::prgrom_read(addr - PRGROM_BASE);
+        retval = mapper::prgrom_read(addr - PRGROM_BASE);
     }
     else if (PRGRAM_BASE <= addr && addr < PRGRAM_BASE + PRGRAM_RANGE ) {
-        retval = memory::prgram_read(addr - PRGRAM_BASE);
+        retval = mapper::prgram_read(addr - PRGRAM_BASE);
     }
     else if (WRAM_BASE <= addr && addr < WRAM_BASE + WRAM_SIZE) {
         retval = memory::wram[addr - WRAM_BASE];
@@ -38,7 +51,7 @@ void bus_write(addr_t addr, uint8_t data) {
         memory::wram[addr - WRAM_BASE] = data;
     }
     else if (PRGRAM_BASE <= addr && addr < PRGRAM_BASE + PRGRAM_RANGE ) {
-        memory::prgram_write(addr - PRGRAM_BASE, data);
+        mapper::prgram_write(addr - PRGRAM_BASE, data);
     }
     else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
         ppu::reg_write(addr, data);
@@ -56,11 +69,11 @@ void bus_write(addr_t addr, uint8_t data) {
         memory::wram[addr - WRAM_MIRROR_BASE] = data;
     }
     else {
-        memory::ext_write(addr, data);
+        mapper::ext_write(addr, data);
     }
 }
 
-NES_ALWAYS_INLINE uint16_t bus_read_w(addr_t addr) {
+static NES_ALWAYS_INLINE uint16_t bus_read_w(addr_t addr) {
     return
         (uint16_t)bus_read(addr) | 
         ((uint16_t)bus_read(addr + 1) << 8);
@@ -73,7 +86,7 @@ void reset() {
     reg.status.negative = 0;
     reg.status.overflow = 0;
     reg.status.reserved = 1;
-    reg.status.breakmode = 1;
+    reg.status.breakmode = 0;
     reg.status.decimalmode = 0;
     reg.status.interrupt = 1;
     reg.status.zero = 0;
@@ -82,61 +95,86 @@ void reset() {
     reg.PC = bus_read_w(VEC_RESET) | 0x8000;
     stopped = false;
     ppu_cycle_count = 0;
-    NES_PRINTF("entry point = 0x%x\n", (int)reg.PC);
+    NES_PRINTF("Entry point: 0x%x\n", (int)reg.PC);
 }
 
 void stop() {
     stopped = true;
+    NES_PRINTF("CPU stopped.\n");
+    NES_PRINTF("  PC: 0x%02x\n", (int)reg.PC);
+    NES_PRINTF("  A : 0x%02x\n", (int)reg.A);
+    NES_PRINTF("  X : 0x%02x\n", (int)reg.X);
+    NES_PRINTF("  Y : 0x%02x\n", (int)reg.Y);
+    NES_PRINTF("  SP: 0x%02x\n", (int)reg.SP);
+    NES_PRINTF("  STATUS: 0x%02x\n", (int)reg.status.raw);
+    NES_PRINTF("    carry:       %d\n", (int)reg.status.carry);
+    NES_PRINTF("    zero:        %d\n", (int)reg.status.zero);
+    NES_PRINTF("    interrupt:   %d\n", (int)reg.status.interrupt);
+    NES_PRINTF("    decimalmode: %d\n", (int)reg.status.decimalmode);
+    NES_PRINTF("    breakmode:   %d\n", (int)reg.status.breakmode);
+    NES_PRINTF("    reserved:    %d\n", (int)reg.status.reserved);
+    NES_PRINTF("    overflow:    %d\n", (int)reg.status.overflow);
+    NES_PRINTF("    negative:    %d\n", (int)reg.status.negative);
 }
 
-NES_ALWAYS_INLINE uint8_t fetch() { 
+bool is_stopped() {
+    return stopped;
+}
+
+static NES_ALWAYS_INLINE uint8_t fetch() { 
     uint8_t retval = bus_read(reg.PC); 
     reg.PC += 1;
+    if (reg.PC == 0) {
+        NES_PRINTF("*Warning: PC wrapped around to 0x0000\n");
+    }
     return retval;
 }
 
-NES_ALWAYS_INLINE uint16_t fetch_w() { 
+static NES_ALWAYS_INLINE uint16_t fetch_w() { 
     uint16_t retval = bus_read_w(reg.PC) ;
     reg.PC += 2;
+    if (reg.PC == 0 || reg.PC == 1) {
+        NES_PRINTF("*Warning: PC wrapped around to 0x0000\n");
+    }
     return retval;
 }
 
-NES_ALWAYS_INLINE uint8_t set_nz(uint8_t value) {
+static NES_ALWAYS_INLINE uint8_t set_nz(uint8_t value) {
     reg.status.negative = (value >> 7) & 1;
     reg.status.zero = (value == 0) ? 1 : 0;
     return value;
 }
 
-NES_ALWAYS_INLINE void push(uint8_t value) {
+static NES_ALWAYS_INLINE void push(uint8_t value) {
     if (reg.SP == 0) {
         NES_ERRORF("Stack Overflow at push()\n");
     }
     bus_write(0x100 | reg.SP--, value);
 }
 
-NES_ALWAYS_INLINE uint8_t pop() {
+static NES_ALWAYS_INLINE uint8_t pop() {
     if (reg.SP >= 255) {
-        NES_ERRORF("Stack Overflow at pop()\n");
+        NES_ERRORF("Stack Underflow at pop()\n");
     }
     return bus_read(0x100 | ++reg.SP);
 }
 
-NES_ALWAYS_INLINE addr_t fetch_zpg() { return fetch(); }
-NES_ALWAYS_INLINE addr_t fetch_zpg_x() { return (fetch() + reg.X) & 0xff; }
-NES_ALWAYS_INLINE addr_t fetch_zpg_y() { return (fetch() + reg.Y) & 0xff; }
+static NES_ALWAYS_INLINE addr_t fetch_zpg() { return fetch(); }
+static NES_ALWAYS_INLINE addr_t fetch_zpg_x() { return (fetch() + reg.X) & 0xff; }
+static NES_ALWAYS_INLINE addr_t fetch_zpg_y() { return (fetch() + reg.Y) & 0xff; }
 
-NES_ALWAYS_INLINE addr_t fetch_imm() { 
+static NES_ALWAYS_INLINE addr_t fetch_imm() { 
     return fetch();
 }
 
-NES_ALWAYS_INLINE addr_t fetch_pre_idx_ind(cycle_t *cycle) {
+static NES_ALWAYS_INLINE addr_t fetch_pre_idx_ind(cycle_t *cycle) {
     addr_t base = (fetch() + reg.X) & 0xff;
     addr_t addr = bus_read(base) | ((uint16_t)bus_read((base + 1) & 0xffu) << 8);
     if ((addr & 0xff00u) != (base & 0xff00u)) *cycle += 1;
     return addr;
 }
 
-NES_ALWAYS_INLINE addr_t fetch_post_idx_ind(cycle_t *cycle) {
+static NES_ALWAYS_INLINE addr_t fetch_post_idx_ind(cycle_t *cycle) {
     addr_t addrOrData = fetch();
     addr_t baseAddr = bus_read(addrOrData) | ((uint16_t)bus_read((addrOrData + 1) & 0xffu) << 8);
     addr_t addr = baseAddr + reg.Y;
@@ -144,32 +182,32 @@ NES_ALWAYS_INLINE addr_t fetch_post_idx_ind(cycle_t *cycle) {
     return addr;
 }
 
-NES_ALWAYS_INLINE addr_t fetch_abs() { 
+static NES_ALWAYS_INLINE addr_t fetch_abs() { 
     return fetch_w();
 }
 
-NES_ALWAYS_INLINE addr_t fetch_abs_x(cycle_t *cycle) { 
+static NES_ALWAYS_INLINE addr_t fetch_abs_x(cycle_t *cycle) { 
     uint16_t base = fetch_w();
     uint16_t retval = base + reg.X;
     if ((base & 0xff00u) != (retval & 0xff00u)) *cycle += 1;
     return retval;
 }
             
-NES_ALWAYS_INLINE addr_t fetch_abs_y(cycle_t *cycle) { 
+static NES_ALWAYS_INLINE addr_t fetch_abs_y(cycle_t *cycle) { 
     uint16_t base = fetch_w();
     uint16_t retval = base + reg.Y;
     if ((base & 0xff00u) != (retval & 0xff00u)) *cycle += 1;
     return retval;
 }
 
-NES_ALWAYS_INLINE addr_t fetch_ind_abs() {
+static NES_ALWAYS_INLINE addr_t fetch_ind_abs() {
     addr_t addr_or_data = fetch_w();
     addr_t next_addr = (addr_or_data & 0xFF00) | (((addr_or_data & 0xFF) + 1) & 0xFF);
     addr_t addr = bus_read(addr_or_data) | ((uint16_t)bus_read(next_addr) << 8);
     return addr;
 }
 
-NES_ALWAYS_INLINE addr_t fetch_rel(cycle_t *cycle) {    
+static NES_ALWAYS_INLINE addr_t fetch_rel(cycle_t *cycle) {    
     int distance = fetch();
     if (distance >= 0x80) distance -= 256;
     addr_t retval = reg.PC + distance;
@@ -177,183 +215,205 @@ NES_ALWAYS_INLINE addr_t fetch_rel(cycle_t *cycle) {
     return retval;
 }
 
-NES_ALWAYS_INLINE void opBRK() {
-    bool interrupt = reg.status.interrupt != 0;
+static NES_ALWAYS_INLINE void opBRK() {
+    fetch();  // padding
     push(reg.PC >> 8);
     push(reg.PC & 0xff);
-    reg.status.breakmode = true;
-    push(reg.status.raw);
+    auto s = reg.status;
+    s.breakmode = true;
+    push(s.raw);
     reg.status.interrupt = true;
-    if ( ! interrupt) {
-        reg.PC = bus_read_w(VEC_IRQ);
-    }
+    reg.PC = bus_read_w(VEC_IRQ);
 }
 
-NES_ALWAYS_INLINE void opJMP(addr_t addr) {
+static NES_ALWAYS_INLINE void opJMP(addr_t addr) {
     reg.PC = addr;
 }
 
-NES_ALWAYS_INLINE void opJSR(addr_t addr) {
+static NES_ALWAYS_INLINE void opJSR(addr_t addr) {
     addr_t pc = reg.PC - 1;
+    if (pc == 0xFFFF) {
+        NES_PRINTF("*Warning: PC wrapped around to 0xFFFF after JSR\n");
+    }
     push(pc >> 8);
     push(pc & 0xff);
     reg.PC = addr;
 }
 
-NES_ALWAYS_INLINE void opRTI() {
+static NES_ALWAYS_INLINE void opRTI() {
     reg.status.raw = pop();
-    reg.status.reserved = true;
+    reg.status.reserved = 1;
+    reg.status.breakmode = 0;
     reg.PC = (addr_t)pop();
     reg.PC |= ((addr_t)pop() << 8);
+    //NES_PRINTF("RTI to PC=0x%04x, SP=0x%02x\n", (unsigned int)reg.PC, (unsigned int)reg.SP);
 }
 
-NES_ALWAYS_INLINE void opRTS() {
+static NES_ALWAYS_INLINE void opRTS() {
     reg.PC = (addr_t)pop();
     reg.PC |= ((addr_t)pop() << 8);
     reg.PC += 1;
+    if (reg.PC == 0) {
+        NES_PRINTF("*Warning: PC wrapped around to 0x0000 after RTS\n");
+    }
 }
 
-NES_ALWAYS_INLINE void opBIT(addr_t addr) {
+static NES_ALWAYS_INLINE void opBIT(addr_t addr) {
     uint8_t data = bus_read(addr);
     reg.status.negative = (data >> 7) & 1;
     reg.status.overflow = (data >> 6) & 1;
     reg.status.zero = (reg.A & data) ? 0 : 1;
 }
 
-NES_ALWAYS_INLINE void opPHP() {
-    reg.status.breakmode = 1;
-    push(reg.status.raw);
+static NES_ALWAYS_INLINE void opPHP() {
+    auto s = reg.status;
+    s.breakmode = 1;
+    push(s.raw);
 }
 
-NES_ALWAYS_INLINE void opPLP() {
+static NES_ALWAYS_INLINE void opPLP() {
     reg.status.raw = pop();
     reg.status.reserved = 1;
+    reg.status.breakmode = 0;
+#if NES_IRQ_PENDING_SUPPORT
+    irq_pending = 2;
+#endif
 }
         
-NES_ALWAYS_INLINE void opPHA() {
+static NES_ALWAYS_INLINE void opPHA() {
     push(reg.A);
 }
         
-NES_ALWAYS_INLINE void opPLA() {
+static NES_ALWAYS_INLINE void opPLA() {
     reg.A = set_nz(pop());
 }
 
-NES_ALWAYS_INLINE void cond_jump(bool cond, addr_t addr, cycle_t *cycle) {
+static NES_ALWAYS_INLINE void cond_jump(bool cond, addr_t addr, cycle_t *cycle) {
     if (cond) {
         reg.PC = addr;
         (*cycle)++;
     }
 }
 
-NES_ALWAYS_INLINE void opBPL(addr_t addr, cycle_t *cycle) { cond_jump(!reg.status.negative, addr, cycle); }
-NES_ALWAYS_INLINE void opBMI(addr_t addr, cycle_t *cycle) { cond_jump( reg.status.negative, addr, cycle); }
-NES_ALWAYS_INLINE void opBVC(addr_t addr, cycle_t *cycle) { cond_jump(!reg.status.overflow, addr, cycle); }
-NES_ALWAYS_INLINE void opBVS(addr_t addr, cycle_t *cycle) { cond_jump( reg.status.overflow, addr, cycle); }
-NES_ALWAYS_INLINE void opBCC(addr_t addr, cycle_t *cycle) { cond_jump(!reg.status.carry, addr, cycle); }
-NES_ALWAYS_INLINE void opBCS(addr_t addr, cycle_t *cycle) { cond_jump( reg.status.carry, addr, cycle); }
-NES_ALWAYS_INLINE void opBNE(addr_t addr, cycle_t *cycle) { cond_jump(!reg.status.zero, addr, cycle); }
-NES_ALWAYS_INLINE void opBEQ(addr_t addr, cycle_t *cycle) { cond_jump( reg.status.zero, addr, cycle); }
+static NES_ALWAYS_INLINE void opBPL(addr_t addr, cycle_t *cycle) { cond_jump(!reg.status.negative, addr, cycle); }
+static NES_ALWAYS_INLINE void opBMI(addr_t addr, cycle_t *cycle) { cond_jump( reg.status.negative, addr, cycle); }
+static NES_ALWAYS_INLINE void opBVC(addr_t addr, cycle_t *cycle) { cond_jump(!reg.status.overflow, addr, cycle); }
+static NES_ALWAYS_INLINE void opBVS(addr_t addr, cycle_t *cycle) { cond_jump( reg.status.overflow, addr, cycle); }
+static NES_ALWAYS_INLINE void opBCC(addr_t addr, cycle_t *cycle) { cond_jump(!reg.status.carry, addr, cycle); }
+static NES_ALWAYS_INLINE void opBCS(addr_t addr, cycle_t *cycle) { cond_jump( reg.status.carry, addr, cycle); }
+static NES_ALWAYS_INLINE void opBNE(addr_t addr, cycle_t *cycle) { cond_jump(!reg.status.zero, addr, cycle); }
+static NES_ALWAYS_INLINE void opBEQ(addr_t addr, cycle_t *cycle) { cond_jump( reg.status.zero, addr, cycle); }
 
-NES_ALWAYS_INLINE void opCLC() { reg.status.carry = 0; }
-NES_ALWAYS_INLINE void opSEC() { reg.status.carry = 1; }
-NES_ALWAYS_INLINE void opCLI() { reg.status.interrupt = 0; }
-NES_ALWAYS_INLINE void opSEI() { reg.status.interrupt = 1; }
-NES_ALWAYS_INLINE void opCLV() { reg.status.overflow = 0; }
-NES_ALWAYS_INLINE void opCLD() { reg.status.decimalmode = 0; }
-NES_ALWAYS_INLINE void opSED() { reg.status.decimalmode = 1; }
+static NES_ALWAYS_INLINE void opCLC() { reg.status.carry = 0; }
+static NES_ALWAYS_INLINE void opSEC() { reg.status.carry = 1; }
+static NES_ALWAYS_INLINE void opCLI() {
+    reg.status.interrupt = 0; 
+#if NES_IRQ_PENDING_SUPPORT
+    irq_pending = 2; 
+#endif
+}
+static NES_ALWAYS_INLINE void opSEI() {
+    reg.status.interrupt = 1; 
+#if NES_IRQ_PENDING_SUPPORT
+    irq_pending = 2; 
+#endif
+}
+static NES_ALWAYS_INLINE void opCLV() { reg.status.overflow = 0; }
+static NES_ALWAYS_INLINE void opCLD() { reg.status.decimalmode = 0; }
+static NES_ALWAYS_INLINE void opSED() { reg.status.decimalmode = 1; }
         
-NES_ALWAYS_INLINE void opTXA() { reg.A = set_nz(reg.X); }
-NES_ALWAYS_INLINE void opTYA() { reg.A = set_nz(reg.Y); }
-NES_ALWAYS_INLINE void opTXS() { reg.SP = reg.X; }
-NES_ALWAYS_INLINE void opTAY() { reg.Y = set_nz(reg.A); }
-NES_ALWAYS_INLINE void opTAX() { reg.X = set_nz(reg.A); }
-NES_ALWAYS_INLINE void opTSX() { reg.X = set_nz(reg.SP); }
+static NES_ALWAYS_INLINE void opTXA() { reg.A = set_nz(reg.X); }
+static NES_ALWAYS_INLINE void opTYA() { reg.A = set_nz(reg.Y); }
+static NES_ALWAYS_INLINE void opTXS() { reg.SP = reg.X; }
+static NES_ALWAYS_INLINE void opTAY() { reg.Y = set_nz(reg.A); }
+static NES_ALWAYS_INLINE void opTAX() { reg.X = set_nz(reg.A); }
+static NES_ALWAYS_INLINE void opTSX() { reg.X = set_nz(reg.SP); }
 
-NES_ALWAYS_INLINE void opLDA(uint8_t data) { reg.A = set_nz(data); }
-NES_ALWAYS_INLINE void opLDX(uint8_t data) { reg.X = set_nz(data); }
-NES_ALWAYS_INLINE void opLDY(uint8_t data) { reg.Y = set_nz(data); }
+static NES_ALWAYS_INLINE void opLDA(uint8_t data) { reg.A = set_nz(data); }
+static NES_ALWAYS_INLINE void opLDX(uint8_t data) { reg.X = set_nz(data); }
+static NES_ALWAYS_INLINE void opLDY(uint8_t data) { reg.Y = set_nz(data); }
 
-NES_ALWAYS_INLINE void opSTA(addr_t addr) { bus_write(addr, reg.A); }
-NES_ALWAYS_INLINE void opSTX(addr_t addr) { bus_write(addr, reg.X); }
-NES_ALWAYS_INLINE void opSTY(addr_t addr) { bus_write(addr, reg.Y); }
+static NES_ALWAYS_INLINE void opSTA(addr_t addr) { bus_write(addr, reg.A); }
+static NES_ALWAYS_INLINE void opSTX(addr_t addr) { bus_write(addr, reg.X); }
+static NES_ALWAYS_INLINE void opSTY(addr_t addr) { bus_write(addr, reg.Y); }
 
-NES_ALWAYS_INLINE void compare(uint8_t a, uint8_t b) {
+static NES_ALWAYS_INLINE void compare(uint8_t a, uint8_t b) {
     int16_t compared = (int16_t)a - (int16_t)b;
     reg.status.carry = compared >= 0;
     set_nz(compared);
 }
-NES_ALWAYS_INLINE void opCMP(uint8_t data) { compare(reg.A, data); }
-NES_ALWAYS_INLINE void opCPX(uint8_t data) { compare(reg.X, data); }
-NES_ALWAYS_INLINE void opCPY(uint8_t data) { compare(reg.Y, data); }
+static NES_ALWAYS_INLINE void opCMP(uint8_t data) { compare(reg.A, data); }
+static NES_ALWAYS_INLINE void opCPX(uint8_t data) { compare(reg.X, data); }
+static NES_ALWAYS_INLINE void opCPY(uint8_t data) { compare(reg.Y, data); }
 
-NES_ALWAYS_INLINE void opINX() { set_nz(++reg.X); }
-NES_ALWAYS_INLINE void opINY() { set_nz(++reg.Y); }
-NES_ALWAYS_INLINE void opDEX() { set_nz(--reg.X); }
-NES_ALWAYS_INLINE void opDEY() { set_nz(--reg.Y); }
+static NES_ALWAYS_INLINE void opINX() { set_nz(++reg.X); }
+static NES_ALWAYS_INLINE void opINY() { set_nz(++reg.Y); }
+static NES_ALWAYS_INLINE void opDEX() { set_nz(--reg.X); }
+static NES_ALWAYS_INLINE void opDEY() { set_nz(--reg.Y); }
 
-NES_ALWAYS_INLINE void opINC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) + 1)); }
-NES_ALWAYS_INLINE void opDEC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) - 1)); }
+static NES_ALWAYS_INLINE void opINC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) + 1)); }
+static NES_ALWAYS_INLINE void opDEC(addr_t addr) { bus_write(addr, set_nz(bus_read(addr) - 1)); }
 
-NES_ALWAYS_INLINE void opAND(uint8_t data) { reg.A = set_nz(data & reg.A); }
-NES_ALWAYS_INLINE void opORA(uint8_t data) { reg.A = set_nz(data | reg.A); }
-NES_ALWAYS_INLINE void opEOR(uint8_t data) { reg.A = set_nz(data ^ reg.A); }
+static NES_ALWAYS_INLINE void opAND(uint8_t data) { reg.A = set_nz(data & reg.A); }
+static NES_ALWAYS_INLINE void opORA(uint8_t data) { reg.A = set_nz(data | reg.A); }
+static NES_ALWAYS_INLINE void opEOR(uint8_t data) { reg.A = set_nz(data ^ reg.A); }
 
-NES_ALWAYS_INLINE void opADC(uint8_t data) {
+static NES_ALWAYS_INLINE void opADC(uint8_t data) {
     uint16_t operated = (uint16_t)reg.A + data + reg.status.carry;
     reg.status.overflow = (!(((reg.A ^ data) & 0x80) != 0) && (((reg.A ^ operated) & 0x80)) != 0);
     reg.status.carry = (operated >= 0x100) ? 1 : 0;
     reg.A = set_nz(operated);
 }
 
-NES_ALWAYS_INLINE void opSBC(uint8_t data) {
+static NES_ALWAYS_INLINE void opSBC(uint8_t data) {
     int operated = (int)reg.A - data - (reg.status.carry ? 0 : 1);
     reg.status.overflow = (((reg.A ^ operated) & 0x80) != 0 && ((reg.A ^ data) & 0x80) != 0);
     reg.status.carry = (operated >= 0) ? 1 : 0;
     reg.A = set_nz(operated);
 }
 
-NES_ALWAYS_INLINE uint8_t opASL(uint8_t data) {
+static NES_ALWAYS_INLINE uint8_t opASL(uint8_t data) {
     reg.status.carry = (data >> 7) & 1;
     return set_nz(data << 1);
 }
-NES_ALWAYS_INLINE void opASL_a() { reg.A = opASL(reg.A); }
-NES_ALWAYS_INLINE void opASL_m(addr_t addr) { bus_write(addr, opASL(bus_read(addr))); }
+static NES_ALWAYS_INLINE void opASL_a() { reg.A = opASL(reg.A); }
+static NES_ALWAYS_INLINE void opASL_m(addr_t addr) { bus_write(addr, opASL(bus_read(addr))); }
 
-NES_ALWAYS_INLINE uint8_t opLSR(uint8_t data) {
+static NES_ALWAYS_INLINE uint8_t opLSR(uint8_t data) {
     reg.status.carry = data & 1;
     return set_nz((data >> 1) & 0x7f);
 }
-NES_ALWAYS_INLINE void opLSR_a() { reg.A = opLSR(reg.A); }
-NES_ALWAYS_INLINE void opLSR_m(addr_t addr) { bus_write(addr, opLSR(bus_read(addr))); }
+static NES_ALWAYS_INLINE void opLSR_a() { reg.A = opLSR(reg.A); }
+static NES_ALWAYS_INLINE void opLSR_m(addr_t addr) { bus_write(addr, opLSR(bus_read(addr))); }
 
-NES_ALWAYS_INLINE uint8_t opROL(uint8_t data) {
+static NES_ALWAYS_INLINE uint8_t opROL(uint8_t data) {
     uint8_t carry = (data >> 7) & 1;
     data = (data << 1) | reg.status.carry;
     reg.status.carry = carry;
     return set_nz(data);
 }
-NES_ALWAYS_INLINE void opROL_a() { reg.A = opROL(reg.A); }
-NES_ALWAYS_INLINE void opROL_m(addr_t addr) { bus_write(addr, opROL(bus_read(addr))); }
+static NES_ALWAYS_INLINE void opROL_a() { reg.A = opROL(reg.A); }
+static NES_ALWAYS_INLINE void opROL_m(addr_t addr) { bus_write(addr, opROL(bus_read(addr))); }
 
-NES_ALWAYS_INLINE uint8_t opROR(uint8_t data) {
+static NES_ALWAYS_INLINE uint8_t opROR(uint8_t data) {
     uint8_t carry = data & 1;
     data = ((data >> 1) & 0x7f) | (reg.status.carry << 7);
     reg.status.carry = carry;
     return set_nz(data);
 }
-NES_ALWAYS_INLINE void opROR_a() { reg.A = opROR(reg.A); }
-NES_ALWAYS_INLINE void opROR_m(addr_t addr) { bus_write(addr, opROR(bus_read(addr))); }
+static NES_ALWAYS_INLINE void opROR_a() { reg.A = opROR(reg.A); }
+static NES_ALWAYS_INLINE void opROR_m(addr_t addr) { bus_write(addr, opROR(bus_read(addr))); }
 
-NES_ALWAYS_INLINE void opNOP() { }
+static NES_ALWAYS_INLINE void opNOP() { }
 
-NES_ALWAYS_INLINE void opSLO(addr_t addr) {
+static NES_ALWAYS_INLINE void opSLO(addr_t addr) {
     uint8_t data = bus_read(addr);
     reg.status.carry = (data & 0x80) >> 7;
     data <<= 1;
     reg.A = set_nz(reg.A | data);
     bus_write(addr, data);
 }
-NES_ALWAYS_INLINE void opRLA(addr_t addr) {
+static NES_ALWAYS_INLINE void opRLA(addr_t addr) {
     uint8_t data = bus_read(addr);
     uint8_t carry = (data & 0x80) >> 7;
     data = (data << 1) | reg.status.carry;
@@ -361,14 +421,14 @@ NES_ALWAYS_INLINE void opRLA(addr_t addr) {
     reg.A = set_nz(reg.A & data);
     bus_write(addr, data);
 }
-NES_ALWAYS_INLINE void opSRE(addr_t addr) {
+static NES_ALWAYS_INLINE void opSRE(addr_t addr) {
     uint8_t data = bus_read(addr);
     reg.status.carry = data & 0x1;
     data >>= 1;
     reg.A = set_nz(reg.A ^ data);
     bus_write(addr, data);
 }
-NES_ALWAYS_INLINE void opRRA(addr_t addr) {
+static NES_ALWAYS_INLINE void opRRA(addr_t addr) {
     uint8_t data = bus_read(addr);
     uint8_t carry = data & 0x1;
     data = ((data >> 1) & 0x7f);
@@ -380,20 +440,20 @@ NES_ALWAYS_INLINE void opRRA(addr_t addr) {
     bus_write(addr, data);
 }
 
-NES_ALWAYS_INLINE void opSAX(addr_t addr) {
+static NES_ALWAYS_INLINE void opSAX(addr_t addr) {
     bus_write(addr, reg.A & reg.X);
 }
-NES_ALWAYS_INLINE void opLAX(uint8_t data) {
+static NES_ALWAYS_INLINE void opLAX(uint8_t data) {
     reg.A = reg.X = set_nz(data);
 }
 
-NES_ALWAYS_INLINE void opDCP(addr_t addr) {
+static NES_ALWAYS_INLINE void opDCP(addr_t addr) {
     uint8_t operated = bus_read(addr) - 1;
     set_nz(reg.A - operated);
     bus_write(addr, operated);
 }
 
-NES_ALWAYS_INLINE void opISB(addr_t addr) {
+static NES_ALWAYS_INLINE void opISB(addr_t addr) {
     uint8_t data = bus_read(addr) + 1;
     uint16_t operated = (uint16_t)(~data & 0xff) + reg.A + reg.status.carry;
     reg.status.overflow = (!(((reg.A ^ data) & 0x80) != 0) && (((reg.A ^ operated) & 0x80)) != 0);
@@ -423,26 +483,30 @@ void service() {
             // DMA is running
             cycle += dma::exec_next_cycle();
         }
-        else if (interrupt::is_nmi_asserted()) {
+        else if (irq_pending == 0 && interrupt::is_nmi_asserted()) {
             // NMI
             interrupt::deassert_nmi();
-            reg.status.breakmode = false;
+            auto s = reg.status;
+            s.breakmode = 0;
             push(reg.PC >> 8);
             push(reg.PC & 0xff);
-            push(reg.status.raw);
+            push(s.raw);
             reg.status.interrupt = true;
             reg.PC = bus_read_w(VEC_NMI);
+            //NES_PRINTF("NMI PC=0x%04x, SP=0x%02x, interrupt=%d\n", (unsigned int)reg.PC, (unsigned int)reg.SP, (int)reg.status.interrupt);
             cycle += 7; // ?
         }
-        else if (interrupt::is_irq_asserted() && !reg.status.interrupt) {
+        else if (irq_pending ==0 &&!!interrupt::get_irq() && !reg.status.interrupt) {
             // IRQ
-            interrupt::deassert_irq();
-            reg.status.breakmode = false;
+            auto irq_source = interrupt::get_irq();
+            auto s = reg.status;
+            s.breakmode = 0;
             push(reg.PC >> 8);
             push(reg.PC & 0xff);
-            push(reg.status.raw);
+            push(s.raw);
             reg.status.interrupt = true;
             reg.PC = bus_read_w(VEC_IRQ);
+            //NES_PRINTF("IRQ 0x%02x, PC=0x%04x, SP=0x%02x\n", (unsigned int)interrupt::get_irq(), (unsigned int)reg.PC, (unsigned int)reg.SP);
             cycle += 7; // ?
         }
         else {
@@ -762,6 +826,11 @@ void service() {
             }
         } // if
 
+#if NES_IRQ_PENDING_SUPPORT
+        if (irq_pending > 0) {
+            irq_pending--;
+        }
+#endif
         ppu_cycle_count += cycle * 3;
 
     } // while

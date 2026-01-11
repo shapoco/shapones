@@ -1,17 +1,18 @@
-#include "shapones/shapones.hpp"
+#include "shapones/ppu.hpp"
+#include "shapones/interrupt.hpp"
+#include "shapones/mapper.hpp"
+#include "shapones/memory.hpp"
 
 namespace nes::ppu {
 
 static Registers reg;
-// static RenderContext ctx;
 
 static volatile cycle_t cycle_count;
 
 static int focus_x;
 static int focus_y;
 
-// static ScrollRegister scroll;
-static uint16_t scroll;
+static volatile uint16_t scroll;
 static int fine_x;
 
 static uint8_t bus_read_data_latest = 0;
@@ -19,13 +20,18 @@ static uint8_t bus_read_data_delayed = 0;
 
 static bool scroll_ppuaddr_high_stored = false;
 
-// static uint8_t line_buff[SCREEN_WIDTH];
+static bool nmi_level = false;
 
 static Palette palette_file[PALETTE_NUM_BANK];
 
 static OamEntry oam[MAX_SPRITE_COUNT];
 static SpriteLine sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
+
+static volatile bool mmc3_irq_enable = false;
+static volatile bool mmc3_irq_reloading = false;
+static volatile uint8_t mmc3_irq_latch = 255;
+static volatile uint8_t mmc3_irq_counter = 0;
 
 static uint8_t bus_read(addr_t addr);
 static void bus_write(addr_t addr, uint8_t data);
@@ -56,6 +62,8 @@ void reset() {
     num_visible_sprites = 0;
 
     scroll_ppuaddr_high_stored = false;
+
+    nmi_level = false;
 }
 
 bool is_in_hblank() { return focus_x >= SCREEN_WIDTH; }
@@ -96,13 +104,13 @@ uint8_t reg_read(addr_t addr) {
 // todo: exclusive control
 void reg_write(addr_t addr, uint8_t data) {
     switch (addr) {
-        case REG_PPUCTRL:
+        case REG_PPUCTRL: {
             // name sel bits
             reg.scroll &= 0xf3ff;
             reg.scroll |= (uint16_t)(data & 0x3) << 10;
             // other bits
             reg.control.raw = data;
-            break;
+        } break;
 
         case REG_PPUMASK: reg.mask.raw = data; break;
 
@@ -159,7 +167,7 @@ void oam_dma_write(addr_t offset, uint8_t data) {
 static uint8_t bus_read(addr_t addr) {
     if (CHRROM_BASE <= addr && addr < CHRROM_BASE + CHRROM_RANGE) {
         bus_read_data_delayed = bus_read_data_latest;
-        bus_read_data_latest = memory::chrrom_read(addr - CHRROM_BASE);
+        bus_read_data_latest = mapper::chrrom_read(addr - CHRROM_BASE);
     } else if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
         bus_read_data_delayed = bus_read_data_latest;
         bus_read_data_latest = memory::vram_read(addr - VRAM_BASE);
@@ -236,6 +244,7 @@ static void palette_write(addr_t addr, uint8_t data) {
 
 bool service(uint8_t *line_buff) {
     bool eol = false;
+    bool irq = false;
 
     while (true) {
         cycle_t cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
@@ -248,26 +257,20 @@ bool service(uint8_t *line_buff) {
             if (focus_y == SCREEN_HEIGHT + 1) {
                 // vblank flag/interrupt
                 reg.status.vblank_flag = 1;
-                if (reg.control.vblank_irq_enable) {
-                    interrupt::assert_nmi();
-                }
             } else if (focus_y == SCAN_LINES - 1) {
                 // clear flags
                 reg.status.vblank_flag = 0;
                 reg.status.sprite0_hit = 0;
             }
-        } else if (memory::mapper.id == 4 && focus_x == 260) {
-            // MMC3 IRQ counter clock
-            if (memory::mapper.mmc3_irq_counter == 0) {
-                memory::mapper.mmc3_irq_counter = memory::mapper.mmc3_irq_latch;
-            } else {
-                memory::mapper.mmc3_irq_counter--;
-                if (memory::mapper.mmc3_irq_counter == 0 &&
-                    memory::mapper.mmc3_irq_enable) {
-                    interrupt::assert_irq();
-                }
-            }
         }
+
+        bool nmi_level_new =
+            reg.status.vblank_flag && reg.control.vblank_nmi_enable;
+        if (nmi_level_new && !nmi_level) {
+            interrupt::assert_nmi();
+            irq = true;
+        }
+        nmi_level = nmi_level_new;
 
         // determine step count
         int step_count;
@@ -298,6 +301,25 @@ bool service(uint8_t *line_buff) {
             render_sprite(line_buff, focus_x, next_focus_x);
         }
 
+        if (mapper::get_id() == 4 && focus_y < SCREEN_HEIGHT) {
+            // MMC3 IRQ counter clock
+            // see: https://www.nesdev.org/wiki/MMC3
+            if (focus_x <= 260 && next_focus_x > 260 && reg.mask.bg_enable &&
+                reg.mask.sprite_enable) {
+                uint8_t irq_counter_before = mmc3_irq_counter;
+                if (mmc3_irq_counter == 0 || mmc3_irq_reloading) {
+                    mmc3_irq_reloading = false;
+                    mmc3_irq_counter = mmc3_irq_latch;
+                } else {
+                    mmc3_irq_counter--;
+                }
+                if (mmc3_irq_enable && mmc3_irq_counter == 0) {
+                    interrupt::assert_irq(interrupt::Source::MMC3);
+                    irq = true;
+                }
+            }
+        }
+
         // step focus
         focus_x = next_focus_x;
         if (focus_x >= LINE_CYCLES) {
@@ -313,8 +335,7 @@ bool service(uint8_t *line_buff) {
 
         eol = (focus_x == SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) ||
               (focus_x == 0 && focus_y >= SCREEN_HEIGHT);
-        if (eol) {
-            // NES_PRINTF("EOL y=%d\n", focus_y);
+        if (eol || irq) {
             break;
         }
     }
@@ -326,70 +347,73 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
     bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
 
     while (x0_block < x1_block) {
-        // determine step count
         int x0, x1;
+        {
+            uint16_t scr = scroll;
 
-        x0 = x0_block;
-        if (visible_area && reg.mask.bg_enable) {
-            x1 = x0 + (BLOCK_SIZE - ((scroll & 0x1) * TILE_SIZE + fine_x));
-        } else {
-            x1 = x0 + 64;
-        }
-        x1 = x1 < x1_block ? x1 : x1_block;
-
-        if (visible_area) {
-            if (reg.mask.bg_enable) {
-                // read name table for two tiles
-                addr_t name_addr0 = scroll & 0xffeu;
-                addr_t name_addr1 = name_addr0 + 1;
-                uint8_t name0 = memory::vram_read(name_addr0);
-                uint8_t name1 = memory::vram_read(name_addr1);
-
-                int fine_y = (scroll & SCROLL_MASK_FINE_Y) >> 12;
-
-                // read CHRROM
-                int chrrom_index0 = name0 * 8 + fine_y;
-                int chrrom_index1 = name1 * 8 + fine_y;
-                if (reg.control.bg_name_sel) {
-                    chrrom_index1 += 0x800;
-                    chrrom_index0 += 0x800;
-                }
-                uint16_t chr0 = memory::chrrom_read_w(chrrom_index0, false);
-                uint16_t chr1 = memory::chrrom_read_w(chrrom_index1, false);
-
-                uint32_t chr = (uint32_t)chr0 | ((uint32_t)chr1 << 16);
-
-                // calc attr index
-                int attr_index = (scroll & SCROLL_MASK_NAME_SEL) | 0x3c0 |
-                                 ((scroll >> 2) & 0x7) | ((scroll >> 4) & 0x38);
-                int attr_shift_size = ((scroll >> 4) & 0x4) | (scroll & 0x2);
-
-                // read attr table
-                uint8_t attr = memory::vram_read(attr_index);
-                attr = (attr >> attr_shift_size) & 0x3;
-                Palette palette = palette_file[attr];
-
-                // adjust CHR bit pos
-                int chr_shift_size = ((scroll << 4) & 0x10) | (fine_x << 1);
-                chr >>= chr_shift_size;
-
-                // render BG block
-                uint8_t bg_color = palette_file[0].color[0];
-                for (int x = x0; x < x1; x++) {
-                    uint32_t palette_index = chr & 0x3;
-                    chr >>= 2;
-                    if (palette_index == 0) {
-                        line_buff[x] = bg_color;
-                    } else {
-                        line_buff[x] =
-                            palette.color[palette_index] | OPAQUE_FLAG;
-                    }
-                }
+            // determine step count
+            x0 = x0_block;
+            if (visible_area && reg.mask.bg_enable) {
+                x1 = x0 + (BLOCK_SIZE - ((scr & 0x1) * TILE_SIZE + fine_x));
             } else {
-                // blank background
-                uint8_t bg_color = palette_file[0].color[0];
-                for (int x = x0; x < x1; x++) {
-                    line_buff[x] = bg_color;
+                x1 = x0 + 64;
+            }
+            x1 = x1 < x1_block ? x1 : x1_block;
+
+            if (visible_area) {
+                if (reg.mask.bg_enable) {
+                    // read name table for two tiles
+                    addr_t name_addr0 = scr & 0xffeu;
+                    addr_t name_addr1 = name_addr0 + 1;
+                    uint8_t name0 = memory::vram_read(name_addr0);
+                    uint8_t name1 = memory::vram_read(name_addr1);
+
+                    int fine_y = (scr & SCROLL_MASK_FINE_Y) >> 12;
+
+                    // read CHRROM
+                    int chrrom_index0 = name0 * 8 + fine_y;
+                    int chrrom_index1 = name1 * 8 + fine_y;
+                    if (reg.control.bg_name_sel) {
+                        chrrom_index1 += 0x800;
+                        chrrom_index0 += 0x800;
+                    }
+                    uint16_t chr0 = mapper::chrrom_read_w(chrrom_index0, false);
+                    uint16_t chr1 = mapper::chrrom_read_w(chrrom_index1, false);
+
+                    uint32_t chr = (uint32_t)chr0 | ((uint32_t)chr1 << 16);
+
+                    // calc attr index
+                    int attr_index = (scr & SCROLL_MASK_NAME_SEL) | 0x3c0 |
+                                     ((scr >> 2) & 0x7) | ((scr >> 4) & 0x38);
+                    int attr_shift_size = ((scr >> 4) & 0x4) | (scr & 0x2);
+
+                    // read attr table
+                    uint8_t attr = memory::vram_read(attr_index);
+                    attr = (attr >> attr_shift_size) & 0x3;
+                    Palette palette = palette_file[attr];
+
+                    // adjust CHR bit pos
+                    int chr_shift_size = ((scr << 4) & 0x10) | (fine_x << 1);
+                    chr >>= chr_shift_size;
+
+                    // render BG block
+                    uint8_t bg_color = palette_file[0].color[0];
+                    for (int x = x0; x < x1; x++) {
+                        uint32_t palette_index = chr & 0x3;
+                        chr >>= 2;
+                        if (palette_index == 0) {
+                            line_buff[x] = bg_color;
+                        } else {
+                            line_buff[x] =
+                                palette.color[palette_index] | OPAQUE_FLAG;
+                        }
+                    }
+                } else {
+                    // blank background
+                    uint8_t bg_color = palette_file[0].color[0];
+                    for (int x = x0; x < x1; x++) {
+                        line_buff[x] = bg_color;
+                    }
                 }
             }
         }
@@ -397,6 +421,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
         // update scroll counter
         // see: https://www.nesdev.org/wiki/PPU_scrolling
         if (reg.mask.bg_enable || reg.mask.sprite_enable) {
+            uint16_t scr = scroll;
             if (focus_y < SCREEN_HEIGHT) {
                 if (x0 < SCREEN_WIDTH) {
                     // step scroll counter for x-axis
@@ -404,54 +429,54 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
                     while (fine_x >= TILE_SIZE) {
                         fine_x -= TILE_SIZE;
                         // if coarse_x < 31
-                        if ((scroll & SCROLL_MASK_COARSE_X) <
+                        if ((scr & SCROLL_MASK_COARSE_X) <
                             SCROLL_MASK_COARSE_X) {
-                            scroll++;  // coarse_x++
+                            scr++;  // coarse_x++
                         } else {
                             // right edge of name table
-                            scroll &= ~SCROLL_MASK_COARSE_X;  // coarse_x = 0
-                            scroll ^=
-                                0x0400u;  // switch name table horizontally
+                            scr &= ~SCROLL_MASK_COARSE_X;  // coarse_x = 0
+                            scr ^= 0x0400u;  // switch name table horizontally
                         }
                     }
                 } else if (SCREEN_WIDTH < x1 && x0 <= SCREEN_WIDTH) {
                     // step scroll counter for y-axis
                     // if fine_y < 7
-                    if ((scroll & SCROLL_MASK_FINE_Y) < SCROLL_MASK_FINE_Y) {
-                        scroll += 0x1000u;  // fine_y++
+                    if ((scr & SCROLL_MASK_FINE_Y) < SCROLL_MASK_FINE_Y) {
+                        scr += 0x1000u;  // fine_y++
                     } else {
                         // bottom edge of tile
-                        scroll &= ~SCROLL_MASK_FINE_Y;  // fine_y = 0
+                        scr &= ~SCROLL_MASK_FINE_Y;  // fine_y = 0
                         // if coarse_y == 29
-                        if ((scroll & SCROLL_MASK_COARSE_Y) ==
+                        if ((scr & SCROLL_MASK_COARSE_Y) ==
                             ((NUM_TILE_Y - 1) << 5)) {
                             // bottom edge of name table
-                            scroll &= ~SCROLL_MASK_COARSE_Y;  // coarse_y = 0
-                            scroll ^= 0x0800u;  // switch name table vertically
+                            scr &= ~SCROLL_MASK_COARSE_Y;  // coarse_y = 0
+                            scr ^= 0x0800u;  // switch name table vertically
                         }
                         // else if coarse_y == 31
-                        else if ((scroll & SCROLL_MASK_COARSE_Y) ==
+                        else if ((scr & SCROLL_MASK_COARSE_Y) ==
                                  SCROLL_MASK_COARSE_Y) {
-                            scroll &= ~SCROLL_MASK_COARSE_Y;  // coarse_y = 0
+                            scr &= ~SCROLL_MASK_COARSE_Y;  // coarse_y = 0
                         } else {
-                            scroll += NUM_TILE_X;  // coarse_y++
+                            scr += NUM_TILE_X;  // coarse_y++
                         }
                     }
 
                     // horizontal recovery
                     constexpr uint16_t copy_mask = 0x041fu;
-                    scroll &= ~copy_mask;
-                    scroll |= reg.scroll & copy_mask;
+                    scr &= ~copy_mask;
+                    scr |= reg.scroll & copy_mask;
                     fine_x = reg.fine_x;
                 }
             } else if (focus_y == SCAN_LINES - 1) {
                 if (280 <= x1 && x0 <= 304) {
                     // vertical recovery
                     constexpr uint16_t copy_mask = 0x7be0u;
-                    scroll &= ~copy_mask;
-                    scroll |= reg.scroll & copy_mask;
+                    scr &= ~copy_mask;
+                    scr |= reg.scroll & copy_mask;
                 }
             }
+            scroll = scr;
         }  // if
 
         x0_block = x1;
@@ -503,7 +528,7 @@ static void enum_visible_sprites() {
             int chrrom_index = tile_index * 8 + (src_y & 0x7);
             uint16_t chr;
             chr =
-                memory::chrrom_read_w(chrrom_index, s.attr & OAM_ATTR_INVERT_H);
+                mapper::chrrom_read_w(chrrom_index, s.attr & OAM_ATTR_INVERT_H);
 
             // store sprite information
             SpriteLine sl;
@@ -555,5 +580,18 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block) {
 }
 
 cycle_t cycle_following() { return cycle_count; }
+
+void mmc3_irq_set_enable(bool enable) {
+    bool enable_old = mmc3_irq_enable;
+    if (enable && !enable_old) {
+    } else if (!enable && enable_old) {
+        interrupt::deassert_irq(interrupt::Source::MMC3);
+    }
+    mmc3_irq_enable = enable;
+}
+
+void mmc3_irq_set_reload() { mmc3_irq_reloading = true; }
+
+void mmc3_irq_set_latch(uint8_t data) { mmc3_irq_latch = data; }
 
 }  // namespace nes::ppu

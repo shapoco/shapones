@@ -40,7 +40,7 @@ public:
         SAMPLE_BITS(sample_bits),
         FREQUENCY(freq_ratio),
         LATENCY(latency),
-        buff(new sample_t[latency]),
+        buff(new sample_t[latency * 2]),
         dma_handler(dma_handler)
     {
         gpio_set_function(PIN, GPIO_FUNC_PWM);

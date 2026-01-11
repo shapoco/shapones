@@ -394,3 +394,7 @@ static const uint8_t *sound_refill() {
     sound_buff_index = (sound_buff_index + 1) & 1;
     return ptr;
 }
+
+// todo: implement
+void nes::get_lock() {}
+void nes::release_lock() {}

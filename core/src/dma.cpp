@@ -1,4 +1,6 @@
-#include "shapones/shapones.hpp"
+#include "shapones/dma.hpp"
+#include "shapones/cpu.hpp"
+#include "shapones/ppu.hpp"
 
 namespace nes::dma {
 

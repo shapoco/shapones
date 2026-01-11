@@ -1,7 +1,7 @@
 #ifndef SHAPONES_INPUT_HPP
 #define SHAPONES_INPUT_HPP
 
-#include "shapones/shapones.hpp"
+#include "shapones/common.hpp"
 
 namespace nes::input {
 

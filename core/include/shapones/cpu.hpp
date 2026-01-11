@@ -1,7 +1,7 @@
 #ifndef SHAPONES_CPU_HPP
 #define SHAPONES_CPU_HPP
 
-#include "shapones/shapones.hpp"
+#include "shapones/common.hpp"
 
 namespace nes::cpu {
 
@@ -156,6 +156,8 @@ void service();
 
 void reset();
 void stop();
+
+bool is_stopped();
 
 uint8_t bus_read(addr_t addr);
 void bus_write(addr_t addr, uint8_t data);

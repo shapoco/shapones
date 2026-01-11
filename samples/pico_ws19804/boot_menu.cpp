@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <hardware/flash.h>
+#include <hardware/sync.h>
+
 #include "ws19804.hpp"
 #include "mono8x16.hpp"
 #include "common.hpp"
@@ -12,6 +15,8 @@
 #include "diskio.h"
 
 constexpr int MAX_FILES = 64;
+
+static constexpr uint32_t ROM_OFFSET = 0x100000;
 
 // enumerate NES files
 static int enum_files(FATFS *fs, char **fname_list, int *fsize_list);
@@ -142,13 +147,45 @@ static bool load_nes(const char *fname, int size) {
         return false;
     }
 
-    UINT sz;
-    uint8_t *ines = (uint8_t*)malloc(size);
-    fr = f_read(&fil, ines, size, &sz);
-    if (fr) {
-        draw_string(0, 20, "File read failed.");
+    uint8_t *ines = nullptr;
+    if (size < 128 * 1024){
+        UINT sz;
+        ines = (uint8_t*)malloc(size);
+        fr = f_read(&fil, ines, size, &sz);
+        if (fr) {
+            draw_string(0, 20, "File read failed.");
+            update_lcd();
+            return false;
+        }
+    }
+    else {
+        constexpr int CHUNK_SIZE = 4096;
+        int num_sectors = (size + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
+        save_and_disable_interrupts();
+        draw_string(0, 20, "Erasing Flash...");
         update_lcd();
-        return false;
+        flash_range_erase(ROM_OFFSET, num_sectors * FLASH_SECTOR_SIZE);
+        draw_string(0, 40, "Programming Flash...");
+        update_lcd();
+        uint8_t *buff = new uint8_t[CHUNK_SIZE];
+        int remaining = size;
+        while (remaining > 0) {
+            int to_read = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
+            UINT sz;
+            fr = f_read(&fil, buff, to_read, &sz);
+            if (fr || sz == 0) {
+                draw_string(0, 60, "File read failed.");
+                update_lcd();
+                restore_interrupts(0);
+                delete[] buff;
+                return false;
+            }
+            flash_range_program(ROM_OFFSET + (size - remaining), buff, sz);
+            remaining -= sz;
+        }
+        restore_interrupts(0);
+        delete[] buff;
+        ines = (uint8_t *)(XIP_BASE + ROM_OFFSET);
     }
 
     f_close(&fil);

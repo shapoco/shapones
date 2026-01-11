@@ -1,6 +1,6 @@
 #include <wx/wx.h>
 
-#include "shapones/cpu.hpp"
+#include "shapones/shapones.hpp"
 #include "shapones/utils_std.hpp"
 #include "nes_screen.hpp"
 #include "nes_audio.hpp"
@@ -82,3 +82,6 @@ bool FcApp::OnInit() {
 
 DECLARE_APP(FcApp)
 IMPLEMENT_APP(FcApp)
+
+void nes::get_lock() {}
+void nes::release_lock() {}

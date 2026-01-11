@@ -18,27 +18,20 @@ pico_generate_pio_header(pico_nes_ws19804 ${CMAKE_CURRENT_LIST_DIR}/ws19804.pio)
 set(SHAPONES_PATH ../../core)
 set(FATFS_PATH ../fatfs/source)
 
-target_sources(
-    pico_nes_ws19804 PRIVATE 
-    common.cpp
-    ws19804.cpp
-    pico_nes_ws19804.cpp
-    boot_menu.cpp
-    ${SHAPONES_PATH}/src/cpu.cpp
-    ${SHAPONES_PATH}/src/dma.cpp
-    ${SHAPONES_PATH}/src/input.cpp
-    ${SHAPONES_PATH}/src/interrupt.cpp
-    ${SHAPONES_PATH}/src/memory.cpp
-    ${SHAPONES_PATH}/src/ppu.cpp
-    ${SHAPONES_PATH}/src/apu.cpp
-    ${SHAPONES_PATH}/src/shapones.cpp
-    ${SHAPONES_PATH}/src/utils_std.cpp
+
+file(GLOB CPP_FILES
+    ./*.cpp
+    ${SHAPONES_PATH}/src/*.cpp
     ${FATFS_PATH}/ff.c
     ${FATFS_PATH}/ffsystem.c
     ${FATFS_PATH}/ffunicode.c
     ${FATFS_PATH}/mmc_pico_spi.c
-    ../font/mono8x16/mono8x16.cpp
-    ../font/mono8x16/mono8x16_bmp.cpp
+    ../font/mono8x16/*.cpp
+)
+
+target_sources(
+    pico_nes_ws19804 PRIVATE 
+    ${CPP_FILES}
 )
 
 target_include_directories(
@@ -57,6 +50,8 @@ target_link_libraries(
     hardware_pwm
     hardware_dma
     hardware_irq
+    hardware_flash
+    hardware_sync
     pico_multicore
 )
 

@@ -6,6 +6,7 @@
 #endif
 
 #include "shapones/cpu.hpp"
+#include "shapones/memory.hpp"
 #include "shapones/utils_std.hpp"
 
 namespace nes {

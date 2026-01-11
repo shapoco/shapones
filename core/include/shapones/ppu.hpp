@@ -1,7 +1,7 @@
 #ifndef SHAPONES_PPU_HPP
 #define SHAPONES_PPU_HPP
 
-#include "shapones/shapones.hpp"
+#include "shapones/common.hpp"
 
 namespace nes::ppu {
 
@@ -69,7 +69,7 @@ public:
             uint8_t bg_name_sel : 1; // [4] BG pattern sel (0:0x0000, 1:0x1000)
             uint8_t sprite_size : 1; // [5] sprite size (0:8x8, 1:8x16)
             uint8_t ppu_master : 1; // [6] ppu master/slave
-            uint8_t vblank_irq_enable : 1; // [7] vblank interrupt enable
+            uint8_t vblank_nmi_enable : 1; // [7] vblank interrupt enable
         };
     } control;
 
@@ -150,6 +150,10 @@ void oam_dma_write(addr_t offset, uint8_t data);
 bool service(uint8_t *line_buff);
 
 cycle_t cycle_following();
+
+void mmc3_irq_set_enable(bool enable);
+void mmc3_irq_set_reload();
+void mmc3_irq_set_latch(uint8_t data);
 
 }
 

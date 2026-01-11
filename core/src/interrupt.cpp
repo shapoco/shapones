@@ -2,15 +2,21 @@
 
 namespace nes::interrupt {
 
-static bool irq = false;
-static bool nmi = false;
+static volatile Source irq;
+static volatile bool nmi;
 
-void assert_irq() { irq = true; }
-void deassert_irq() { irq = false; }
-bool is_irq_asserted() { return irq; }
+void assert_irq(Source src) {
+    Exclusive lock;
+    irq = irq | src;
+}
+void deassert_irq(Source src) {
+    Exclusive lock;
+    irq = irq & ~src;
+}
+Source get_irq() { return irq; }
 
 void assert_nmi() { nmi = true; }
 void deassert_nmi() { nmi = false; }
 bool is_nmi_asserted() { return nmi; }
 
-}
+}  // namespace nes::interrupt

@@ -224,3 +224,7 @@ static void apu_fill_buffer(PwmAudio::sample_t *buff) {
         buff[i] = spk_buff[i];
     }
 }
+
+// todo: implement
+void nes::get_lock() {}
+void nes::release_lock() {}

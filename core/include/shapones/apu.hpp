@@ -1,7 +1,7 @@
 #ifndef SHAPONES_APU_HPP
 #define SHAPONES_APU_HPP
 
-#include "shapones/shapones.hpp"
+#include "shapones/common.hpp"
 
 namespace nes::apu {
 
@@ -26,6 +26,7 @@ static constexpr addr_t REG_DMC_REG1        = 0x4011;
 static constexpr addr_t REG_DMC_REG2        = 0x4012;
 static constexpr addr_t REG_DMC_REG3        = 0x4013;
 static constexpr addr_t REG_STATUS          = 0x4015;
+static constexpr addr_t REG_FRAME_COUNTER   = 0x4017;
 
 static constexpr int ENV_FLAG_START     = 0x1;
 static constexpr int ENV_FLAG_CONSTANT  = 0x2;
@@ -52,7 +53,7 @@ struct Sweep {
 };
 
 struct LinearCounter {
-    bool flags;
+    int flags;
     int counter;
     int reload_value;
 };
@@ -105,8 +106,8 @@ union Status {
         uint8_t noise_enable : 1;
         uint8_t dmc_enable : 1;
         uint8_t reserved : 1;
-        uint8_t frame_interrupt : 1;
-        uint8_t dmc_interrupt : 1;
+        uint8_t dummy_frame_interrupt : 1;
+        uint8_t dummy_dmc_interrupt : 1;
     };
 };
 

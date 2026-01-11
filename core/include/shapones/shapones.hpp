@@ -1,40 +1,6 @@
 #ifndef SHAPONES_HPP
 #define SHAPONES_HPP
 
-#define NES_ALWAYS_INLINE __attribute__((always_inline)) static inline
-
-#if SHAPONES_ENABLE_LOG
-
-#if !(SHAPONES_NO_STDLIB)
-#include "stdio.h"
-#include "stdlib.h"
-#endif
-
-#define NES_PRINTF(fmt, ...) \
-    do { \
-        printf((fmt), ##__VA_ARGS__); \
-        fflush(stdout); \
-    } while(0)
-
-#define NES_ERRORF(fmt, ...) \
-    do { \
-        printf("*ERROR: "); \
-        NES_PRINTF(fmt, ##__VA_ARGS__); \
-        nes::cpu::stop(); \
-    } while(0)
-
-#else 
-
-#define NES_PRINTF(fmt, ...) \
-    do { } while(0)
-
-#define NES_ERRORF(fmt, ...) \
-    do { \
-        nes::cpu::stop(); \
-    } while(0)
-
-#endif
-
 #include "shapones/common.hpp"
 #include "shapones/input.hpp"
 #include "shapones/interrupt.hpp"

@@ -1,4 +1,6 @@
-#include "shapones/shapones.hpp"
+#include "shapones/apu.hpp"
+#include "shapones/cpu.hpp"
+#include "shapones/interrupt.hpp"
 
 namespace nes::apu {
 
@@ -90,7 +92,25 @@ void reset() {
 }
 
 // todo: exclusive control
-uint8_t reg_read(addr_t addr) { return 0; }
+uint8_t reg_read(addr_t addr) {
+    switch (addr) {
+        case REG_STATUS: {
+            // see: https://www.nesdev.org/wiki/IRQ
+            uint8_t ret = status.raw;
+            auto irqs = interrupt::get_irq();
+            if (!!(irqs & interrupt::Source::APU_DMC)) {
+                ret |= 0x80;
+            }
+            if (!!(irqs & interrupt::Source::APU_FRAME_COUNTER)) {
+                ret |= 0x40;
+            }
+            interrupt::deassert_irq(interrupt::Source::APU_FRAME_COUNTER);
+            return ret;
+        } break;
+
+        default: return 0;
+    }
+}
 
 // todo: exclusive control
 void reg_write(addr_t addr, uint8_t value) {
@@ -128,7 +148,22 @@ void reg_write(addr_t addr, uint8_t value) {
                 dmc.bytes_remaining = 0;
                 dmc.silence = true;
             }
-            status.dmc_interrupt = 0;
+            // see: https://www.nesdev.org/wiki/IRQ
+            interrupt::deassert_irq(interrupt::Source::APU_DMC);
+            break;
+        case REG_FRAME_COUNTER:
+            if (value & 0x80) {
+                // todo: implement
+            } else {
+                // todo: implement
+            }
+            if (value & 0x40) {
+                quarter_frame_count = 0;
+                quarter_frame_phase = 0;
+                frame_step = true;
+                half_frame_step = true;
+                quarter_frame_step = true;
+            }
             break;
     }
 }
@@ -173,6 +208,7 @@ void service(uint8_t *buff, int len) {
 }
 
 static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
+    Exclusive lock;
     // duty pattern
     switch ((reg0 >> 6) & 0x3) {
         case 0: s->waveform = 0b00000001; break;
@@ -193,6 +229,7 @@ static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
 }
 
 static void pulse_write_reg1(PulseState *s, uint8_t reg1) {
+    Exclusive lock;
     s->sweep.period = (reg1 >> 4) & 0x7;
     s->sweep.shift = reg1 & 0x7;
     s->sweep.flags = 0;
@@ -202,11 +239,13 @@ static void pulse_write_reg1(PulseState *s, uint8_t reg1) {
 }
 
 static void pulse_write_reg2(PulseState *s, uint8_t reg2) {
+    Exclusive lock;
     s->timer_period &= ~(0xff << TIMER_PREC);
     s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
 }
 
 static void pulse_write_reg3(PulseState *s, uint8_t reg3) {
+    Exclusive lock;
     s->timer_period &= ~(0x700 << TIMER_PREC);
     s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
     s->timer = 0;
@@ -215,17 +254,23 @@ static void pulse_write_reg3(PulseState *s, uint8_t reg3) {
 }
 
 static void triangle_write_reg0(TriangleState *s, uint8_t reg0) {
+    Exclusive lock;
     s->linear.reload_value = reg0 & 0x7f;
-    s->linear.flags = 0;
-    if (reg0 & 0x80) s->linear.flags |= LIN_FLAG_CONTROL;
+    if (reg0 & 0x80) {
+        s->linear.flags |= LIN_FLAG_CONTROL;
+    } else {
+        s->linear.flags &= ~LIN_FLAG_CONTROL;
+    }
 }
 
 static void triangle_write_reg2(TriangleState *s, uint8_t reg2) {
+    Exclusive lock;
     s->timer_period &= ~(0xff << TIMER_PREC);
     s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
 }
 
 static void triangle_write_reg3(TriangleState *s, uint8_t reg3) {
+    Exclusive lock;
     s->timer_period &= ~(0x700 << TIMER_PREC);
     s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
     s->timer = 0;
@@ -235,6 +280,7 @@ static void triangle_write_reg3(TriangleState *s, uint8_t reg3) {
 }
 
 static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
+    Exclusive lock;
     s->envelope.flags = 0;
     if (reg0 & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
     if (reg0 & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
@@ -247,24 +293,34 @@ static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
 }
 
 static void noise_write_reg3(NoiseState *s, uint8_t reg3) {
+    Exclusive lock;
     s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
 }
 
 static void dmc_write_reg0(DmcState *s, uint8_t reg0) {
-    s->irq_enabled = (reg0 & 0x80) != 0;
+    bool irq_ena_old = s->irq_enabled;
+    bool irq_ena_new = (reg0 & 0x80) != 0;
+    if (irq_ena_new && !irq_ena_old) {
+        interrupt::deassert_irq(interrupt::Source::APU_DMC);
+    }
+    Exclusive lock;
+    s->irq_enabled = irq_ena_new;
     s->loop = (reg0 & 0x40) != 0;
     s->timer_step = dmc_step_coeff / DMC_RATE_TABLE[reg0 & 0x0f];
 }
 
 static void dmc_write_reg1(DmcState *s, uint8_t reg0) {
+    Exclusive lock;
     s->out_level = reg0 & 0x7f;
 }
 
 static void dmc_write_reg2(DmcState *s, uint8_t reg0) {
+    Exclusive lock;
     s->sample_addr = 0xc000 + ((addr_t)reg0 << 6);
 }
 
 static void dmc_write_reg3(DmcState *s, uint8_t reg0) {
+    Exclusive lock;
     s->sample_length = ((int)reg0 << 4) + 1;
 }
 
@@ -315,7 +371,10 @@ static int step_sweep(PulseState *s) {
                     target = (0x7ff << TIMER_PREC);
                     gate = 0;
                 }
-                s->timer_period = target;
+                {
+                    Exclusive lock;
+                    s->timer_period = target;
+                }
             }
         }
     }
@@ -333,6 +392,7 @@ static int step_linear_counter(LinearCounter *c) {
         }
 
         if (!(c->flags & LIN_FLAG_CONTROL)) {
+            Exclusive lock;
             c->flags &= ~LIN_FLAG_RELOAD;  // clear reload flag
         }
     }
@@ -348,25 +408,32 @@ static int sample_pulse(PulseState *s) {
     vol *= step_sweep(s);
 
     // length counter
-    if (half_frame_step && s->length > 0 &&
-        !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
-        s->length--;
+    if (half_frame_step && !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
+        if (s->length >= 0) {
+            Exclusive lock;
+            s->length--;
+        }
     }
 
     // mute
     if (s->timer_period < 8) vol = 0;
-    if (s->length <= 0) vol = 0;
+    if (s->length < 0) vol = 0;
 
     // sequencer
-    s->timer += pulse_timer_step;
-    int step = 0;
-    if (s->timer_period != 0) {
-        step = s->timer / s->timer_period;
+    uint32_t phase;
+    {
+        Exclusive lock;
+        s->timer += pulse_timer_step;
+        int step = 0;
+        if (s->timer_period != 0) {
+            step = s->timer / s->timer_period;
+        }
+        s->timer -= step * s->timer_period;
+        s->phase = (s->phase + step) & 0x7;
+        phase = s->phase;
     }
-    s->timer -= step * s->timer_period;
-    s->phase = (s->phase + step) & 0x7;
-    int amp = (s->waveform >> s->phase) & 1;
 
+    int amp = (s->waveform >> phase) & 1;
     return amp * vol;
 }
 
@@ -375,31 +442,40 @@ static int sample_triangle(TriangleState *s) {
     int vol = 1;
 
     // length counter
-    if (half_frame_step && s->length > 0) {
-        s->length--;
+    if (half_frame_step && !(s->linear.flags & LIN_FLAG_CONTROL)) {
+        if (s->length >= 0) {
+            Exclusive lock;
+            s->length--;
+        }
     }
 
     // linear counter
-    vol *= step_linear_counter(&(s->linear));
+    step_linear_counter(&(s->linear));
 
     // phase counter
-    s->timer += pulse_timer_step;
-    int step = 0;
-    if (s->timer_period != 0) {
-        step = s->timer / s->timer_period;
+    uint32_t phase;
+    {
+        Exclusive lock;
+        s->timer += triangle_timer_step;
+        int step = 0;
+        if (s->timer_period != 0) {
+            step = s->timer / s->timer_period;
+        }
+        s->timer -= step * s->timer_period;
+        if (s->length > 0 && s->linear.counter > 0) {
+            s->phase = (s->phase + step) & 0x1f;
+        }
+        phase = s->phase;
     }
-    s->timer -= step * s->timer_period;
-    s->phase = (s->phase + step) & 0x1f;
 
     // mute
     if (s->timer_period < 8) vol = 0;
-    if (s->length <= 0) vol = 0;
 
     // sequencer
-    if (s->phase <= 15) {
-        return (15 - s->phase) * vol;
+    if (phase <= 15) {
+        return (15 - phase) * vol;
     } else {
-        return (s->phase - 16) * vol;
+        return (phase - 16) * vol;
     }
 }
 
@@ -409,13 +485,15 @@ static int sample_noise(NoiseState *s) {
     int vol = step_envelope(&(s->envelope));
 
     // length counter
-    if (half_frame_step && s->length > 0 &&
-        !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
-        s->length--;
+    if (half_frame_step && !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
+        if (s->length >= 0) {
+            Exclusive lock;
+            s->length--;
+        }
     }
 
     // mute
-    if (s->length <= 0) vol = 0;
+    if (s->length < 0) vol = 0;
 
     // LFSR
     int feedback = ((s->lfsr >> 1) ^ s->lfsr) & 1;
@@ -427,12 +505,17 @@ static int sample_noise(NoiseState *s) {
 
 // see: https://www.nesdev.org/wiki/APU_DMC
 static int sample_dmc(DmcState *s) {
-    s->timer += s->timer_step;
-    int step = s->timer >> TIMER_PREC;
-    s->timer &= (1 << TIMER_PREC) - 1;
+    int step;
+    {
+        Exclusive lock;
+        s->timer += s->timer_step;
+        step = s->timer >> TIMER_PREC;
+        s->timer &= (1 << TIMER_PREC) - 1;
+    }
 
     for (int i = 0; i < step; i++) {
         if (s->bits_remaining == 0) {
+            Exclusive lock;
             if (s->bytes_remaining > 0) {
                 s->shift_reg = cpu::bus_read(s->addr_counter | 0x8000);
                 s->addr_counter++;
@@ -442,8 +525,7 @@ static int sample_dmc(DmcState *s) {
                         s->addr_counter = s->sample_addr;
                         s->bytes_remaining = s->sample_length;
                     } else if (s->irq_enabled) {
-                        status.dmc_interrupt = 1;
-                        interrupt::assert_irq();
+                        interrupt::assert_irq(interrupt::Source::APU_DMC);
                     }
                 }
             }
@@ -452,10 +534,12 @@ static int sample_dmc(DmcState *s) {
         if (s->bits_remaining > 0) {
             if (!s->silence) {
                 if (s->shift_reg & 1) {
+                    Exclusive lock;
                     if (s->out_level <= 125) {
                         s->out_level += 2;
                     }
                 } else {
+                    Exclusive lock;
                     if (s->out_level >= 2) {
                         s->out_level -= 2;
                     }

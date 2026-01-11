@@ -1,7 +1,7 @@
 #ifndef SHAPONES_DMA_HPP
 #define SHAPONES_DMA_HPP
 
-#include "shapones/shapones.hpp"
+#include "shapones/common.hpp"
 
 namespace nes::dma {
 
