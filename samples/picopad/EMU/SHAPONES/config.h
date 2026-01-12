@@ -14,6 +14,7 @@
 // *********
 
 #define USE_FRAMEBUF 0
+#define USE_IRQ 1
 #define DISP_SPI_BAUD 62500000
 
 #define SHAPONES_NO_STDLIB 1

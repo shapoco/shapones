@@ -1,5 +1,6 @@
 #include <hardware/clocks.h>
 #include <hardware/gpio.h>
+#include <hardware/sync.h>
 #include <hardware/vreg.h>
 #include <pico/multicore.h>
 #include <pico/stdlib.h>
@@ -51,6 +52,9 @@ static constexpr int LINE_FIFO_STRIDE = nes::SCREEN_WIDTH + 1;
 static uint8_t line_buff[LINE_FIFO_DEPTH * LINE_FIFO_STRIDE];
 static volatile int line_fifo_wptr = 0;
 static volatile int line_fifo_rptr = 0;
+
+static spin_lock_t *lock_hws[nes::NUM_LOCKS];
+static uint32_t lock_irqs[nes::NUM_LOCKS];
 
 // sound buffer for DMA
 static uint8_t spk_buff[SPK_LATENCY];
@@ -110,10 +114,10 @@ int main() {
 }
 
 static void boot_nes() {
-    // set APU sampling rate
-    nes::apu::set_sampling_rate(SPK_PWM_FREQ);
-
     // reset
+    auto cfg = nes::get_default_config();
+    cfg.apu_sampling_rate = SPK_PWM_FREQ;
+    nes::init(cfg);
     nes::reset();
 
     // start APU loop
@@ -225,6 +229,10 @@ static void apu_fill_buffer(PwmAudio::sample_t *buff) {
     }
 }
 
-// todo: implement
-void nes::get_lock() {}
-void nes::release_lock() {}
+void nes::lock_init(int id) {
+    lock_hws[id] = spin_lock_init(id);
+    spin_lock_claim(id);
+}
+void nes::lock_deinit(int id) { spin_lock_unclaim(id); }
+void nes::lock_get(int id) { lock_irqs[id] = spin_lock_blocking(lock_hws[id]); }
+void nes::lock_release(int id) { spin_unlock(lock_hws[id], lock_irqs[id]); }

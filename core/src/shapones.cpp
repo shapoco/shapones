@@ -4,6 +4,23 @@
 
 namespace nes {
 
+Config get_default_config() {
+    Config cfg;
+    cfg.apu_sampling_rate = 44100;
+    return cfg;
+}
+
+void init(const Config& cfg) {
+    for (int i = 0; i < NUM_LOCKS; i++) {
+        nes::lock_init(i);
+    }
+    apu::set_sampling_rate(cfg.apu_sampling_rate);
+}
+
+void deinit() {
+    lock_deinit(LOCK_INTERRUPTS);
+}
+
 void reset() {
     cpu::reset();
     ppu::reset();

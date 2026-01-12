@@ -32,8 +32,6 @@ void play() {
         return;
     }
 
-    nes::apu::set_sampling_rate(ss.rate);
-
     thread = new std::thread(play_thread_func);
 
     continue_flag = true;

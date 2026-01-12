@@ -83,6 +83,7 @@ uint8_t reg_read(addr_t addr) {
         case REG_OAMDATA: retval = oam_read(reg.oam_addr); break;
 
         case REG_PPUDATA: {
+            Exclusive lock(LOCK_PPU);
             addr_t addr = scroll & SCROLL_MASK_PPU_ADDR;
             bus_read(addr);
             addr += reg.control.incr_stride ? 32 : 1;
@@ -105,6 +106,7 @@ uint8_t reg_read(addr_t addr) {
 void reg_write(addr_t addr, uint8_t data) {
     switch (addr) {
         case REG_PPUCTRL: {
+            Exclusive lock(LOCK_PPU);
             // name sel bits
             reg.scroll &= 0xf3ff;
             reg.scroll |= (uint16_t)(data & 0x3) << 10;
@@ -118,7 +120,8 @@ void reg_write(addr_t addr, uint8_t data) {
 
         case REG_OAMDATA: oam_write(reg.oam_addr, data); break;
 
-        case REG_PPUSCROLL:
+        case REG_PPUSCROLL: {
+            Exclusive lock(LOCK_PPU);
             if (!scroll_ppuaddr_high_stored) {
                 reg.scroll &= ~SCROLL_MASK_COARSE_X;
                 reg.scroll |= (data >> 3) & SCROLL_MASK_COARSE_X;
@@ -130,9 +133,10 @@ void reg_write(addr_t addr, uint8_t data) {
                 reg.scroll |= ((uint16_t)data << 12) & SCROLL_MASK_FINE_Y;
                 scroll_ppuaddr_high_stored = false;
             }
-            break;
+        } break;
 
-        case REG_PPUADDR:
+        case REG_PPUADDR: {
+            Exclusive lock(LOCK_PPU);
             if (!scroll_ppuaddr_high_stored) {
                 reg.scroll &= 0x00ffu;
                 reg.scroll |= ((uint16_t)data << 8) & 0x3f00u;
@@ -143,9 +147,10 @@ void reg_write(addr_t addr, uint8_t data) {
                 scroll = reg.scroll;
                 scroll_ppuaddr_high_stored = false;
             }
-            break;
+        } break;
 
         case REG_PPUDATA: {
+            Exclusive lock(LOCK_PPU);
             addr_t addr = scroll & SCROLL_MASK_PPU_ADDR;
             bus_write(addr, data);
             addr += reg.control.incr_stride ? 32 : 1;
@@ -421,6 +426,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
         // update scroll counter
         // see: https://www.nesdev.org/wiki/PPU_scrolling
         if (reg.mask.bg_enable || reg.mask.sprite_enable) {
+            Exclusive lock(LOCK_PPU);
             uint16_t scr = scroll;
             if (focus_y < SCREEN_HEIGHT) {
                 if (x0 < SCREEN_WIDTH) {

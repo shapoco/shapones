@@ -12,6 +12,9 @@
 
 namespace nes {
 
+Config get_default_config();
+void init(const Config& cfg);
+void deinit();
 void reset();
 void render_next_line(uint8_t *line_buff);
 void vsync(uint8_t *line_buff);

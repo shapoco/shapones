@@ -6,11 +6,11 @@ static volatile Source irq;
 static volatile bool nmi;
 
 void assert_irq(Source src) {
-    Exclusive lock;
+    Exclusive lock(LOCK_INTERRUPTS);
     irq = irq | src;
 }
 void deassert_irq(Source src) {
-    Exclusive lock;
+    Exclusive lock(LOCK_INTERRUPTS);
     irq = irq & ~src;
 }
 Source get_irq() { return irq; }

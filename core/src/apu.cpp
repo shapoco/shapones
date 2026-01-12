@@ -208,7 +208,7 @@ void service(uint8_t *buff, int len) {
 }
 
 static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     // duty pattern
     switch ((reg0 >> 6) & 0x3) {
         case 0: s->waveform = 0b00000001; break;
@@ -229,7 +229,7 @@ static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
 }
 
 static void pulse_write_reg1(PulseState *s, uint8_t reg1) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->sweep.period = (reg1 >> 4) & 0x7;
     s->sweep.shift = reg1 & 0x7;
     s->sweep.flags = 0;
@@ -239,13 +239,13 @@ static void pulse_write_reg1(PulseState *s, uint8_t reg1) {
 }
 
 static void pulse_write_reg2(PulseState *s, uint8_t reg2) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->timer_period &= ~(0xff << TIMER_PREC);
     s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
 }
 
 static void pulse_write_reg3(PulseState *s, uint8_t reg3) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->timer_period &= ~(0x700 << TIMER_PREC);
     s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
     s->timer = 0;
@@ -254,7 +254,7 @@ static void pulse_write_reg3(PulseState *s, uint8_t reg3) {
 }
 
 static void triangle_write_reg0(TriangleState *s, uint8_t reg0) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->linear.reload_value = reg0 & 0x7f;
     if (reg0 & 0x80) {
         s->linear.flags |= LIN_FLAG_CONTROL;
@@ -264,13 +264,13 @@ static void triangle_write_reg0(TriangleState *s, uint8_t reg0) {
 }
 
 static void triangle_write_reg2(TriangleState *s, uint8_t reg2) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->timer_period &= ~(0xff << TIMER_PREC);
     s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
 }
 
 static void triangle_write_reg3(TriangleState *s, uint8_t reg3) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->timer_period &= ~(0x700 << TIMER_PREC);
     s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
     s->timer = 0;
@@ -280,7 +280,7 @@ static void triangle_write_reg3(TriangleState *s, uint8_t reg3) {
 }
 
 static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->envelope.flags = 0;
     if (reg0 & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
     if (reg0 & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
@@ -293,7 +293,7 @@ static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
 }
 
 static void noise_write_reg3(NoiseState *s, uint8_t reg3) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
 }
 
@@ -303,24 +303,24 @@ static void dmc_write_reg0(DmcState *s, uint8_t reg0) {
     if (irq_ena_new && !irq_ena_old) {
         interrupt::deassert_irq(interrupt::Source::APU_DMC);
     }
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->irq_enabled = irq_ena_new;
     s->loop = (reg0 & 0x40) != 0;
     s->timer_step = dmc_step_coeff / DMC_RATE_TABLE[reg0 & 0x0f];
 }
 
 static void dmc_write_reg1(DmcState *s, uint8_t reg0) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->out_level = reg0 & 0x7f;
 }
 
 static void dmc_write_reg2(DmcState *s, uint8_t reg0) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->sample_addr = 0xc000 + ((addr_t)reg0 << 6);
 }
 
 static void dmc_write_reg3(DmcState *s, uint8_t reg0) {
-    Exclusive lock;
+    Exclusive lock(LOCK_APU);
     s->sample_length = ((int)reg0 << 4) + 1;
 }
 
@@ -372,7 +372,7 @@ static int step_sweep(PulseState *s) {
                     gate = 0;
                 }
                 {
-                    Exclusive lock;
+                    Exclusive lock(LOCK_APU);
                     s->timer_period = target;
                 }
             }
@@ -392,7 +392,7 @@ static int step_linear_counter(LinearCounter *c) {
         }
 
         if (!(c->flags & LIN_FLAG_CONTROL)) {
-            Exclusive lock;
+            Exclusive lock(LOCK_APU);
             c->flags &= ~LIN_FLAG_RELOAD;  // clear reload flag
         }
     }
@@ -410,7 +410,7 @@ static int sample_pulse(PulseState *s) {
     // length counter
     if (half_frame_step && !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
         if (s->length >= 0) {
-            Exclusive lock;
+            Exclusive lock(LOCK_APU);
             s->length--;
         }
     }
@@ -422,7 +422,7 @@ static int sample_pulse(PulseState *s) {
     // sequencer
     uint32_t phase;
     {
-        Exclusive lock;
+        Exclusive lock(LOCK_APU);
         s->timer += pulse_timer_step;
         int step = 0;
         if (s->timer_period != 0) {
@@ -444,7 +444,7 @@ static int sample_triangle(TriangleState *s) {
     // length counter
     if (half_frame_step && !(s->linear.flags & LIN_FLAG_CONTROL)) {
         if (s->length >= 0) {
-            Exclusive lock;
+            Exclusive lock(LOCK_APU);
             s->length--;
         }
     }
@@ -455,7 +455,7 @@ static int sample_triangle(TriangleState *s) {
     // phase counter
     uint32_t phase;
     {
-        Exclusive lock;
+        Exclusive lock(LOCK_APU);
         s->timer += triangle_timer_step;
         int step = 0;
         if (s->timer_period != 0) {
@@ -487,7 +487,7 @@ static int sample_noise(NoiseState *s) {
     // length counter
     if (half_frame_step && !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
         if (s->length >= 0) {
-            Exclusive lock;
+            Exclusive lock(LOCK_APU);
             s->length--;
         }
     }
@@ -507,7 +507,7 @@ static int sample_noise(NoiseState *s) {
 static int sample_dmc(DmcState *s) {
     int step;
     {
-        Exclusive lock;
+        Exclusive lock(LOCK_APU);
         s->timer += s->timer_step;
         step = s->timer >> TIMER_PREC;
         s->timer &= (1 << TIMER_PREC) - 1;
@@ -515,7 +515,7 @@ static int sample_dmc(DmcState *s) {
 
     for (int i = 0; i < step; i++) {
         if (s->bits_remaining == 0) {
-            Exclusive lock;
+            Exclusive lock(LOCK_APU);;
             if (s->bytes_remaining > 0) {
                 s->shift_reg = cpu::bus_read(s->addr_counter | 0x8000);
                 s->addr_counter++;
@@ -534,12 +534,12 @@ static int sample_dmc(DmcState *s) {
         if (s->bits_remaining > 0) {
             if (!s->silence) {
                 if (s->shift_reg & 1) {
-                    Exclusive lock;
+                    Exclusive lock(LOCK_APU);
                     if (s->out_level <= 125) {
                         s->out_level += 2;
                     }
                 } else {
-                    Exclusive lock;
+                    Exclusive lock(LOCK_APU);
                     if (s->out_level >= 2) {
                         s->out_level -= 2;
                     }

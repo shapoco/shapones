@@ -56,16 +56,28 @@ static constexpr addr_t PRGROM_RANGE = 32 * 1024;
 static constexpr addr_t PRGRAM_RANGE = 8 * 1024;
 static constexpr addr_t CHRROM_RANGE = 8 * 1024;
 
-void get_lock();
-void release_lock();
+static constexpr int NUM_LOCKS = 3;
+static constexpr int LOCK_INTERRUPTS = 0;
+static constexpr int LOCK_PPU = 1;
+static constexpr int LOCK_APU = 2;
+
+struct Config {
+    uint32_t apu_sampling_rate;
+};
+
+void lock_init(int id);
+void lock_deinit(int id);
+void lock_get(int id);
+void lock_release(int id);
 
 class Exclusive {
 public:
-    Exclusive() {
-        get_lock();
+    const int id;
+    Exclusive(int id) : id(id) {
+        lock_get(id);
     }
     ~Exclusive() {
-        release_lock();
+        lock_release(id);
     }
 };
 

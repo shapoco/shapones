@@ -73,8 +73,13 @@ public:
 
 bool FcApp::OnInit() {
     frame = new FcFrame(wxT("ShapoNES"));
+
+    auto cfg = nes::get_default_config();
+    cfg.apu_sampling_rate = nes_audio::FREQ_HZ;
+    nes::init(cfg);
     nes::load_ines_file(wxApp::argv[1]);
     nes::reset();
+
     frame->Show(true);
 
     return(true);
@@ -83,5 +88,8 @@ bool FcApp::OnInit() {
 DECLARE_APP(FcApp)
 IMPLEMENT_APP(FcApp)
 
-void nes::get_lock() {}
-void nes::release_lock() {}
+// Exclusive control is not required because it is single-threaded
+void nes::lock_init(int id) {}
+void nes::lock_deinit(int id) {}
+void nes::lock_get(int id) {}
+void nes::lock_release(int id) {}

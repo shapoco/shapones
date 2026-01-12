@@ -33,6 +33,16 @@ static const uint16_t COLOR_TABLE[] = {
     0xEC9, 0xDD7, 0xBE7, 0xAE9, 0x9EB, 0xADE, 0xAAA, 0x000, 0x000,
 };
 
+static int disp_dma_ch;
+static spi_hw_t *disp_spi_hw = nullptr;
+static dma_channel_hw_t *disp_dma_hw = nullptr;
+
+uint64_t disp_next_vsync_us = 0;
+
+static const uint8_t *sound_refill();
+
+static constexpr int LOCK_ID_BASE = 0;
+
 static void boot_menu();
 static void boot_error(const char *line1, const char *line2 = "");
 
@@ -46,14 +56,6 @@ static void disp_flip();
 static void disp_dma_start();
 static void disp_dma_complete();
 static void disp_wait_vsync();
-
-static const uint8_t *sound_refill();
-
-static int disp_dma_ch;
-static spi_hw_t *disp_spi_hw = nullptr;
-static dma_channel_hw_t *disp_dma_hw = nullptr;
-
-uint64_t disp_next_vsync_us = 0;
 
 int main() {
 #if USE_PICOPAD10 || USE_PICOPAD20
@@ -217,7 +219,9 @@ static void core0_main() {
     disp_enable_rgb444();
 
     // Setup NES core
-    nes::apu::set_sampling_rate(SOUND_FREQ);
+    auto cfg = nes::get_default_config();
+    cfg.apu_sampling_rate = SOUND_FREQ;
+    nes::init(cfg);
     nes::reset();
 
     // Run PPU
@@ -390,6 +394,7 @@ static const uint8_t *sound_refill() {
     return ptr;
 }
 
-// todo: implement
-void nes::get_lock() {}
-void nes::release_lock() {}
+void nes::lock_init(int id) { SpinClaim(LOCK_ID_BASE + id); }
+void nes::lock_deinit(int id) { SpinUnclaim(LOCK_ID_BASE + id); }
+void nes::lock_get(int id) { SpinLock(LOCK_ID_BASE + id); }
+void nes::lock_release(int id) { SpinUnlock(LOCK_ID_BASE + id); }
