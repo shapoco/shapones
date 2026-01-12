@@ -74,11 +74,11 @@ public:
 bool FcApp::OnInit() {
     frame = new FcFrame(wxT("ShapoNES"));
 
+    nes::load_ines_file(wxApp::argv[1]);
+
     auto cfg = nes::get_default_config();
     cfg.apu_sampling_rate = nes_audio::FREQ_HZ;
     nes::init(cfg);
-    nes::load_ines_file(wxApp::argv[1]);
-    nes::reset();
 
     frame->Show(true);
 

@@ -118,7 +118,6 @@ static void boot_nes() {
     auto cfg = nes::get_default_config();
     cfg.apu_sampling_rate = SPK_PWM_FREQ;
     nes::init(cfg);
-    nes::reset();
 
     // start APU loop
     apu_fill_buffer(speaker.get_buffer(0));

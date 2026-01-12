@@ -57,4 +57,5 @@ run: $(BIN)
 	./$(BIN) $(ROM)
 
 clean:
+	rm -rf $(BUILD_DIR)
 	rm -rf $(BIN_DIR)

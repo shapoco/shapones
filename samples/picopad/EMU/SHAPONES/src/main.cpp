@@ -222,7 +222,6 @@ static void core0_main() {
     auto cfg = nes::get_default_config();
     cfg.apu_sampling_rate = SOUND_FREQ;
     nes::init(cfg);
-    nes::reset();
 
     // Run PPU
     Core1Exec(core1_main);

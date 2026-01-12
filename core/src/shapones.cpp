@@ -1,6 +1,4 @@
-#include "shapones/cpu.hpp"
-#include "shapones/ppu.hpp"
-#include "shapones/apu.hpp"
+#include "shapones/shapones.hpp"
 
 namespace nes {
 
@@ -15,6 +13,7 @@ void init(const Config& cfg) {
         nes::lock_init(i);
     }
     apu::set_sampling_rate(cfg.apu_sampling_rate);
+    reset();
 }
 
 void deinit() {
