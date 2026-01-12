@@ -137,7 +137,7 @@ If you want the entire emulator to run single-threaded, the function body can be
 ### Launching iNES File
 
 1. Load the iNES file content into binary array.
-2. Pass the binary array of the iNES file as an argument to `nes::memory::map_ines(const uint8_t *ines);`.
+2. Pass the binary array of the iNES file as an argument to `nes::memory::map_ines(const uint8_t *ines)`.
 3. Get the default configuration structure with `auto cfg = nes::get_default_config()`, modify the settings as needed, and pass it to `nes::init(const nes::Config& cfg)`.
     - `cfg.apu_sampling_rate`: Specifies the audio stream sampling frequency in Hz.
 4. Pass the audio stream buffer to `nes::apu::service(uint8_t *buff, int len)` to fill the buffer and begin playback.
@@ -151,12 +151,21 @@ Call the following functions within the application loop:
 - `nes::cpu::service();`
 - `nes::ppu::service(uint8_t *line_buff);`
 
-Pass the line buffer as an argument to `nes::ppu::service`. `nes::ppu::service` returns true when the buffer is filled. Then, convert the buffer contents into actual pixel values ​​using the color table and write them to the display or frame buffer.
+Pass the line buffer as an argument to `nes::ppu::service`. `nes::ppu::service` returns true when the buffer is filled. The current line number can be obtained using the `nes::ppu::current_focus_y()` function as a value between 0 and `nes::ppu::SCAN_LINES - 1`. If the line number is less than `nes::SCREEN_HEIGHT`, it is visible line, so convert the buffer contents into actual pixel values ​​using the color table and write them to the display or frame buffer.
 
-These functions can run on separate CPU cores. In that case, the mutual exclusion functions mentioned above must be correctly implemented.
+### Controller Input
+
+1. Set the controller's input state in a variable of type `nes::input::InputStatus`.
+2. Pass that variable to `nes::input::set_raw(int player, nes::input::InputStatus s)` to update the input state. The `player` variable specifies the controller's player number, either 0 or 1.
 
 ### Audio Stream Output
 
 When the audio stream buffer is empty, fill it using `nes::apu::service(uint8_t *buff, int len)`.
 
 The audio data is zero during silence, has only positive amplitude, and has a maximum value of 255. Because this value has a large DC bias, you must implement a DC cut filter if necessary.
+
+### Multi-Core Operation
+
+`nes::cpu::service`, `nes::ppu::service` and `nes::apu::service` can run on separate CPU cores. In that case, the mutual exclusion functions mentioned above must be correctly implemented.
+
+`nes::input::set_raw` should run on the same core as `nes::cpu::service`.
