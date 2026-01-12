@@ -108,7 +108,8 @@ A sample application for PCs using wxWidgets and PulseAudio.
 
 ----
 
-## How to make your own app.
+## How to Implement ShapoNES to Your Own App or Hardware
+
 ### Adding the ShapoNES Core to the Project
 
 Add `shapones/core/include/` to your include path and add the source files under `shapones/core/src/` to your project.
