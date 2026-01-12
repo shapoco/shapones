@@ -164,8 +164,8 @@ When the audio stream buffer is empty, fill it using `nes::apu::service(uint8_t 
 
 The audio data is zero during silence, has only positive amplitude, and has a maximum value of 255. Because this value has a large DC bias, you must implement a DC cut filter if necessary.
 
-### Multi-Core Operation
+### Multi-Thread Operation
 
-`nes::cpu::service`, `nes::ppu::service` and `nes::apu::service` can run on separate CPU cores. In that case, the mutual exclusion functions mentioned above must be correctly implemented.
+`nes::cpu::service`, `nes::ppu::service` and `nes::apu::service` can run on separate threads (or CPU cores). In that case, the mutual exclusion functions mentioned above must be correctly implemented.
 
-`nes::input::set_raw` should run on the same core as `nes::cpu::service`.
+`nes::input::set_raw` should run on the same thread as `nes::cpu::service`.
