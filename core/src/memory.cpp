@@ -19,16 +19,16 @@ bool map_ines(const uint8_t *ines) {
     }
 
     uint8_t flags6 = ines[6];
-    NES_PRINTF("Flags6 = 0x%02x\n", (int)flags6);
+    SHAPONES_PRINTF("Flags6 = 0x%02x\n", (int)flags6);
 
     bool four_screen = (flags6 & 0x8) != 0;
     bool vertical = (flags6 & 0x1) != 0;
     if (four_screen) {
-        NES_PRINTF("Nametable mirroring: Four-screen\n");
+        SHAPONES_PRINTF("Nametable mirroring: Four-screen\n");
     } else if (vertical) {
-        NES_PRINTF("Nametable mirroring: Vertical\n");
+        SHAPONES_PRINTF("Nametable mirroring: Vertical\n");
     } else {
-        NES_PRINTF("Nametable mirroring: Horizontal\n");
+        SHAPONES_PRINTF("Nametable mirroring: Horizontal\n");
     }
     set_nametable_mirroring(four_screen, vertical);
 

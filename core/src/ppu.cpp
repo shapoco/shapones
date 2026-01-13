@@ -22,7 +22,7 @@ static bool scroll_ppuaddr_high_stored = false;
 
 static bool nmi_level = false;
 
-static Palette palette_file[PALETTE_NUM_BANK];
+static uint8_t palette_file[PALETTE_NUM_BANK * PALETTE_SIZE];
 
 static OamEntry oam[MAX_SPRITE_COUNT];
 static SpriteLine sprite_lines[MAX_VISIBLE_SPRITES];
@@ -40,9 +40,9 @@ static void oam_write(addr_t addr, uint8_t data);
 static uint8_t palette_read(addr_t addr);
 static void palette_write(addr_t addr, uint8_t data);
 
-static void render_bg(uint8_t *line_buff, int x0, int x1);
-static void enum_visible_sprites();
-static void render_sprite(uint8_t *line_buff, int x0, int x1);
+static void render_bg(uint8_t *line_buff, int x0, int x1, bool skip_render);
+static void enum_visible_sprites(bool skip_render);
+static void render_sprite(uint8_t *line_buff, int x0, int x1, bool skip_render);
 
 void reset() {
     // https://www.nesdev.org/wiki/PPU_power_up_state
@@ -70,7 +70,6 @@ bool is_in_hblank() { return focus_x >= SCREEN_WIDTH; }
 
 int current_focus_y() { return focus_y; }
 
-// todo: exclusive control
 uint8_t reg_read(addr_t addr) {
     uint8_t retval;
     switch (addr) {
@@ -94,15 +93,14 @@ uint8_t reg_read(addr_t addr) {
         } break;
 
         default:
-            NES_PRINTF("*Warning: Invalid PPU register read addr: 0x%x\n",
-                       addr);
+            SHAPONES_PRINTF("*Warning: Invalid PPU register read addr: 0x%x\n",
+                       (int)addr);
             retval = 0;
             break;
     }
     return retval;
 }
 
-// todo: exclusive control
 void reg_write(addr_t addr, uint8_t data) {
     switch (addr) {
         case REG_PPUCTRL: {
@@ -151,17 +149,19 @@ void reg_write(addr_t addr, uint8_t data) {
 
         case REG_PPUDATA: {
             Exclusive lock(LOCK_PPU);
-            addr_t addr = scroll & SCROLL_MASK_PPU_ADDR;
+            uint_fast16_t scr = scroll;
+            addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
             bus_write(addr, data);
             addr += reg.control.incr_stride ? 32 : 1;
             addr &= SCROLL_MASK_PPU_ADDR;
-            scroll &= ~SCROLL_MASK_PPU_ADDR;
-            scroll |= addr;
+            scr &= ~SCROLL_MASK_PPU_ADDR;
+            scr |= addr;
+            scroll = scr;
         } break;
 
         default:
-            NES_PRINTF("*Warning: Invalid PPU register write addr: 0x%x\n",
-                       addr);
+            SHAPONES_PRINTF("*Warning: Invalid PPU register write addr: 0x%x\n",
+                       (int)addr);
     }
 }
 
@@ -169,7 +169,7 @@ void oam_dma_write(addr_t offset, uint8_t data) {
     oam_write((reg.oam_addr + offset) % OAM_SIZE, data);
 }
 
-static uint8_t bus_read(addr_t addr) {
+static SHAPONES_INLINE uint8_t bus_read(addr_t addr) {
     if (CHRROM_BASE <= addr && addr < CHRROM_BASE + CHRROM_RANGE) {
         bus_read_data_delayed = bus_read_data_latest;
         bus_read_data_latest = mapper::chrrom_read(addr - CHRROM_BASE);
@@ -191,7 +191,7 @@ static uint8_t bus_read(addr_t addr) {
     return bus_read_data_latest;
 }
 
-static void bus_write(addr_t addr, uint8_t data) {
+static SHAPONES_INLINE void bus_write(addr_t addr, uint8_t data) {
     if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
         memory::vram_write(addr - VRAM_BASE, data);
     } else if (PALETTE_FILE_BASE <= addr &&
@@ -201,11 +201,11 @@ static void bus_write(addr_t addr, uint8_t data) {
                addr < VRAM_MIRROR_BASE + VRAM_MIRROR_SIZE) {
         memory::vram_write(addr - VRAM_MIRROR_BASE, data);
     } else {
-        // NES_PRINTF("*Warning: Invalid PPU bus write addr: 0x%x\n", addr);
+        // SHAPONES_PRINTF("*Warning: Invalid PPU bus write addr: 0x%x\n", addr);
     }
 }
 
-static uint8_t oam_read(addr_t addr) {
+static SHAPONES_INLINE uint8_t oam_read(addr_t addr) {
     switch (addr & 0x3) {
         case 0: return oam[addr / 4].y;
         case 1: return oam[addr / 4].tile;
@@ -214,7 +214,7 @@ static uint8_t oam_read(addr_t addr) {
     }
 }
 
-static void oam_write(addr_t addr, uint8_t data) {
+static SHAPONES_INLINE void oam_write(addr_t addr, uint8_t data) {
     switch (addr & 0x3) {
         case 0: oam[addr / 4].y = data; break;
         case 1: oam[addr / 4].tile = data; break;
@@ -223,32 +223,31 @@ static void oam_write(addr_t addr, uint8_t data) {
     }
 }
 
-static uint8_t palette_read(addr_t addr) {
+static SHAPONES_INLINE uint8_t palette_read(addr_t addr) {
     addr %= PALETTE_FILE_SIZE;
     switch (addr) {
-        case 0x10: return palette_file[0].color[0];
-        case 0x14: return palette_file[1].color[0];
-        case 0x18: return palette_file[2].color[0];
-        case 0x1c: return palette_file[3].color[0];
-        default: return palette_file[addr / 4].color[addr & 0x3];
+        case 0x10: return palette_file[0 * PALETTE_SIZE];
+        case 0x14: return palette_file[1 * PALETTE_SIZE];
+        case 0x18: return palette_file[2 * PALETTE_SIZE];
+        case 0x1c: return palette_file[3 * PALETTE_SIZE];
+        default: return palette_file[addr];
     }
 }
 
-static void palette_write(addr_t addr, uint8_t data) {
+static SHAPONES_INLINE void palette_write(addr_t addr, uint8_t data) {
     addr %= PALETTE_FILE_SIZE;
     data &= 0x3f;
-
     switch (addr) {
-        case 0x10: palette_file[0].color[0] = data; break;
-        case 0x14: palette_file[1].color[0] = data; break;
-        case 0x18: palette_file[2].color[0] = data; break;
-        case 0x1c: palette_file[3].color[0] = data; break;
-        default: palette_file[addr / 4].color[addr & 0x3] = data; break;
+        case 0x10: palette_file[0 * PALETTE_SIZE] = data; break;
+        case 0x14: palette_file[1 * PALETTE_SIZE] = data; break;
+        case 0x18: palette_file[2 * PALETTE_SIZE] = data; break;
+        case 0x1c: palette_file[3 * PALETTE_SIZE] = data; break;
+        default: palette_file[addr] = data; return;
     }
 }
 
-bool service(uint8_t *line_buff) {
-    bool eol = false;
+uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
+    uint32_t timing = 0;
     bool irq = false;
 
     while (true) {
@@ -294,16 +293,16 @@ bool service(uint8_t *line_buff) {
         int next_focus_x = focus_x + step_count;
 
         // render background
-        render_bg(line_buff, focus_x, next_focus_x);
+        render_bg(line_buff, focus_x, next_focus_x, skip_render);
 
-        if (reg.mask.sprite_enable && focus_x < SCREEN_WIDTH &&
-            focus_y < SCREEN_HEIGHT) {
+        if (focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT &&
+            reg.mask.sprite_enable) {
             if (focus_x == 0) {
                 // enumerate visible sprites in current line
-                enum_visible_sprites();
+                enum_visible_sprites(skip_render);
             }
             // render sprite
-            render_sprite(line_buff, focus_x, next_focus_x);
+            render_sprite(line_buff, focus_x, next_focus_x, skip_render);
         }
 
         if (mapper::get_id() == 4 && focus_y < SCREEN_HEIGHT) {
@@ -332,29 +331,48 @@ bool service(uint8_t *line_buff) {
             focus_y++;
             if (focus_y >= SCAN_LINES) {
                 focus_y = 0;
+                timing |= END_OF_FRAME;
             }
         }
 
         // step cycle counter
         cycle_count += step_count;
 
-        eol = (focus_x == SCREEN_WIDTH && focus_y < SCREEN_HEIGHT) ||
-              (focus_x == 0 && focus_y >= SCREEN_HEIGHT);
-        if (eol || irq) {
+        if (focus_y < SCREEN_HEIGHT) {
+            if (focus_x == SCREEN_WIDTH) {
+                timing |= END_OF_VISIBLE_LINE;
+                if (focus_y == SCREEN_HEIGHT - 1) {
+                    timing |= END_OF_VISIBLE_AREA;
+                }
+            }
+        } else {
+            if (focus_x == 0) {
+                timing |= START_OF_VBLANK_LINE;
+            }
+        }
+
+        if (timing || irq) {
             break;
         }
     }
 
-    return eol;
+    if (y != nullptr) {
+        *y = focus_y;
+    }
+
+    return timing;
 }
 
-static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
+static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
+                      bool skip_render) {
     bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
+
+    uint32_t bg_offset = (uint32_t)reg.control.bg_name_sel << 12;
 
     while (x0_block < x1_block) {
         int x0, x1;
         {
-            uint16_t scr = scroll;
+            uint_fast16_t scr = scroll;
 
             // determine step count
             x0 = x0_block;
@@ -370,55 +388,73 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
                     // read name table for two tiles
                     addr_t name_addr0 = scr & 0xffeu;
                     addr_t name_addr1 = name_addr0 + 1;
-                    uint8_t name0 = memory::vram_read(name_addr0);
-                    uint8_t name1 = memory::vram_read(name_addr1);
+                    uint32_t name0 = memory::vram_read(name_addr0);
+                    uint32_t name1 = memory::vram_read(name_addr1);
 
-                    int fine_y = (scr & SCROLL_MASK_FINE_Y) >> 12;
+                    uint32_t fine_y = (scr & SCROLL_MASK_FINE_Y) >> 12;
 
-                    // read CHRROM
-                    int chrrom_index0 = name0 * 8 + fine_y;
-                    int chrrom_index1 = name1 * 8 + fine_y;
-                    if (reg.control.bg_name_sel) {
-                        chrrom_index1 += 0x800;
-                        chrrom_index0 += 0x800;
+                    uint32_t chr = 0xFFFFFFFF;
+                    const uint8_t *palette = nullptr;
+                    if (!skip_render) {
+#if SHAPONES_ENABLE_CHROM_CACHE
+                        // read CHRROM
+                        uint32_t chrrom_index0 = (name0 << 3) + fine_y;
+                        uint32_t chrrom_index1 = (name1 << 3) + fine_y;
+                        chrrom_index0 += bg_offset / 2;
+                        chrrom_index1 += bg_offset / 2;
+                        uint16_t chr0 =
+                            mapper::chrrom_read_cache(chrrom_index0, false);
+                        uint16_t chr1 =
+                            mapper::chrrom_read_cache(chrrom_index1, false);
+#else
+                        // read CHRROM
+                        uint32_t chrrom_index0 = (name0 << 4) + fine_y;
+                        uint32_t chrrom_index1 = (name1 << 4) + fine_y;
+                        chrrom_index0 += bg_offset;
+                        chrrom_index1 += bg_offset;
+                        uint_fast16_t chr0 =
+                            mapper::chrrom_read_double(chrrom_index0, false);
+                        uint_fast16_t chr1 =
+                            mapper::chrrom_read_double(chrrom_index1, false);
+#endif
+                        chr = ((uint32_t)chr1 << 16) | (uint32_t)chr0;
+
+                        // adjust CHR bit pos
+                        int chr_shift_size =
+                            ((scr << 4) & 0x10) | (fine_x << 1);
+                        chr >>= chr_shift_size;
+
+                        // calc attr index
+                        addr_t attr_index = (scr & SCROLL_MASK_NAME_SEL) |
+                                            0x3c0 | ((scr >> 2) & 0x7) |
+                                            ((scr >> 4) & 0x38);
+                        int attr_shift_size = ((scr >> 4) & 0x4) | (scr & 0x2);
+
+                        // read attr table
+                        uint8_t attr = memory::vram_read(attr_index);
+                        attr = (attr >> attr_shift_size) & 0x3;
+                        palette = palette_file + attr * PALETTE_SIZE;
                     }
-                    uint16_t chr0 = mapper::chrrom_read_w(chrrom_index0, false);
-                    uint16_t chr1 = mapper::chrrom_read_w(chrrom_index1, false);
-
-                    uint32_t chr = (uint32_t)chr0 | ((uint32_t)chr1 << 16);
-
-                    // calc attr index
-                    int attr_index = (scr & SCROLL_MASK_NAME_SEL) | 0x3c0 |
-                                     ((scr >> 2) & 0x7) | ((scr >> 4) & 0x38);
-                    int attr_shift_size = ((scr >> 4) & 0x4) | (scr & 0x2);
-
-                    // read attr table
-                    uint8_t attr = memory::vram_read(attr_index);
-                    attr = (attr >> attr_shift_size) & 0x3;
-                    Palette palette = palette_file[attr];
-
-                    // adjust CHR bit pos
-                    int chr_shift_size = ((scr << 4) & 0x10) | (fine_x << 1);
-                    chr >>= chr_shift_size;
 
                     // render BG block
-                    uint8_t bg_color = palette_file[0].color[0];
+                    uint8_t bg_color = palette_file[0];
                     for (int x = x0; x < x1; x++) {
                         uint32_t palette_index = chr & 0x3;
                         chr >>= 2;
                         if (palette_index == 0) {
                             line_buff[x] = bg_color;
                         } else {
-                            line_buff[x] =
-                                palette.color[palette_index] | OPAQUE_FLAG;
+                            uint8_t col = OPAQUE_FLAG;
+                            if (!skip_render) {
+                                col |= palette[palette_index];
+                            }
+                            line_buff[x] = col;
                         }
                     }
                 } else {
                     // blank background
-                    uint8_t bg_color = palette_file[0].color[0];
-                    for (int x = x0; x < x1; x++) {
-                        line_buff[x] = bg_color;
-                    }
+                    uint8_t bg_color = palette_file[0];
+                    memset(&line_buff[x0], bg_color, x1 - x0);
                 }
             }
         }
@@ -427,7 +463,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
         // see: https://www.nesdev.org/wiki/PPU_scrolling
         if (reg.mask.bg_enable || reg.mask.sprite_enable) {
             Exclusive lock(LOCK_PPU);
-            uint16_t scr = scroll;
+            uint_fast16_t scr = scroll;
             if (focus_y < SCREEN_HEIGHT) {
                 if (x0 < SCREEN_WIDTH) {
                     // step scroll counter for x-axis
@@ -489,17 +525,15 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block) {
     }  // while
 }
 
-static void enum_visible_sprites() {
+static void enum_visible_sprites(bool skip_render) {
     num_visible_sprites = 0;
     uint8_t h = reg.control.sprite_size ? 16 : 8;
     for (int i = 0; i < MAX_SPRITE_COUNT; i++) {
-        auto s = oam[i];
+        const auto &s = oam[i];
 
         // vertical hit test
-        if (s.y + SPRITE_Y_OFFSET <= focus_y &&
-            focus_y < s.y + h + SPRITE_Y_OFFSET) {
-            int src_y = focus_y - (s.y + SPRITE_Y_OFFSET);
-
+        int src_y = focus_y - (s.y + SPRITE_Y_OFFSET);
+        if (0 <= src_y && src_y < h) {
             if (s.attr & OAM_ATTR_INVERT_V) {
                 // vertical inversion
                 if (reg.control.sprite_size) {
@@ -529,22 +563,30 @@ static void enum_visible_sprites() {
                     tile_index += 0x1000 / 16;
                 }
             }
-
-            // read CHRROM
-            int chrrom_index = tile_index * 8 + (src_y & 0x7);
-            uint16_t chr;
-            chr =
-                mapper::chrrom_read_w(chrrom_index, s.attr & OAM_ATTR_INVERT_H);
+            uint_fast16_t chr = 0xFFFF;
+            if (!skip_render) {
+#if SHAPONES_ENABLE_CHROM_CACHE
+                // read CHRROM
+                int chrrom_index = (tile_index << 3) + (src_y & 0x7);
+                chr = mapper::chrrom_read_cache(chrrom_index,
+                                                s.attr & OAM_ATTR_INVERT_H);
+#else
+                // read CHRROM
+                int chrrom_index = (tile_index << 4) + (src_y & 0x7);
+                chr = mapper::chrrom_read_double(chrrom_index,
+                                                 s.attr & OAM_ATTR_INVERT_H);
+#endif
+            }
 
             // store sprite information
-            SpriteLine sl;
+            SpriteLine &sl = sprite_lines[num_visible_sprites++];
             sl.chr = chr;
             sl.x = s.x;
-            sl.palette = palette_file[4 + (s.attr & OAM_ATTR_PALETTE)];
+            sl.palette_offset =
+                (4 + (s.attr & OAM_ATTR_PALETTE)) * PALETTE_SIZE;
             sl.attr = 0;
             if (s.attr & OAM_ATTR_PRIORITY) sl.attr |= SL_ATTR_BEHIND;
             if (i == 0) sl.attr |= SL_ATTR_ZERO;
-            sprite_lines[num_visible_sprites++] = sl;
 
             if (num_visible_sprites >= MAX_VISIBLE_SPRITES) {
                 break;
@@ -553,32 +595,34 @@ static void enum_visible_sprites() {
     }
 }
 
-static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block) {
+static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
+                          bool skip_render) {
     // sprite height
     int h = reg.control.sprite_size ? 16 : 8;
     for (int i = 0; i < num_visible_sprites; i++) {
-        auto sl = sprite_lines[i];
+        const auto &sl = sprite_lines[i];
         int x0 = (x0_block > sl.x) ? x0_block : sl.x;
         int x1 = (x1_block < sl.x + TILE_SIZE) ? x1_block : (sl.x + TILE_SIZE);
-        uint16_t chr = sl.chr >> (2 * (x0 - sl.x));
+        uint_fast16_t chr = sl.chr >> (2 * (x0 - sl.x));
+        uint_fast8_t attr = sl.attr;
+        uint8_t *palette = palette_file + sl.palette_offset;
         for (int x = x0; x < x1; x++) {
-            uint16_t palette_index = chr & 0x3;
+            uint_fast16_t palette_index = chr & 0x3;
             chr >>= 2;
-            uint8_t col = line_buff[x];
-            if (col & BEHIND_FLAG) {
-                continue;
-            }
             bool sprite_opaque = (palette_index != 0);
+            uint_fast8_t col = line_buff[x];
             bool bg_opaque = (col & OPAQUE_FLAG) != 0;
-            bool sprite_front = !bg_opaque || !(sl.attr & SL_ATTR_BEHIND);
-            if (sprite_opaque) {
-                if (sprite_front) {
-                    col = sl.palette.color[palette_index];
+            if ((!(col & BEHIND_FLAG)) && !skip_render) {
+                bool sprite_front = !bg_opaque || !(attr & SL_ATTR_BEHIND);
+                if (sprite_opaque) {
+                    if (sprite_front) {
+                        col = palette[palette_index];
+                    }
+                    col |= BEHIND_FLAG;
+                    line_buff[x] = col;
                 }
-                col |= BEHIND_FLAG;
-                line_buff[x] = col;
             }
-            if ((sl.attr & SL_ATTR_ZERO) && sprite_opaque && bg_opaque) {
+            if ((attr & SL_ATTR_ZERO) && sprite_opaque && bg_opaque) {
                 reg.status.sprite0_hit = 1;
             }
         }

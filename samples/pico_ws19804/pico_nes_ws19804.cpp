@@ -18,6 +18,8 @@
 #include "boot_menu.hpp"
 #include "common.hpp"
 
+#define SHAPONES_DISP_DMA_CORE (0)
+
 // monitor pin for debugging
 static constexpr int PIN_MONITOR = 1;
 
@@ -59,6 +61,9 @@ static uint32_t lock_irqs[nes::NUM_LOCKS];
 // sound buffer for DMA
 static uint8_t spk_buff[SPK_LATENCY];
 
+// next vsync time in microseconds
+static uint64_t next_vsync_us = 0;
+
 // start game
 static void boot_nes();
 
@@ -67,6 +72,9 @@ static void cpu_loop();
 
 // core1 main loop
 static void ppu_loop();
+
+// wait for next vsync
+static bool wait_vsync();
 
 // APU DMA finish IRQ handler
 static void apu_dma_handler();
@@ -84,6 +92,9 @@ int main() {
     sleep_ms(100);
     stdio_init_all();
     set_sys_clock_khz(SYS_CLK_FREQ / 1000, true);
+    clock_configure(clk_peri, 0,
+                    CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
+                    SYS_CLK_FREQ, SYS_CLK_FREQ);
     setup_default_uart();
 
     // setup monitor pin
@@ -132,13 +143,12 @@ static void boot_nes() {
 }
 
 static void cpu_loop() {
+#if SHAPONES_DISP_DMA_CORE == 0
     auto t_last_frame = get_absolute_time();
     int frame_count = 0;
     char fps_str[16];
+#endif
     for (;;) {
-        // run CPU
-        nes::cpu::service();
-
         // update input status
         nes::input::InputStatus input_status;
         input_status.raw = 0;
@@ -149,6 +159,10 @@ static void cpu_loop() {
         }
         nes::input::set_raw(0, input_status);
 
+        // run CPU
+        nes::cpu::service();
+
+#if SHAPONES_DISP_DMA_CORE == 0
         // check line buffer FIFO state
         int fifo_rptr = line_fifo_rptr;
         if (line_fifo_wptr != fifo_rptr) {
@@ -190,30 +204,87 @@ static void cpu_loop() {
                 tmp ^= 1;
             }
         }
+#endif
     }
 }
 
 static void ppu_loop() {
-    constexpr int FRAME_DELAY_US = 16666;
-    absolute_time_t next_time =
-        delayed_by_us(get_absolute_time(), FRAME_DELAY_US);
+#if SHAPONES_DISP_DMA_CORE == 1
+    auto t_last_frame = get_absolute_time();
+    int frame_count = 0;
+    char fps_str[16];
+#endif
+
+    bool skip_frame = false;
 
     for (;;) {
+#if SHAPONES_DISP_DMA_CORE == 0
         int wptr = line_fifo_wptr;
-        bool eol = nes::ppu::service(&line_buff[wptr * LINE_FIFO_STRIDE + 1]);
-        int y = nes::ppu::current_focus_y();
-        if (eol && y < nes::SCREEN_HEIGHT) {
-            // Vsync
-            if (y == 0) {
-                busy_wait_until(next_time);
-                next_time = delayed_by_us(get_absolute_time(), FRAME_DELAY_US);
-            }
-
+        int y;
+        uint32_t timing = nes::ppu::service(
+            &line_buff[wptr * LINE_FIFO_STRIDE + 1], skip_frame, &y);
+        if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
             // push new line
             line_buff[wptr * LINE_FIFO_STRIDE] = y;
             line_fifo_wptr = (wptr + 1) % LINE_FIFO_DEPTH;
         }
+        if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
+            skip_frame = wait_vsync();
+        }
+#else
+        int y;
+        uint32_t timing = nes::ppu::service(line_buff, skip_frame, &y);
+        if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
+            int x0 = (nes::SCREEN_WIDTH - FRAME_BUFF_WIDTH) / 2;
+            uint8_t *rd_ptr = line_buff;
+            uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
+            for (int x = 0; x < FRAME_BUFF_WIDTH; x += 2) {
+                uint16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+                uint16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+                *(wr_ptr++) = (c0 >> 4) & 0xff;
+                *(wr_ptr++) = ((c0 << 4) & 0xf0) | (c1 >> 8) & 0xf;
+                *(wr_ptr++) = c1 & 0xff;
+            }
+        }
+        if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
+            if (!skip_frame) {
+                // fps measurement
+                auto t_now = get_absolute_time();
+                if (frame_count < 60 - 1) {
+                    frame_count++;
+                } else {
+                    auto t_diff = absolute_time_diff_us(t_last_frame, t_now);
+                    float fps = (60.0f * 1000000) / t_diff;
+                    sprintf(fps_str, "%5.2ffps", fps);
+                    t_last_frame = t_now;
+                    frame_count = 0;
+                }
+
+                // DMA transfer
+                ws19804::finish_write_data();
+                draw_string(0, 0, fps_str);
+                ws19804::start_write_data(25, 0, FRAME_BUFF_WIDTH,
+                                          FRAME_BUFF_HEIGHT, frame_buff);
+            }
+            skip_frame = wait_vsync() && !skip_frame;
+        }
+#endif
     }
+}
+
+static bool wait_vsync() {
+    constexpr int FRAME_DELAY_US = 1000000 / 60;
+    uint64_t now_us = to_us_since_boot(get_absolute_time());
+    int64_t wait_us = next_vsync_us - now_us;
+    bool delaying = (wait_us <= 0);
+    if (!delaying) {
+        sleep_us(wait_us);
+    }
+    next_vsync_us += FRAME_DELAY_US;
+    if (now_us > next_vsync_us) {
+        next_vsync_us = now_us;
+    }
+    return delaying;
 }
 
 static void apu_dma_handler() {

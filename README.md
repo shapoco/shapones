@@ -150,9 +150,17 @@ Steps 1 and 2 can be completed on PC using `nes::load_ines_file(const char* path
 Call the following functions within the application loop:
 
 - `nes::cpu::service();`
-- `nes::ppu::service(uint8_t *line_buff);`
+- `nes::ppu::service(uint8_t *line_buff, bool skip_render, int *y);`
 
-Pass the line buffer as an argument to `nes::ppu::service`. `nes::ppu::service` returns true when the buffer is filled. The current line number can be obtained using the `nes::ppu::current_focus_y()` function as a value between 0 and `nes::ppu::SCAN_LINES - 1`. If the line number is less than `nes::SCREEN_HEIGHT`, it is visible line, so convert the buffer contents into actual pixel values ​​using the color table and write them to the display or frame buffer.
+Pass the line buffer as an argument to `nes::ppu::service`. `nes::ppu::service` returns a timing flags.
+
+The timing flag `ppu::END_OF_VISIBLE_LINE` means that `line_buff` is filled with visible pixels. The lowest 6 bits of each element of `line_buff` store the NES color palette number. **The highest 2 bits are flags used internally by ShapoNES and should be ignored.** When an application detects this flag, it should convert the contents of `line_buff` to actual colors and transfer them to the framebuffer.
+
+The current line number returned to argument `y` as a value between 0 and `nes::ppu::SCAN_LINES - 1`.
+
+The timing flag `ppu::END_OF_VISIBLE_AREA` means the visible area of ​​the current frame has ended. Applications using a frame buffer should detect this flag and start transferring data from the frame buffer to the display. Also, insert a sleep here to ensure the frame rate remains at 60 FPS.
+
+If the PPU processing or display update takes too long, you can skip the rendering process by passing true to `skip_render`, in which case the contents of `line_buffer` are invalid and should be discarded.
 
 ### Controller Input
 

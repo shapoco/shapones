@@ -11,11 +11,11 @@ extern addr_t vram_addr_mask;
 
 bool map_ines(const uint8_t *ines);
 
-static NES_ALWAYS_INLINE uint8_t vram_read(addr_t addr) {
+static SHAPONES_INLINE uint8_t vram_read(addr_t addr) {
     return vram[addr & vram_addr_mask];
 }
 
-static NES_ALWAYS_INLINE void vram_write(addr_t addr, uint8_t value) {
+static SHAPONES_INLINE void vram_write(addr_t addr, uint8_t value) {
     vram[addr & vram_addr_mask] = value;
 }
 

@@ -55,7 +55,7 @@ static void disp_enable_rgb444();
 static void disp_flip();
 static void disp_dma_start();
 static void disp_dma_complete();
-static void disp_wait_vsync();
+static bool disp_wait_vsync();
 
 int main() {
 #if USE_PICOPAD10 || USE_PICOPAD20
@@ -260,15 +260,14 @@ static void core0_main() {
 }
 
 static void core1_main() {
+    bool skip_frame = false;
+
     while (true) {
-        uint64_t now_ms = Time64() / 1000;
-
-        bool eol = nes::ppu::service(line_buff);
-
-        int y = nes::ppu::current_focus_y();
+        int y;
+        uint32_t flags = nes::ppu::service(line_buff, skip_frame, &y);
 
         // end of visible line
-        if (eol && y < nes::SCREEN_HEIGHT) {
+        if ((flags & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
             // Convert palette index to RGB444
             uint8_t *rd_ptr = line_buff;
             uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
@@ -279,12 +278,12 @@ static void core1_main() {
                 *(wr_ptr++) = ((c0 << 4) & 0xf0) | (c1 >> 8) & 0xf;
                 *(wr_ptr++) = c1 & 0xff;
             }
-
-            // end of frame
-            if (y == 0) {
+        }
+        if (flags & nes::ppu::END_OF_VISIBLE_AREA) {
+            if (!skip_frame) {
                 disp_flip();
-                disp_wait_vsync();
             }
+            skip_frame = disp_wait_vsync();
         }
     }
 }
@@ -373,17 +372,19 @@ static void disp_dma_complete() {
     SPI_RxOverClear_hw(disp_spi_hw);
 }
 
-static void disp_wait_vsync() {
+static bool disp_wait_vsync() {
     constexpr uint32_t FRAME_INTERVAL_US = 1000000 / 60;
-    uint64_t now_us;
-    do {
-        now_us = Time64();
-    } while (now_us < disp_next_vsync_us);
-    if (now_us < disp_next_vsync_us + FRAME_INTERVAL_US) {
-        disp_next_vsync_us += FRAME_INTERVAL_US;
-    } else {
+    uint64_t now_us = Time64();
+    int64_t wait_us = disp_next_vsync_us - now_us;
+    bool delaying = (wait_us <= 0);
+    if (!delaying) {
+        WaitUs(wait_us);
+    }
+    disp_next_vsync_us += FRAME_INTERVAL_US;
+    if (now_us > disp_next_vsync_us) {
         disp_next_vsync_us = now_us;
     }
+    return delaying;
 }
 
 static const uint8_t *sound_refill() {

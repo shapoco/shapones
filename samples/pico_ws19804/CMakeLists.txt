@@ -18,7 +18,6 @@ pico_generate_pio_header(pico_nes_ws19804 ${CMAKE_CURRENT_LIST_DIR}/ws19804.pio)
 set(SHAPONES_PATH ../../core)
 set(FATFS_PATH ../fatfs/source)
 
-
 file(GLOB CPP_FILES
     ./*.cpp
     ${SHAPONES_PATH}/src/*.cpp

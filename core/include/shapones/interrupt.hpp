@@ -11,25 +11,25 @@ enum class Source : uint32_t {
     MMC3 = (1 << 2),
 };
 
-static NES_ALWAYS_INLINE Source operator|(Source a, Source b) {
+static SHAPONES_INLINE Source operator|(Source a, Source b) {
     return static_cast<Source>(static_cast<uint32_t>(a) |
                                static_cast<uint32_t>(b));
 }
-static NES_ALWAYS_INLINE Source operator&(Source a, Source b) {
+static SHAPONES_INLINE Source operator&(Source a, Source b) {
     return static_cast<Source>(static_cast<uint32_t>(a) &
                                static_cast<uint32_t>(b));
 }
-static NES_ALWAYS_INLINE bool operator!(Source a) {
+static SHAPONES_INLINE bool operator!(Source a) {
     return !static_cast<uint32_t>(a);
 }
-static NES_ALWAYS_INLINE Source operator~(Source a) {
+static SHAPONES_INLINE Source operator~(Source a) {
     return static_cast<Source>(~static_cast<uint32_t>(a));
 }
-static NES_ALWAYS_INLINE Source& operator|=(Source &a, Source b) {
+static SHAPONES_INLINE Source& operator|=(Source &a, Source b) {
     a = a | b;
     return a;
 }
-static NES_ALWAYS_INLINE Source& operator&=(Source &a, Source b) {
+static SHAPONES_INLINE Source& operator&=(Source &a, Source b) {
     a = a & b;
     return a;
 }

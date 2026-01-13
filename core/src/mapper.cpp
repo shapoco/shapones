@@ -9,11 +9,14 @@ int id;
 uint8_t *prgram = nullptr;
 const uint8_t *prgrom;
 const uint8_t *chrrom;
-uint16_t *chrrom_reordered0;
-uint16_t *chrrom_reordered1;
 
 int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
 int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
+
+#if SHAPONES_ENABLE_CHROM_CACHE
+uint16_t *chrrom_reordered0;
+uint16_t *chrrom_reordered1;
+#endif
 
 addr_t prgram_addr_mask;
 uint32_t prgrom_phys_size;
@@ -27,6 +30,8 @@ uint8_t mmc3_reg_sel;
 uint8_t mmc3_map_reg[8];
 
 static void mmc3_ext_write(addr_t addr, uint8_t value);
+static void reorder_chrrom_block(const uint8_t *src, uint16_t *dst_fwd,
+                                 uint16_t *dst_rev, int num_words);
 
 void init(const uint8_t *ines) {
     // Size of PRG ROM in 16 KB units
@@ -38,21 +43,21 @@ void init(const uint8_t *ines) {
     } else {
         prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
     }
-    NES_PRINTF("Number of PRGROM pages = %d (%dkB)\n", num_prg_rom_pages,
+    SHAPONES_PRINTF("Number of PRGROM pages = %d (%dkB)\n", num_prg_rom_pages,
                prgrom_phys_size / 1024);
 
     // Size of CHR ROM in 8 KB units
     int num_chr_rom_pages = ines[5];
     chrrom_phys_size = num_chr_rom_pages * CHRROM_PAGE_SIZE;
     chrrom_phys_addr_mask = chrrom_phys_size - 1;
-    NES_PRINTF("Number of CHRROM pages = %d (%dkB)\n", num_chr_rom_pages,
+    SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB)\n", num_chr_rom_pages,
                chrrom_phys_size / 1024);
 
     uint8_t flags6 = ines[6];
     uint8_t flags7 = ines[7];
 
     id = (flags7 & 0xf0) | ((flags6 >> 4) & 0xf);
-    NES_PRINTF("Mapper No.%d\n", id);
+    SHAPONES_PRINTF("Mapper No.%d\n", id);
 
     // 512-byte trainer at $7000-$71FF (stored before PRG data)
     bool has_trainer = (flags6 & 0x2) != 0;
@@ -68,15 +73,15 @@ void init(const uint8_t *ines) {
         case 0:
         case 3: break;
         case 4: prgrom_remap(0xE000, prgrom_phys_size - 8192, 8192); break;
-        default: NES_ERRORF("Unsupported Mapper Number\n"); break;
+        default: SHAPONES_ERRORF("Unsupported Mapper Number\n"); break;
     }
-    NES_PRINTF("  CHRROM bank mask = 0x%x\n", chrrom_phys_addr_mask);
+    SHAPONES_PRINTF("  CHRROM bank mask = 0x%x\n", chrrom_phys_addr_mask);
 
     int prgram_size = ines[8] * 8192;
     if (prgram_size == 0) {
         prgram_size = 8192;  // 8KB PRG RAM if not specified
     }
-    NES_PRINTF("PRG RAM size = %d kB\n", prgram_size / 1024);
+    SHAPONES_PRINTF("PRG RAM size = %d kB\n", prgram_size / 1024);
     prgram = new uint8_t[prgram_size];
     prgram_addr_mask = prgram_size - 1;
 
@@ -87,58 +92,14 @@ void init(const uint8_t *ines) {
     int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
     chrrom = ines + start_of_chr_rom;
 
+#if SHAPONES_ENABLE_CHROM_CACHE
     // reorder CHRROM bits for fast access
-    int num_chars = num_chr_rom_pages * 0x2000 / 16;
-    chrrom_reordered0 = new uint16_t[num_chars * 8];
-    chrrom_reordered1 = new uint16_t[num_chars * 8];
-    for (int ic = 0; ic < num_chars; ic++) {
-        for (int iy = 0; iy < 8; iy++) {
-            uint8_t chr0 = chrrom[ic * 16 + iy];
-            uint8_t chr1 = chrrom[ic * 16 + iy + 8];
-
-            {
-                uint16_t chr = 0;
-                chr = (uint16_t)(chr1 & 0x01) << 15;
-                chr |= (uint16_t)(chr0 & 0x01) << 14;
-                chr |= (uint16_t)(chr1 & 0x02) << 12;
-                chr |= (uint16_t)(chr0 & 0x02) << 11;
-                chr |= (uint16_t)(chr1 & 0x04) << 9;
-                chr |= (uint16_t)(chr0 & 0x04) << 8;
-                chr |= (uint16_t)(chr1 & 0x08) << 6;
-                chr |= (uint16_t)(chr0 & 0x08) << 5;
-                chr |= (uint16_t)(chr1 & 0x10) << 3;
-                chr |= (uint16_t)(chr0 & 0x10) << 2;
-                chr |= (uint16_t)(chr1 & 0x20);
-                chr |= (uint16_t)(chr0 & 0x20) >> 1;
-                chr |= (uint16_t)(chr1 & 0x40) >> 3;
-                chr |= (uint16_t)(chr0 & 0x40) >> 4;
-                chr |= (uint16_t)(chr1 & 0x80) >> 6;
-                chr |= (uint16_t)(chr0 & 0x80) >> 7;
-                chrrom_reordered0[ic * 8 + iy] = chr;
-            }
-
-            {
-                uint16_t chr = 0;
-                chr = (uint16_t)(chr1 & 0x80) << 8;
-                chr |= (uint16_t)(chr0 & 0x80) << 7;
-                chr |= (uint16_t)(chr1 & 0x40) << 7;
-                chr |= (uint16_t)(chr0 & 0x40) << 6;
-                chr |= (uint16_t)(chr1 & 0x20) << 6;
-                chr |= (uint16_t)(chr0 & 0x20) << 5;
-                chr |= (uint16_t)(chr1 & 0x10) << 5;
-                chr |= (uint16_t)(chr0 & 0x10) << 4;
-                chr |= (uint16_t)(chr1 & 0x08) << 4;
-                chr |= (uint16_t)(chr0 & 0x08) << 3;
-                chr |= (uint16_t)(chr1 & 0x04) << 3;
-                chr |= (uint16_t)(chr0 & 0x04) << 2;
-                chr |= (uint16_t)(chr1 & 0x02) << 2;
-                chr |= (uint16_t)(chr0 & 0x02) << 1;
-                chr |= (uint16_t)(chr1 & 0x01) << 1;
-                chr |= (uint16_t)(chr0 & 0x01);
-                chrrom_reordered1[ic * 8 + iy] = chr;
-            }
-        }
-    }
+    int num_words = num_chr_rom_pages * (CHRROM_PAGE_SIZE / 2);
+    chrrom_reordered0 = new uint16_t[num_words];
+    chrrom_reordered1 = new uint16_t[num_words];
+    reorder_chrrom_block(chrrom, chrrom_reordered0, chrrom_reordered1,
+                         num_words);
+#endif
 }
 
 void ext_write(addr_t addr, uint8_t value) {
@@ -213,6 +174,55 @@ static void mmc3_ext_write(addr_t addr, uint8_t value) {
         } else {
             // IRQ enable
             ppu::mmc3_irq_set_enable(true);
+        }
+    }
+}
+
+static void reorder_chrrom_block(const uint8_t *src, uint16_t *dst_fwd,
+                                 uint16_t *dst_rev, int num_words) {
+    int num_chars = num_words / 8;
+    for (int ic = 0; ic < num_chars; ic++) {
+        for (int iy = 0; iy < 8; iy++) {
+            uint8_t chr0 = src[ic * 16 + iy];
+            uint8_t chr1 = src[ic * 16 + iy + 8];
+
+            uint16_t fwd = 0;
+            fwd = (uint16_t)(chr1 & 0x01) << 15;
+            fwd |= (uint16_t)(chr0 & 0x01) << 14;
+            fwd |= (uint16_t)(chr1 & 0x02) << 12;
+            fwd |= (uint16_t)(chr0 & 0x02) << 11;
+            fwd |= (uint16_t)(chr1 & 0x04) << 9;
+            fwd |= (uint16_t)(chr0 & 0x04) << 8;
+            fwd |= (uint16_t)(chr1 & 0x08) << 6;
+            fwd |= (uint16_t)(chr0 & 0x08) << 5;
+            fwd |= (uint16_t)(chr1 & 0x10) << 3;
+            fwd |= (uint16_t)(chr0 & 0x10) << 2;
+            fwd |= (uint16_t)(chr1 & 0x20);
+            fwd |= (uint16_t)(chr0 & 0x20) >> 1;
+            fwd |= (uint16_t)(chr1 & 0x40) >> 3;
+            fwd |= (uint16_t)(chr0 & 0x40) >> 4;
+            fwd |= (uint16_t)(chr1 & 0x80) >> 6;
+            fwd |= (uint16_t)(chr0 & 0x80) >> 7;
+            dst_fwd[ic * 8 + iy] = fwd;
+
+            uint16_t rev = 0;
+            rev = (uint16_t)(chr1 & 0x80) << 8;
+            rev |= (uint16_t)(chr0 & 0x80) << 7;
+            rev |= (uint16_t)(chr1 & 0x40) << 7;
+            rev |= (uint16_t)(chr0 & 0x40) << 6;
+            rev |= (uint16_t)(chr1 & 0x20) << 6;
+            rev |= (uint16_t)(chr0 & 0x20) << 5;
+            rev |= (uint16_t)(chr1 & 0x10) << 5;
+            rev |= (uint16_t)(chr0 & 0x10) << 4;
+            rev |= (uint16_t)(chr1 & 0x08) << 4;
+            rev |= (uint16_t)(chr0 & 0x08) << 3;
+            rev |= (uint16_t)(chr1 & 0x04) << 3;
+            rev |= (uint16_t)(chr0 & 0x04) << 2;
+            rev |= (uint16_t)(chr1 & 0x02) << 2;
+            rev |= (uint16_t)(chr0 & 0x02) << 1;
+            rev |= (uint16_t)(chr1 & 0x01) << 1;
+            rev |= (uint16_t)(chr0 & 0x01);
+            dst_rev[ic * 8 + iy] = rev;
         }
     }
 }

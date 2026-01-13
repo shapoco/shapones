@@ -4,6 +4,20 @@
 #if !(SHAPONES_NO_STDLIB)
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+#endif
+
+#ifndef SHAPONES_DEFINE_FAST_INT
+#define SHAPONES_DEFINE_FAST_INT (0)
+#endif
+
+#if SHAPONES_DEFINE_FAST_INT
+using uint_fast8_t = uint8_t;
+using uint_fast16_t = uint16_t;
+using uint_fast32_t = uint32_t;
+using int_fast8_t = int8_t;
+using int_fast16_t = int16_t;
+using int_fast32_t = int32_t;
 #endif
 
 #if SHAPONES_ENABLE_LOG
@@ -12,14 +26,14 @@
 #include <stdlib.h>
 #endif
 
-#define NES_PRINTF(fmt, ...) \
+#define SHAPONES_PRINTF(fmt, ...) \
     do { \
         printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
         printf((fmt), ##__VA_ARGS__); \
         fflush(stdout); \
     } while(0)
 
-#define NES_ERRORF(fmt, ...) \
+#define SHAPONES_ERRORF(fmt, ...) \
     do { \
         printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
         printf("*ERROR: "); \
@@ -30,22 +44,27 @@
 
 #else 
 
-#define NES_PRINTF(fmt, ...) \
+#define SHAPONES_PRINTF(fmt, ...) \
     do { } while(0)
 
-#define NES_ERRORF(fmt, ...) \
+#define SHAPONES_ERRORF(fmt, ...) \
     do { \
         nes::cpu::stop(); \
     } while(0)
 
 #endif
 
-#define NES_ALWAYS_INLINE __attribute__((always_inline))  inline
+#define SHAPONES_INLINE __attribute__((always_inline)) inline
+#define SHAPONES_NOINLINE __attribute__((noinline))
+
+#ifndef SHAPONES_ENABLE_CHROM_CACHE
+#define SHAPONES_ENABLE_CHROM_CACHE (0)
+#endif
 
 namespace nes {
 
-using addr_t = uint16_t;
-using cycle_t = unsigned int;
+using addr_t = uint_fast16_t;
+using cycle_t = uint32_t;
 
 static constexpr int SCREEN_WIDTH = 256;
 static constexpr int SCREEN_HEIGHT = 240;

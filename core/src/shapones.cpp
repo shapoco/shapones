@@ -8,7 +8,7 @@ Config get_default_config() {
     return cfg;
 }
 
-void init(const Config& cfg) {
+void init(const Config &cfg) {
     for (int i = 0; i < NUM_LOCKS; i++) {
         nes::lock_init(i);
     }
@@ -16,9 +16,7 @@ void init(const Config& cfg) {
     reset();
 }
 
-void deinit() {
-    lock_deinit(LOCK_INTERRUPTS);
-}
+void deinit() { lock_deinit(LOCK_INTERRUPTS); }
 
 void reset() {
     cpu::reset();
@@ -26,18 +24,21 @@ void reset() {
     apu::reset();
 }
 
-void render_next_line(uint8_t *line_buff) {
-    bool eol;
+uint32_t render_next_line(uint8_t *line_buff, bool skip_render = false) {
+    uint32_t timing;
     do {
         cpu::service();
-        eol = ppu::service(line_buff);
-    } while (!eol);
+        timing = ppu::service(line_buff, skip_render);
+    } while (!(timing & ppu::END_OF_VISIBLE_LINE));
+    return timing;
 }
 
-void vsync(uint8_t *line_buff) {
-    while (ppu::current_focus_y() != ppu::SCAN_LINES - 1) {
-        render_next_line(line_buff);
-    }
+void vsync(uint8_t *line_buff, bool skip_render = false) {
+    uint32_t timing;
+    do {
+        cpu::service();
+        timing = ppu::service(line_buff, skip_render);
+    } while (!(timing & ppu::END_OF_FRAME));
 }
 
-}
+}  // namespace nes
