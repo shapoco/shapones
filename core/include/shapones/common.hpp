@@ -1,5 +1,5 @@
-#ifndef SHAPONES_BASIC_HPP
-#define SHAPONES_BASIC_HPP
+#ifndef SHAPONES_COMMON_HPP
+#define SHAPONES_COMMON_HPP
 
 #if !(SHAPONES_NO_STDLIB)
 #include <stdint.h>

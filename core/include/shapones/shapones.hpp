@@ -5,6 +5,7 @@
 #include "shapones/input.hpp"
 #include "shapones/interrupt.hpp"
 #include "shapones/memory.hpp"
+#include "shapones/mapper.hpp"
 #include "shapones/cpu.hpp"
 #include "shapones/ppu.hpp"
 #include "shapones/dma.hpp"
