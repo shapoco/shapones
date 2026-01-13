@@ -1,7 +1,7 @@
 #ifndef WS19804_HPP
 #define WS19804_HPP
 
-#define SHAPONES_USE_PIO (0)
+#define SHAPONES_USE_PIO (1)
 
 #include "stdint.h"
 #include "pico/stdlib.h"

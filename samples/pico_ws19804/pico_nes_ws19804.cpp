@@ -173,8 +173,8 @@ static void cpu_loop() {
                 line_buff + (fifo_rptr * LINE_FIFO_STRIDE + x0 + 1);
             uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
             for (int x = 0; x < FRAME_BUFF_WIDTH; x += 2) {
-                uint16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
-                uint16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+                uint_fast16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+                uint_fast16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
                 *(wr_ptr++) = (c0 >> 4) & 0xff;
                 *(wr_ptr++) = ((c0 << 4) & 0xf0) | (c1 >> 8) & 0xf;
                 *(wr_ptr++) = c1 & 0xff;
