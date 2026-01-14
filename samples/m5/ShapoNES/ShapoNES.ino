@@ -1,16 +1,35 @@
 #include "SD.h"
 #include <M5Unified.h>
+
+#define SHAPONES_IMPLEMENTATION
 #include "shapones_core.h"
 
+#define SHAPONES_USE_CANVAS (0)
+
+#if SHAPONES_USE_CANVAS
 M5Canvas *canvas;
+#else
+uint16_t frame_buff[nes::SCREEN_WIDTH * nes::SCREEN_HEIGHT];
+#endif
 
 uint8_t *ines = nullptr;
 uint8_t line_buff[nes::SCREEN_WIDTH];
-bool skip_frame = false;
+uint64_t next_vsync_us = 0;
+bool skip_frame1 = false;
+bool skip_frame2 = false;
 
-uint16_t COLOR_TABLE[] = {
-  0xae73, 0xd120, 0x1500, 0x1340, 0xe88, 0x2a8, 0xa0, 0x4078, 0x6041, 0x2002, 0x8002, 0xe201, 0xeb19, 0x0, 0x0, 0x0, 0xf7bd, 0x9d03, 0xdd21, 0x1e80, 0x17b8, 0xbe0, 0x40d9, 0x61ca, 0x808b, 0xa004, 0x4005, 0x8704, 0x1104, 0x0, 0x0, 0x0, 0xffff, 0xff3d, 0x9f5b, 0x5fa4, 0xdff3, 0xb6fb, 0xacfb, 0xc7fc, 0xe7f5, 0x8286, 0xe94e, 0xd35f, 0x5b07, 0xae73, 0x0, 0x0, 0xffff, 0x3faf, 0xbfc6, 0x5fd6, 0x3ffe, 0x3bfe, 0xf6fd, 0xd5fe, 0x34ff, 0xf4e7, 0x97af, 0xf9b7, 0xfe9f, 0xf7bd, 0x0, 0x0,
+volatile bool disp_update_req = false;
+
+// clang-format off
+const uint16_t COLOR_TABLE[] = {
+  0xae73, 0xd120, 0x1500, 0x1340, 0x0e88, 0x02a8, 0x00a0, 0x4078, 0x6041, 0x2002, 0x8002, 0xe201, 0xeb19, 0x0000, 0x0000, 0x0000,
+  0xf7bd, 0x9d03, 0xdd21, 0x1e80, 0x17b8, 0x0be0, 0x40d9, 0x61ca, 0x808b, 0xa004, 0x4005, 0x8704, 0x1104, 0x0000, 0x0000, 0x0000,
+  0xffff, 0xff3d, 0x9f5b, 0x5fa4, 0xdff3, 0xb6fb, 0xacfb, 0xc7fc, 0xe7f5, 0x8286, 0xe94e, 0xd35f, 0x5b07, 0xae73, 0x0000, 0x0000,
+  0xffff, 0x3faf, 0xbfc6, 0x5fd6, 0x3ffe, 0x3bfe, 0xf6fd, 0xd5fe, 0x34ff, 0xf4e7, 0x97af, 0xf9b7, 0xfe9f, 0xf7bd, 0x0000, 0x0000,
 };
+// clang-format on
+
+static bool wait_vsync();
 
 void setup() {
   auto cfg = M5.config();
@@ -18,8 +37,10 @@ void setup() {
   M5.begin(cfg);
   delay(500);
 
+#if SHAPONES_USE_CANVAS
   canvas = new M5Canvas(&M5.Display);
   canvas->createSprite(nes::SCREEN_WIDTH, nes::SCREEN_HEIGHT);
+#endif
 
   while (false == SD.begin(GPIO_NUM_4, SPI, 10000000)) {
     Serial.println("SD Wait...");
@@ -38,33 +59,84 @@ void setup() {
   ines_file.read(ines, ines_size);
   ines_file.close();
 
+  SD.end();
+
   nes::memory::map_ines(ines);
   auto nes_cfg = nes::get_default_config();
   nes_cfg.apu_sampling_rate = 22050;
   nes::init(nes_cfg);
+  
+  xTaskCreatePinnedToCore(ppu_loop, "PPULoop", 8192, NULL, 10, NULL, PRO_CPU_NUM);
 }
 
 void loop() {
-  nes::cpu::service();
+  for (int i = 0; i < 100; i++) {
+    nes::cpu::service();
+  }
+}
 
-  int y;
-  uint32_t timing = nes::ppu::service(line_buff, skip_frame, &y);
-  if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
-    uint16_t *wptr = (uint16_t *)(canvas->getBuffer());
-    wptr += y * nes::SCREEN_WIDTH;
-    for (int x = 0; x < nes::SCREEN_WIDTH; x++) {
-      wptr[x] = COLOR_TABLE[line_buff[x] & 0x3f];
+static void ppu_loop(void *arg) {
+  uint64_t next_wdt_reset_ms = 0;
+  while (true) {
+    int y;
+    uint32_t timing = nes::ppu::service(line_buff, skip_frame1, &y);
+    if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame1) {
+#if SHAPONES_USE_CANVAS
+      uint16_t *wptr = (uint16_t *)(canvas->getBuffer()) + y * nes::SCREEN_WIDTH;
+#else
+      uint16_t *wptr = frame_buff + y * nes::SCREEN_WIDTH;
+#endif
+      for (int x = 0; x < nes::SCREEN_WIDTH; x++) {
+        wptr[x] = COLOR_TABLE[line_buff[x] & 0x3f];
+      }
+    }
+    if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
+      if (!skip_frame1) {
+        int dx = (M5.Display.width() - nes::SCREEN_WIDTH) / 2;
+        int dy = (M5.Display.height() - nes::SCREEN_HEIGHT) / 2;
+#if 1
+        int sy = nes::SCREEN_HEIGHT * 6 / 8;
+        int h = nes::SCREEN_HEIGHT / 8;
+#else
+        int sy = 0;
+        int h = nes::SCREEN_HEIGHT;
+#endif
+        dy += sy;
+        M5.Display.endWrite();
+        M5.Display.startWrite();
+#if SHAPONES_USE_CANVAS
+        uint16_t *sptr = (uint16_t *)canvas->getBuffer();
+#else
+        uint16_t *sptr = frame_buff;
+#endif
+        sptr += sy * nes::SCREEN_WIDTH;
+        M5.Display.pushImageDMA(dx, dy, nes::SCREEN_WIDTH, h, sptr);
+      }
+      skip_frame2 = skip_frame1;
+      skip_frame1 = wait_vsync(); // && !(skip_frame1 && skip_frame2);
+    }
+
+    uint64_t now_ms = millis();
+    if (now_ms > next_wdt_reset_ms) {
+      next_wdt_reset_ms = now_ms + 4000;
+      vTaskDelay(1);
     }
   }
-  if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
-    if (!skip_frame) {
-      // display frame
-      int x = (M5.Display.width() - nes::SCREEN_WIDTH) / 2;
-      int y = (M5.Display.height() - nes::SCREEN_HEIGHT) / 2;
-      canvas->pushSprite(x, y);
+}
+
+static bool wait_vsync() {
+    constexpr int FRAME_DELAY_US = 1000000 / 60;
+    uint64_t now_us = micros();
+    int64_t wait_us = next_vsync_us - now_us;
+    bool delaying = (wait_us <= 0);
+    if (!delaying) {
+        delayMicroseconds(wait_us);
     }
-    skip_frame = false;
-  }
+    next_vsync_us += FRAME_DELAY_US;
+    if (now_us > next_vsync_us) {
+        next_vsync_us = now_us;
+    }
+    return delaying;
 }
 
 void nes::lock_init(int id){}

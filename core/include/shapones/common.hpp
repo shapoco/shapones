@@ -54,7 +54,7 @@ using int_fast32_t = int32_t;
 
 #endif
 
-#define SHAPONES_INLINE __attribute__((always_inline)) inline
+#define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
 
 #ifndef SHAPONES_ENABLE_CHROM_CACHE

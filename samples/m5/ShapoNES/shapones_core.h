@@ -62,7 +62,7 @@ using int_fast32_t = int32_t;
 
 #endif
 
-#define SHAPONES_INLINE __attribute__((always_inline)) inline
+#define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
 
 #ifndef SHAPONES_ENABLE_CHROM_CACHE
@@ -816,8 +816,8 @@ Config get_default_config();
 void init(const Config& cfg);
 void deinit();
 void reset();
-uint32_t render_next_line(uint8_t *line_buff);
-void vsync(uint8_t *line_buff);
+uint32_t render_next_line(uint8_t *line_buff, bool skip_render = false);
+void vsync(uint8_t *line_buff, bool skip_render = false);
 
 }
 
@@ -2718,7 +2718,7 @@ uint8_t reg_read(addr_t addr) {
 
         default:
             SHAPONES_PRINTF("*Warning: Invalid PPU register read addr: 0x%x\n",
-                       (int)addr);
+                            (int)addr);
             retval = 0;
             break;
     }
@@ -2785,7 +2785,7 @@ void reg_write(addr_t addr, uint8_t data) {
 
         default:
             SHAPONES_PRINTF("*Warning: Invalid PPU register write addr: 0x%x\n",
-                       (int)addr);
+                            (int)addr);
     }
 }
 
@@ -2825,7 +2825,8 @@ static SHAPONES_INLINE void bus_write(addr_t addr, uint8_t data) {
                addr < VRAM_MIRROR_BASE + VRAM_MIRROR_SIZE) {
         memory::vram_write(addr - VRAM_MIRROR_BASE, data);
     } else {
-        // SHAPONES_PRINTF("*Warning: Invalid PPU bus write addr: 0x%x\n", addr);
+        // SHAPONES_PRINTF("*Warning: Invalid PPU bus write addr: 0x%x\n",
+        // addr);
     }
 }
 
@@ -2916,15 +2917,16 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
 
         int next_focus_x = focus_x + step_count;
 
+        if (focus_x == 0 && focus_y < SCREEN_HEIGHT && reg.mask.sprite_enable) {
+            // enumerate visible sprites in current line
+            enum_visible_sprites(skip_render);
+        }
+
         // render background
         render_bg(line_buff, focus_x, next_focus_x, skip_render);
 
         if (focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT &&
             reg.mask.sprite_enable) {
-            if (focus_x == 0) {
-                // enumerate visible sprites in current line
-                enum_visible_sprites(skip_render);
-            }
             // render sprite
             render_sprite(line_buff, focus_x, next_focus_x, skip_render);
         }
@@ -2990,6 +2992,12 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
     bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
+    bool bg_enabled = reg.mask.bg_enable;
+
+    if (skip_render && num_visible_sprites == 0) {
+        // If skip_render is set, only render lines where sprite #0 exists.
+        visible_area = false;
+    }
 
     uint32_t bg_offset = (uint32_t)reg.control.bg_name_sel << 12;
 
@@ -3000,7 +3008,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
 
             // determine step count
             x0 = x0_block;
-            if (visible_area && reg.mask.bg_enable) {
+            if (visible_area && bg_enabled) {
                 x1 = x0 + (BLOCK_SIZE - ((scr & 0x1) * TILE_SIZE + fine_x));
             } else {
                 x1 = x0 + 64;
@@ -3008,7 +3016,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
             x1 = x1 < x1_block ? x1 : x1_block;
 
             if (visible_area) {
-                if (reg.mask.bg_enable) {
+                if (bg_enabled) {
                     // read name table for two tiles
                     addr_t name_addr0 = scr & 0xffeu;
                     addr_t name_addr1 = name_addr0 + 1;
@@ -3150,45 +3158,52 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
 }
 
 static void enum_visible_sprites(bool skip_render) {
+    int n = MAX_SPRITE_COUNT;
+    if (skip_render) {
+        // When skip_render is set, only sprite #0 is processed for IRQ.
+        n = 1;
+    }
+
     num_visible_sprites = 0;
     uint8_t h = reg.control.sprite_size ? 16 : 8;
-    for (int i = 0; i < MAX_SPRITE_COUNT; i++) {
+    for (int i = 0; i < n; i++) {
         const auto &s = oam[i];
 
         // vertical hit test
         int src_y = focus_y - (s.y + SPRITE_Y_OFFSET);
         if (0 <= src_y && src_y < h) {
-            if (s.attr & OAM_ATTR_INVERT_V) {
-                // vertical inversion
-                if (reg.control.sprite_size) {
-                    src_y ^= 0xf;
-                } else {
-                    src_y ^= 0x7;
-                }
-            }
-
-            // tile index calculation
-            int tile_index;
-            if (reg.control.sprite_size) {
-                // 8x16 sprite
-                if (src_y < 8) {
-                    tile_index = s.tile & 0xfe;
-                } else {
-                    tile_index = s.tile | 0x01;
-                }
-
-                if (s.tile & 0x1) {
-                    tile_index += 0x1000 / 16;
-                }
-            } else {
-                // 8x8 sprite
-                tile_index = s.tile;
-                if (reg.control.sprite_name_sel) {
-                    tile_index += 0x1000 / 16;
-                }
-            }
+            int tile_index = 0;
             uint_fast16_t chr = 0xFFFF;
+
             if (!skip_render) {
+                if (s.attr & OAM_ATTR_INVERT_V) {
+                    // vertical inversion
+                    if (reg.control.sprite_size) {
+                        src_y ^= 0xf;
+                    } else {
+                        src_y ^= 0x7;
+                    }
+                }
+
+                // tile index calculation
+                if (reg.control.sprite_size) {
+                    // 8x16 sprite
+                    if (src_y < 8) {
+                        tile_index = s.tile & 0xfe;
+                    } else {
+                        tile_index = s.tile | 0x01;
+                    }
+
+                    if (s.tile & 0x1) {
+                        tile_index += 0x1000 / 16;
+                    }
+                } else {
+                    // 8x8 sprite
+                    tile_index = s.tile;
+                    if (reg.control.sprite_name_sel) {
+                        tile_index += 0x1000 / 16;
+                    }
+                }
 #if SHAPONES_ENABLE_CHROM_CACHE
                 // read CHRROM
                 int chrrom_index = (tile_index << 3) + (src_y & 0x7);
@@ -3221,8 +3236,6 @@ static void enum_visible_sprites(bool skip_render) {
 
 static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
                           bool skip_render) {
-    // sprite height
-    int h = reg.control.sprite_size ? 16 : 8;
     for (int i = 0; i < num_visible_sprites; i++) {
         const auto &sl = sprite_lines[i];
         int x0 = (x0_block > sl.x) ? x0_block : sl.x;
@@ -3236,7 +3249,7 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
             bool sprite_opaque = (palette_index != 0);
             uint_fast8_t col = line_buff[x];
             bool bg_opaque = (col & OPAQUE_FLAG) != 0;
-            if ((!(col & BEHIND_FLAG)) && !skip_render) {
+            if (!skip_render && !(col & BEHIND_FLAG)) {
                 bool sprite_front = !bg_opaque || !(attr & SL_ATTR_BEHIND);
                 if (sprite_opaque) {
                     if (sprite_front) {
@@ -3296,7 +3309,7 @@ void reset() {
     apu::reset();
 }
 
-uint32_t render_next_line(uint8_t *line_buff, bool skip_render = false) {
+uint32_t render_next_line(uint8_t *line_buff, bool skip_render) {
     uint32_t timing;
     do {
         cpu::service();
@@ -3305,7 +3318,7 @@ uint32_t render_next_line(uint8_t *line_buff, bool skip_render = false) {
     return timing;
 }
 
-void vsync(uint8_t *line_buff, bool skip_render = false) {
+void vsync(uint8_t *line_buff, bool skip_render) {
     uint32_t timing;
     do {
         cpu::service();

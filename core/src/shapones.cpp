@@ -24,7 +24,7 @@ void reset() {
     apu::reset();
 }
 
-uint32_t render_next_line(uint8_t *line_buff, bool skip_render = false) {
+uint32_t render_next_line(uint8_t *line_buff, bool skip_render) {
     uint32_t timing;
     do {
         cpu::service();
@@ -33,7 +33,7 @@ uint32_t render_next_line(uint8_t *line_buff, bool skip_render = false) {
     return timing;
 }
 
-void vsync(uint8_t *line_buff, bool skip_render = false) {
+void vsync(uint8_t *line_buff, bool skip_render) {
     uint32_t timing;
     do {
         cpu::service();
