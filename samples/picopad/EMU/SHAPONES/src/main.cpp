@@ -92,7 +92,7 @@ static void boot_menu() {
         }
         while (!DiskMount()) {
             if (KeyGet() == KEY_Y) {
-                boot_error("Boot cancelled.");
+                boot_error("BOOT CANCELLED.");
             }
         }
 

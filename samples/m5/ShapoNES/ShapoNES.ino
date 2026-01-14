@@ -11,14 +11,15 @@ M5Canvas *canvas;
 #else
 uint16_t frame_buff[nes::SCREEN_WIDTH * nes::SCREEN_HEIGHT];
 #endif
+int dma_next_y = nes::SCREEN_HEIGHT;
+constexpr int DMA_HEIGHT = 60;
 
 uint8_t *ines = nullptr;
 uint8_t line_buff[nes::SCREEN_WIDTH];
 uint64_t next_vsync_us = 0;
-bool skip_frame1 = false;
-bool skip_frame2 = false;
+bool skip_frame = false;
 
-volatile bool disp_update_req = false;
+spinlock_t locks[nes::NUM_LOCKS];
 
 // clang-format off
 const uint16_t COLOR_TABLE[] = {
@@ -30,6 +31,9 @@ const uint16_t COLOR_TABLE[] = {
 // clang-format on
 
 static bool wait_vsync();
+static bool dma_busy();
+static void dma_start();
+static void dma_maintain();
 
 void setup() {
   auto cfg = M5.config();
@@ -79,8 +83,8 @@ static void ppu_loop(void *arg) {
   uint64_t next_wdt_reset_ms = 0;
   while (true) {
     int y;
-    uint32_t timing = nes::ppu::service(line_buff, skip_frame1, &y);
-    if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame1) {
+    uint32_t timing = nes::ppu::service(line_buff, skip_frame, &y);
+    if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
 #if SHAPONES_USE_CANVAS
       uint16_t *wptr = (uint16_t *)(canvas->getBuffer()) + y * nes::SCREEN_WIDTH;
 #else
@@ -90,30 +94,15 @@ static void ppu_loop(void *arg) {
         wptr[x] = COLOR_TABLE[line_buff[x] & 0x3f];
       }
     }
+
     if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
-      if (!skip_frame1) {
-        int dx = (M5.Display.width() - nes::SCREEN_WIDTH) / 2;
-        int dy = (M5.Display.height() - nes::SCREEN_HEIGHT) / 2;
-#if 1
-        int sy = nes::SCREEN_HEIGHT * 6 / 8;
-        int h = nes::SCREEN_HEIGHT / 8;
-#else
-        int sy = 0;
-        int h = nes::SCREEN_HEIGHT;
-#endif
-        dy += sy;
-        M5.Display.endWrite();
-        M5.Display.startWrite();
-#if SHAPONES_USE_CANVAS
-        uint16_t *sptr = (uint16_t *)canvas->getBuffer();
-#else
-        uint16_t *sptr = frame_buff;
-#endif
-        sptr += sy * nes::SCREEN_WIDTH;
-        M5.Display.pushImageDMA(dx, dy, nes::SCREEN_WIDTH, h, sptr);
+      if (!skip_frame) {
+        dma_start();
       }
-      skip_frame2 = skip_frame1;
-      skip_frame1 = wait_vsync(); // && !(skip_frame1 && skip_frame2);
+      skip_frame = wait_vsync();
+    }
+    else {
+      dma_maintain();
     }
 
     uint64_t now_ms = millis();
@@ -139,8 +128,48 @@ static bool wait_vsync() {
     return delaying;
 }
 
-void nes::lock_init(int id){}
+static bool dma_busy() {
+  return (dma_next_y < nes::SCREEN_HEIGHT) || M5.Display.dmaBusy();
+}
+
+static void dma_start() {
+  if (dma_busy()) return;
+
+  dma_next_y = 0;
+  dma_maintain();
+}
+
+static void dma_maintain() {
+  if (dma_next_y >= nes::SCREEN_HEIGHT) return;
+  if (M5.Display.dmaBusy()) return;
+
+  int dx = (M5.Display.width() - nes::SCREEN_WIDTH) / 2;
+  int dy = (M5.Display.height() - nes::SCREEN_HEIGHT) / 2 + dma_next_y;
+
+  int h = DMA_HEIGHT;
+  if (dma_next_y + h > nes::SCREEN_HEIGHT) {
+    h = nes::SCREEN_HEIGHT - dma_next_y;
+  }
+#if SHAPONES_USE_CANVAS
+  uint16_t *sptr = (uint16_t *)canvas->getBuffer();
+#else
+  uint16_t *sptr = frame_buff;
+#endif
+  sptr += dma_next_y * nes::SCREEN_WIDTH;
+  M5.Display.endWrite();
+  M5.Display.startWrite();
+  M5.Display.pushImageDMA(dx, dy, nes::SCREEN_WIDTH, h, sptr);
+  dma_next_y += h;
+}
+
+void nes::lock_init(int id){
+  spinlock_initialize(&locks[id]);
+}
 void nes::lock_deinit(int id){}
-void nes::lock_get(int id){}
-void nes::lock_release(int id){}
+void nes::lock_get(int id){
+  taskENTER_CRITICAL(&locks[id]);
+}
+void nes::lock_release(int id){
+  taskEXIT_CRITICAL(&locks[id]);
+}
 
