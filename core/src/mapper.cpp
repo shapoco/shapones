@@ -26,10 +26,19 @@ uint32_t chrrom_phys_addr_mask;
 addr_t prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
 addr_t vram_addr_mask = VRAM_SIZE - 1;
 
-uint8_t mmc3_reg_sel;
-uint8_t mmc3_map_reg[8];
+uint8_t map001_shift_reg = 0b10000;
+uint8_t map001_ctrl_reg = 0;
+uint8_t map001_chr_bank0 = 0;
+uint8_t map001_chr_bank1 = 0;
+uint8_t map001_prg_bank = 0;
 
-static void mmc3_ext_write(addr_t addr, uint8_t value);
+uint8_t map004_reg_sel;
+uint8_t map004_map_reg[8];
+
+static void map001_ext_write(addr_t addr, uint8_t value);
+static void map003_ext_write(addr_t addr, uint8_t value);
+static void map004_ext_write(addr_t addr, uint8_t value);
+
 static void reorder_chrrom_block(const uint8_t *src, uint16_t *dst_fwd,
                                  uint16_t *dst_rev, int num_words);
 
@@ -44,14 +53,14 @@ void init(const uint8_t *ines) {
         prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
     }
     SHAPONES_PRINTF("Number of PRGROM pages = %d (%dkB)\n", num_prg_rom_pages,
-               prgrom_phys_size / 1024);
+                    prgrom_phys_size / 1024);
 
     // Size of CHR ROM in 8 KB units
     int num_chr_rom_pages = ines[5];
     chrrom_phys_size = num_chr_rom_pages * CHRROM_PAGE_SIZE;
     chrrom_phys_addr_mask = chrrom_phys_size - 1;
     SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB)\n", num_chr_rom_pages,
-               chrrom_phys_size / 1024);
+                    chrrom_phys_size / 1024);
 
     uint8_t flags6 = ines[6];
     uint8_t flags7 = ines[7];
@@ -70,7 +79,8 @@ void init(const uint8_t *ines) {
         chrrom_remap_table[i] = i;
     }
     switch (id) {
-        case 0:
+        case 0: break;
+        case 1: break;
         case 3: break;
         case 4: prgrom_remap(0xE000, prgrom_phys_size - 8192, 8192); break;
         default: SHAPONES_ERRORF("Unsupported Mapper Number\n"); break;
@@ -104,57 +114,136 @@ void init(const uint8_t *ines) {
 
 void ext_write(addr_t addr, uint8_t value) {
     switch (id) {
-        case 3:
-            if (0x8000 <= addr && addr <= 0xffff) {
-                chrrom_remap(0x0000, (value & 0x3) * 0x2000, 0x2000);
+        case 1: map001_ext_write(addr, value); break;
+        case 3: map003_ext_write(addr, value); break;
+        case 4: map004_ext_write(addr, value); break;
+    }
+}
+
+// see: https://www.nesdev.org/wiki/INES_Mapper_001
+static void map001_ext_write(addr_t addr, uint8_t value) {
+    bool remap = false;
+    if (value & 0x80) {
+        map001_shift_reg = 0b10000;
+        map001_ctrl_reg |= 0x0C;
+        remap = true;
+    } else {
+        bool shift = !(map001_shift_reg & 0x01);
+        uint8_t val = (map001_shift_reg >> 1) | ((value & 0x01) << 4);
+        if (shift) {
+            map001_shift_reg = val;
+        } else {
+            map001_shift_reg = 0b10000;
+            switch (addr & 0x6000) {
+                default:
+                case 0x0000: map001_ctrl_reg = val; break;
+                case 0x2000: map001_chr_bank0 = val; break;
+                case 0x4000: map001_chr_bank1 = val; break;
+                case 0x6000: map001_prg_bank = val; break;
             }
-            break;
-        case 4: mmc3_ext_write(addr, value); break;
+            remap = true;
+        }
+    }
+
+    if (remap) {
+        switch (map001_ctrl_reg & 0x03) {
+            default:
+            case 0:
+                memory::set_nametable_mirroring(
+                    NametableArrangement::SINGLE_LOWER);
+                break;
+            case 1:
+                memory::set_nametable_mirroring(
+                    NametableArrangement::SINGLE_UPPER);
+                break;
+            case 2:
+                memory::set_nametable_mirroring(
+                    NametableArrangement::HORIZONTAL);
+                break;
+            case 3:
+                memory::set_nametable_mirroring(NametableArrangement::VERTICAL);
+                break;
+        }
+
+        switch (map001_ctrl_reg & 0x0C) {
+            default:
+            case 0x00:
+            case 0x04:
+                prgrom_remap(0x8000, (map001_prg_bank & 0x0E) << 14, 0x8000);
+                break;
+            case 0x08:
+                prgrom_remap(0x8000, 0, 0x4000);
+                prgrom_remap(0xC000, (map001_prg_bank & 0x0F) << 14, 0x4000);
+                break;
+            case 0x0C:
+                prgrom_remap(0x8000, (map001_prg_bank & 0x0F) << 14, 0x4000);
+                prgrom_remap(0xC000, prgrom_phys_size - 0x4000, 0x4000);
+                break;
+        }
+
+        if ((map001_ctrl_reg & 0x10) == 0) {
+            chrrom_remap(0x0000, (map001_chr_bank0 & 0x1E) << 12, 0x2000);
+        } else {
+            chrrom_remap(0x0000, (map001_chr_bank0 & 0x1F) << 12, 0x1000);
+            chrrom_remap(0x1000, (map001_chr_bank1 & 0x1F) << 12, 0x1000);
+        }
+    }
+}
+
+// see: https://www.nesdev.org/wiki/CNROM
+static void map003_ext_write(addr_t addr, uint8_t value) {
+    if (0x8000 <= addr && addr <= 0xffff) {
+        chrrom_remap(0x0000, (value & 0x3) * 0x2000, 0x2000);
     }
 }
 
 // see: https://www.nesdev.org/wiki/MMC3
-static void mmc3_ext_write(addr_t addr, uint8_t value) {
+static void map004_ext_write(addr_t addr, uint8_t value) {
     if (0x8000 <= addr && addr <= 0x9FFF) {
         if ((addr & 0x0001) == 0) {
-            mmc3_reg_sel = value;
+            map004_reg_sel = value;
         } else {
-            int ireg = mmc3_reg_sel & 0x07;
+            int ireg = map004_reg_sel & 0x07;
             if (ireg <= 1) {
                 value &= 0xfe;  // ignore LSB for 2KB bank
             }
-            mmc3_map_reg[ireg] = value;
+            map004_map_reg[ireg] = value;
         }
 
         constexpr int pbs = 8192;
-        prgrom_remap(0xA000, mmc3_map_reg[7] * pbs, pbs);
-        if ((mmc3_reg_sel & 0x40) == 0) {
-            prgrom_remap(0x8000, mmc3_map_reg[6] * pbs, pbs);
+        prgrom_remap(0xA000, map004_map_reg[7] * pbs, pbs);
+        if ((map004_reg_sel & 0x40) == 0) {
+            prgrom_remap(0x8000, map004_map_reg[6] * pbs, pbs);
             prgrom_remap(0xC000, prgrom_phys_size - pbs * 2, pbs);
         } else {
             prgrom_remap(0x8000, prgrom_phys_size - pbs * 2, pbs);
-            prgrom_remap(0xC000, mmc3_map_reg[6] * pbs, pbs);
+            prgrom_remap(0xC000, map004_map_reg[6] * pbs, pbs);
         }
 
         constexpr int cbs = 1024;
-        if ((mmc3_reg_sel & 0x80) == 0) {
-            chrrom_remap(0x0000, mmc3_map_reg[0] * cbs, cbs * 2);
-            chrrom_remap(0x0800, mmc3_map_reg[1] * cbs, cbs * 2);
-            chrrom_remap(0x1000, mmc3_map_reg[2] * cbs, cbs);
-            chrrom_remap(0x1400, mmc3_map_reg[3] * cbs, cbs);
-            chrrom_remap(0x1800, mmc3_map_reg[4] * cbs, cbs);
-            chrrom_remap(0x1C00, mmc3_map_reg[5] * cbs, cbs);
+        if ((map004_reg_sel & 0x80) == 0) {
+            chrrom_remap(0x0000, map004_map_reg[0] * cbs, cbs * 2);
+            chrrom_remap(0x0800, map004_map_reg[1] * cbs, cbs * 2);
+            chrrom_remap(0x1000, map004_map_reg[2] * cbs, cbs);
+            chrrom_remap(0x1400, map004_map_reg[3] * cbs, cbs);
+            chrrom_remap(0x1800, map004_map_reg[4] * cbs, cbs);
+            chrrom_remap(0x1C00, map004_map_reg[5] * cbs, cbs);
         } else {
-            chrrom_remap(0x0000, mmc3_map_reg[2] * cbs, cbs);
-            chrrom_remap(0x0400, mmc3_map_reg[3] * cbs, cbs);
-            chrrom_remap(0x0800, mmc3_map_reg[4] * cbs, cbs);
-            chrrom_remap(0x0C00, mmc3_map_reg[5] * cbs, cbs);
-            chrrom_remap(0x1000, mmc3_map_reg[0] * cbs, cbs * 2);
-            chrrom_remap(0x1800, mmc3_map_reg[1] * cbs, cbs * 2);
+            chrrom_remap(0x0000, map004_map_reg[2] * cbs, cbs);
+            chrrom_remap(0x0400, map004_map_reg[3] * cbs, cbs);
+            chrrom_remap(0x0800, map004_map_reg[4] * cbs, cbs);
+            chrrom_remap(0x0C00, map004_map_reg[5] * cbs, cbs);
+            chrrom_remap(0x1000, map004_map_reg[0] * cbs, cbs * 2);
+            chrrom_remap(0x1800, map004_map_reg[1] * cbs, cbs * 2);
         }
     } else if (0xA000 <= addr && addr <= 0xBFFF) {
         if ((addr & 0x0001) == 0) {
-            memory::set_nametable_mirroring(false, (value & 0x01) == 0);
+            if ((value & 0x01) == 0) {
+                memory::set_nametable_mirroring(
+                    NametableArrangement::HORIZONTAL);
+            } else {
+                memory::set_nametable_mirroring(NametableArrangement::VERTICAL);
+            }
         } else {
             // PRG RAM protect
             // TODO

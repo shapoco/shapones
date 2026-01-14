@@ -9,6 +9,7 @@ an NES emulator for my programming study.
 |Number|Game (Example)|
 |:--|:--|
 |000 (NROM)|Super Mario Bros.|
+|001 (MMC1)|Mr. Mario|
 |003 (CNROM)|Gradius|
 |004 (MMC3)|Super Mario Bros. 3|
 

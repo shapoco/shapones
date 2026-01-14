@@ -84,6 +84,14 @@ struct Config {
     uint32_t apu_sampling_rate;
 };
 
+enum class NametableArrangement : uint8_t {
+    HORIZONTAL = 0,
+    VERTICAL = 1,
+    SINGLE_LOWER = 2,
+    SINGLE_UPPER = 3,
+    FOUR_SCREEN = 4,
+};
+
 void lock_init(int id);
 void lock_deinit(int id);
 void lock_get(int id);

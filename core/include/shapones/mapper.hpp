@@ -106,8 +106,6 @@ static SHAPONES_INLINE void prgrom_remap(addr_t cpu_base, uint32_t phys_base,
     for (int i = 0; i < num_blocks; i++) {
         prgrom_remap_table[cpu_block + i] = phys_block + i;
     }
-    // SHAPONES_PRINTF("PRGROM remap: CPU 0x%04x -> ROM 0x%05x (%d blocks)\n",
-    //            (unsigned int)cpu_base, (unsigned int)rom_base, num_blocks);
 }
 
 static SHAPONES_INLINE void chrrom_remap(addr_t ppu_base, uint32_t phys_base,
