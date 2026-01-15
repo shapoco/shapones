@@ -6,13 +6,28 @@
 
 #define SHAPONES_USE_CANVAS (0)
 
-#if SHAPONES_USE_CANVAS
-M5Canvas *canvas;
+#ifdef ARDUINO_M5STACK_ATOMS3
+static constexpr int TF_CS_PIN = -1;
+static constexpr int TF_SCK_PIN = 7;
+static constexpr int TF_MISO_PIN = 8;
+static constexpr int TF_MOSI_PIN = 6;
 #else
-uint16_t frame_buff[nes::SCREEN_WIDTH * nes::SCREEN_HEIGHT];
+static constexpr int TF_CS_PIN = 4;
 #endif
-int dma_next_y = nes::SCREEN_HEIGHT;
+
+#ifdef ARDUINO_M5STACK_ATOMS3
+static constexpr int BUFF_W = nes::SCREEN_WIDTH / 2;
+static constexpr int BUFF_H = nes::SCREEN_HEIGHT / 2;
+constexpr int DMA_HEIGHT = 120;
+uint32_t resize_buff[BUFF_W];
+#else
+static constexpr int BUFF_W = nes::SCREEN_WIDTH;
+static constexpr int BUFF_H = nes::SCREEN_HEIGHT;
 constexpr int DMA_HEIGHT = 60;
+#endif
+
+uint16_t frame_buff[BUFF_W * BUFF_H];
+int dma_next_y = nes::SCREEN_HEIGHT;
 
 uint8_t *ines = nullptr;
 uint8_t line_buff[nes::SCREEN_WIDTH];
@@ -21,6 +36,21 @@ bool skip_frame = false;
 
 spinlock_t locks[nes::NUM_LOCKS];
 
+
+#ifdef ARDUINO_M5STACK_ATOMS3
+// clang-format off
+const uint32_t COLOR_TABLE[] = {
+  0x0e1d0e, 0x040611, 0x000015, 0x080013, 0x11000e, 0x150002, 0x140000, 0x0f0200,
+  0x080b00, 0x001100, 0x001400, 0x000f02, 0x030f0b, 0x000000, 0x000000, 0x000000,
+  0x172f17, 0x001c1d, 0x040e1d, 0x10001e, 0x170017, 0x1c000b, 0x1b0a00, 0x191301,
+  0x111c00, 0x002500, 0x002a00, 0x002407, 0x002011, 0x000000, 0x000000, 0x000000,
+  0x1f3f1f, 0x072f1f, 0x0b1c1f, 0x14221f, 0x1e1e1f, 0x1f1d16, 0x1f1d0c, 0x1f2607,
+  0x1e2f07, 0x103402, 0x093709, 0x0b3e13, 0x003a1b, 0x0e1d0e, 0x000000, 0x000000,
+  0x1f3f1f, 0x15391f, 0x18351f, 0x1a321f, 0x1f311f, 0x1f311b, 0x1f2f16, 0x1f3615,
+  0x1f3914, 0x1c3f14, 0x153c17, 0x163f19, 0x133f1e, 0x172f17, 0x000000, 0x000000,
+};
+// clang-format on
+#else
 // clang-format off
 const uint16_t COLOR_TABLE[] = {
   0xae73, 0xd120, 0x1500, 0x1340, 0x0e88, 0x02a8, 0x00a0, 0x4078, 0x6041, 0x2002, 0x8002, 0xe201, 0xeb19, 0x0000, 0x0000, 0x0000,
@@ -29,6 +59,19 @@ const uint16_t COLOR_TABLE[] = {
   0xffff, 0x3faf, 0xbfc6, 0x5fd6, 0x3ffe, 0x3bfe, 0xf6fd, 0xd5fe, 0x34ff, 0xf4e7, 0x97af, 0xf9b7, 0xfe9f, 0xf7bd, 0x0000, 0x0000,
 };
 // clang-format on
+#endif
+
+static SHAPONES_INLINE void unpack565(uint16_t c, uint32_t *r, uint32_t *g, uint32_t *b) {
+  c = ((c << 8) & 0xff00) | ((c >> 8) & 0x00ff);
+  *r = (c >> 11) & 0x1F;
+  *g = (c >> 5) & 0x3F;
+  *b = c & 0x1F;
+}
+
+static SHAPONES_INLINE uint16_t pack565(uint32_t r, uint32_t g, uint32_t b) {
+  uint16_t c = ((r & 0x1F) << 11) | ((g & 0x3F) << 5) | (b & 0x1F);
+  return ((c << 8) & 0xff00) | ((c >> 8) & 0x00ff);
+}
 
 static bool wait_vsync();
 static bool dma_busy();
@@ -41,12 +84,11 @@ void setup() {
   M5.begin(cfg);
   delay(500);
 
-#if SHAPONES_USE_CANVAS
-  canvas = new M5Canvas(&M5.Display);
-  canvas->createSprite(nes::SCREEN_WIDTH, nes::SCREEN_HEIGHT);
+#ifdef ARDUINO_M5STACK_ATOMS3
+  SPI.begin(TF_SCK_PIN, TF_MISO_PIN, TF_MOSI_PIN, TF_CS_PIN);
 #endif
 
-  while (false == SD.begin(GPIO_NUM_4, SPI, 10000000)) {
+  while (false == SD.begin(TF_CS_PIN, SPI, 10000000)) {
     Serial.println("SD Wait...");
     delay(500);
   }
@@ -85,14 +127,31 @@ static void ppu_loop(void *arg) {
     int y;
     uint32_t timing = nes::ppu::service(line_buff, skip_frame, &y);
     if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
-#if SHAPONES_USE_CANVAS
-      uint16_t *wptr = (uint16_t *)(canvas->getBuffer()) + y * nes::SCREEN_WIDTH;
+#ifdef ARDUINO_M5STACK_ATOMS3
+      if (y % 2 == 0) {
+        for (int x = 0; x < BUFF_W; x++) {
+          uint32_t c0 = COLOR_TABLE[line_buff[x * 2 + 0] & 0x3f];
+          uint32_t c1 = COLOR_TABLE[line_buff[x * 2 + 1] & 0x3f];
+          resize_buff[x] = c0 + c1;
+        }
+      }
+      else {
+        uint16_t *wptr = frame_buff + y / 2 * BUFF_W;
+        for (int x = 0; x < BUFF_W; x++) {
+          uint32_t c01 = resize_buff[x];
+          uint32_t c2 = COLOR_TABLE[line_buff[x * 2 + 0] & 0x3f];
+          uint32_t c3 = COLOR_TABLE[line_buff[x * 2 + 1] & 0x3f];
+          uint32_t c = c01 + c2 + c3 + 0x020202;
+          c = ((c >> 7) & 0xF100) | ((c >> 5) & 0x07E0) | ((c >> 2) & 0x001F);
+          wptr[x] = ((c << 8) & 0xFF00) | ((c >> 8) & 0x00FF);
+        }
+      }
 #else
-      uint16_t *wptr = frame_buff + y * nes::SCREEN_WIDTH;
-#endif
-      for (int x = 0; x < nes::SCREEN_WIDTH; x++) {
+      uint16_t *wptr = frame_buff + y * BUFF_W;
+      for (int x = 0; x < BUFF_W; x++) {
         wptr[x] = COLOR_TABLE[line_buff[x] & 0x3f];
       }
+#endif
     }
 
     if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
@@ -129,7 +188,7 @@ static bool wait_vsync() {
 }
 
 static bool dma_busy() {
-  return (dma_next_y < nes::SCREEN_HEIGHT) || M5.Display.dmaBusy();
+  return (dma_next_y < BUFF_H) || M5.Display.dmaBusy();
 }
 
 static void dma_start() {
@@ -140,25 +199,20 @@ static void dma_start() {
 }
 
 static void dma_maintain() {
-  if (dma_next_y >= nes::SCREEN_HEIGHT) return;
+  if (dma_next_y >= BUFF_H) return;
   if (M5.Display.dmaBusy()) return;
 
-  int dx = (M5.Display.width() - nes::SCREEN_WIDTH) / 2;
-  int dy = (M5.Display.height() - nes::SCREEN_HEIGHT) / 2 + dma_next_y;
+  int dx = (M5.Display.width() - BUFF_W) / 2;
+  int dy = (M5.Display.height() - BUFF_H) / 2 + dma_next_y;
 
   int h = DMA_HEIGHT;
-  if (dma_next_y + h > nes::SCREEN_HEIGHT) {
-    h = nes::SCREEN_HEIGHT - dma_next_y;
+  if (dma_next_y + h > BUFF_H) {
+    h = BUFF_H - dma_next_y;
   }
-#if SHAPONES_USE_CANVAS
-  uint16_t *sptr = (uint16_t *)canvas->getBuffer();
-#else
-  uint16_t *sptr = frame_buff;
-#endif
-  sptr += dma_next_y * nes::SCREEN_WIDTH;
+  uint16_t *sptr = frame_buff + dma_next_y * BUFF_W;
   M5.Display.endWrite();
   M5.Display.startWrite();
-  M5.Display.pushImageDMA(dx, dy, nes::SCREEN_WIDTH, h, sptr);
+  M5.Display.pushImageDMA(dx, dy, BUFF_W, h, sptr);
   dma_next_y += h;
 }
 

@@ -74,6 +74,7 @@ uint8_t reg_read(addr_t addr) {
     uint8_t retval;
     switch (addr) {
         case REG_PPUSTATUS: {
+            Exclusive lock(LOCK_PPU);
             retval = reg.status.raw;
             reg.status.vblank_flag = 0;
             scroll_ppuaddr_high_stored = false;
@@ -261,9 +262,11 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
         if (focus_x == 0) {
             if (focus_y == SCREEN_HEIGHT + 1) {
                 // vblank flag/interrupt
+                Exclusive lock(LOCK_PPU);
                 reg.status.vblank_flag = 1;
             } else if (focus_y == SCAN_LINES - 1) {
                 // clear flags
+                Exclusive lock(LOCK_PPU);
                 reg.status.vblank_flag = 0;
                 reg.status.sprite0_hit = 0;
             }
@@ -380,7 +383,11 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
     while (x0_block < x1_block) {
         int x0, x1;
         {
-            uint_fast16_t scr = scroll;
+            uint_fast16_t scr;
+            {
+                Exclusive lock(LOCK_PPU);
+                scr = scroll;
+            }
 
             // determine step count
             x0 = x0_block;
