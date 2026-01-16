@@ -4,6 +4,8 @@
 #define SHAPONES_IMPLEMENTATION
 #include "shapones_core.h"
 
+#include "AdcButton.hpp"
+
 #define SHAPONES_USE_CANVAS (0)
 
 #ifdef ARDUINO_M5STACK_ATOMS3
@@ -26,16 +28,36 @@ static constexpr int BUFF_H = nes::SCREEN_HEIGHT;
 constexpr int DMA_HEIGHT = 60;
 #endif
 
-uint16_t frame_buff[BUFF_W * BUFF_H];
-int dma_next_y = nes::SCREEN_HEIGHT;
+static const uint8_t BUTTON_ADC_PINS[] = {
+  5,
+  2,
+  1,
+};
+static constexpr int BUTTON_NUM_PINS = sizeof(BUTTON_ADC_PINS) / sizeof(BUTTON_ADC_PINS[0]);
 
-uint8_t *ines = nullptr;
-uint8_t line_buff[nes::SCREEN_WIDTH];
-uint64_t next_vsync_us = 0;
-bool skip_frame = false;
+static constexpr int BUTTON_A = 0;
+static constexpr int BUTTON_B = 1;
+static constexpr int BUTTON_SELECT = 2;
+static constexpr int BUTTON_START = 3;
+static constexpr int BUTTON_UP = 4;
+static constexpr int BUTTON_DOWN = 5;
+static constexpr int BUTTON_LEFT = 6;
+static constexpr int BUTTON_RIGHT = 7;
+static constexpr int BUTTON_DUMMY = 8;
 
-spinlock_t locks[nes::NUM_LOCKS];
+static uint16_t frame_buff[BUFF_W * BUFF_H];
+static int dma_next_y = nes::SCREEN_HEIGHT;
 
+static uint8_t *ines = nullptr;
+static uint8_t line_buff[nes::SCREEN_WIDTH];
+static uint64_t next_vsync_us = 0;
+static bool skip_frame = false;
+
+static spinlock_t locks[nes::NUM_LOCKS];
+
+static adc_button::Pin button_pins[BUTTON_NUM_PINS];
+
+static nes::input::InputStatus input_state = {0};
 
 #ifdef ARDUINO_M5STACK_ATOMS3
 // clang-format off
@@ -73,6 +95,7 @@ static SHAPONES_INLINE uint16_t pack565(uint32_t r, uint32_t g, uint32_t b) {
   return ((c << 8) & 0xff00) | ((c >> 8) & 0x00ff);
 }
 
+static void ppu_loop(void *arg);
 static bool wait_vsync();
 static bool dma_busy();
 static void dma_start();
@@ -113,12 +136,47 @@ void setup() {
   nes::init(nes_cfg);
   
   xTaskCreatePinnedToCore(ppu_loop, "PPULoop", 8192, NULL, 10, NULL, PRO_CPU_NUM);
+
+  for (int i = 0; i < BUTTON_NUM_PINS; i++) {
+    pinMode(BUTTON_ADC_PINS[i], INPUT);
+  }
+  analogContinuousSetWidth(12);
+  if (!analogContinuous(BUTTON_ADC_PINS, BUTTON_NUM_PINS, 3, 1000, &adc_complete)) {
+    Serial.println("adc init fail");  
+  }
+  analogContinuousStart();
 }
 
 void loop() {
   for (int i = 0; i < 100; i++) {
     nes::cpu::service();
   }
+}
+
+void ARDUINO_ISR_ATTR adc_complete() {
+  adc_continuous_data_t *data = nullptr;
+  if (!analogContinuousRead(&data, 0)) return;
+  for (int i = 0; i < BUTTON_NUM_PINS; i++) {
+    adc_button::Pin &pin = button_pins[i];
+    pin.update_value(data[i].avg_read_raw);
+    uint32_t code = pin.read_current();
+    for (int j = 0; j < adc_button::NUM_BUTTONS; j++) {
+      int button_index = i * adc_button::NUM_BUTTONS + j;
+      uint8_t pressed = code & 1;
+      switch (button_index) {
+        case BUTTON_LEFT: input_state.left = pressed; break;
+        case BUTTON_RIGHT: input_state.right = pressed; break;
+        case BUTTON_DOWN: input_state.down = pressed; break;
+        case BUTTON_UP: input_state.up = pressed; break;
+        case BUTTON_START: input_state.start = pressed; break;
+        case BUTTON_SELECT: input_state.select = pressed; break;
+        case BUTTON_A: input_state.A = pressed; break;
+        case BUTTON_B: input_state.B = pressed; break;
+      }
+      code >>= 1;
+    }
+  }
+  nes::input::set_raw(0, input_state);
 }
 
 static void ppu_loop(void *arg) {
