@@ -61,6 +61,10 @@ using int_fast32_t = int32_t;
 #define SHAPONES_ENABLE_CHROM_CACHE (0)
 #endif
 
+#ifndef SHAPONES_MUTEX_FAST
+#define SHAPONES_MUTEX_FAST (0)
+#endif
+
 namespace nes {
 
 using addr_t = uint_fast16_t;
@@ -100,10 +104,10 @@ void lock_release(int id);
 class Exclusive {
 public:
     const int id;
-    Exclusive(int id) : id(id) {
+    SHAPONES_INLINE Exclusive(int id) : id(id) {
         lock_get(id);
     }
-    ~Exclusive() {
+    SHAPONES_INLINE ~Exclusive() {
         lock_release(id);
     }
 };

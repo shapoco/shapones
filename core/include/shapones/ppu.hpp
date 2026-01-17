@@ -138,6 +138,10 @@ static constexpr int FOCUS_HBLANK = 1;
 static constexpr int FOCUS_VBLANK = 2;
 static constexpr int FOCUS_1STLINE = 3;
 
+extern volatile cycle_t cycle_count;
+
+static SHAPONES_INLINE cycle_t cycle_following() { return cycle_count; }
+
 void reset();
 bool is_in_hblank();
 int current_focus_y();

@@ -32,11 +32,11 @@ static constexpr uint16_t DMC_RATE_TABLE[16] = {
     428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
 };
 
-PulseState pulse[2];
-TriangleState triangle;
-NoiseState noise;
-DmcState dmc;
-Status status;
+static PulseState pulse[2];
+static TriangleState triangle;
+static NoiseState noise;
+static DmcState dmc;
+static Status status;
 
 static void pulse_write_reg0(PulseState *s, uint8_t reg0);
 static void pulse_write_reg1(PulseState *s, uint8_t reg1);
@@ -51,12 +51,6 @@ static void dmc_write_reg0(DmcState *s, uint8_t reg0);
 static void dmc_write_reg1(DmcState *s, uint8_t reg1);
 static void dmc_write_reg2(DmcState *s, uint8_t reg2);
 static void dmc_write_reg3(DmcState *s, uint8_t reg3);
-static int step_envelope(Envelope *e);
-static int step_sweep(PulseState *s);
-static int sample_pulse(PulseState *s);
-static int sample_triangle(TriangleState *s);
-static int sample_noise(NoiseState *s);
-static int sample_dmc(DmcState *s);
 
 void reset() {
     for (int i = 0; i < 2; i++) {
@@ -179,34 +173,6 @@ void set_sampling_rate(int rate_hz) {
     dmc_step_coeff = ((uint64_t)cpu::CLOCK_FREQUENCY << TIMER_PREC) / rate_hz;
 }
 
-void service(uint8_t *buff, int len) {
-    for (int i = 0; i < len; i++) {
-        quarter_frame_phase += qframe_phase_step;
-        if (quarter_frame_phase >= QUARTER_FRAME_PHASE_PERIOD) {
-            quarter_frame_phase -= QUARTER_FRAME_PHASE_PERIOD;
-
-            frame_step = (quarter_frame_count & 3) == 3;
-            half_frame_step = (quarter_frame_count & 1) == 1;
-            quarter_frame_step = true;
-
-            quarter_frame_count = (quarter_frame_count + 1) & 0x3;
-        } else {
-            frame_step = false;
-            half_frame_step = false;
-            quarter_frame_step = false;
-        }
-
-        uint8_t sample = 0;
-        sample += sample_pulse(&pulse[0]);
-        sample += sample_pulse(&pulse[1]);
-        sample += sample_triangle(&triangle);
-        sample += sample_noise(&noise);
-        sample *= 2;
-        sample += sample_dmc(&dmc);
-        buff[i] = sample;
-    }
-}
-
 static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
     Exclusive lock(LOCK_APU);
     // duty pattern
@@ -325,7 +291,7 @@ static void dmc_write_reg3(DmcState *s, uint8_t reg0) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_Envelope
-static int step_envelope(Envelope *e) {
+static SHAPONES_INLINE int step_envelope(Envelope *e) {
     if (quarter_frame_step) {
         if (e->flags & ENV_FLAG_START) {
             e->flags &= ~ENV_FLAG_START;  // clear start flag
@@ -351,20 +317,20 @@ static int step_envelope(Envelope *e) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_Sweep
-static int step_sweep(PulseState *s) {
+static SHAPONES_INLINE int step_sweep(PulseState &s) {
     int gate = 1;
-    if (s->sweep.flags & SWP_FLAG_ENABLED) {
+    if (s.sweep.flags & SWP_FLAG_ENABLED) {
         if (half_frame_step) {
-            if (s->sweep.divider < s->sweep.period) {
-                s->sweep.divider++;
+            if (s.sweep.divider < s.sweep.period) {
+                s.sweep.divider++;
             } else {
-                s->sweep.divider = 0;
-                int change_amount = s->timer_period;
-                change_amount >>= s->sweep.shift;
-                if (s->sweep.flags & SWP_FLAG_NEGATE) {
+                s.sweep.divider = 0;
+                int change_amount = s.timer_period;
+                change_amount >>= s.sweep.shift;
+                if (s.sweep.flags & SWP_FLAG_NEGATE) {
                     change_amount = -change_amount;
                 }
-                int target = s->timer_period + change_amount;
+                int target = s.timer_period + change_amount;
                 if (target < 0) {
                     target = 0;
                 } else if (target >= (0x7ff << TIMER_PREC)) {
@@ -372,8 +338,10 @@ static int step_sweep(PulseState *s) {
                     gate = 0;
                 }
                 {
+#if SHAPONES_MUTEX_FAST
                     Exclusive lock(LOCK_APU);
-                    s->timer_period = target;
+#endif
+                    s.timer_period = target;
                 }
             }
         }
@@ -382,95 +350,104 @@ static int step_sweep(PulseState *s) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_Triangle
-static int step_linear_counter(LinearCounter *c) {
+static SHAPONES_INLINE int step_linear_counter(LinearCounter &c) {
     // linear counter
     if (quarter_frame_step) {
-        if (c->flags & LIN_FLAG_RELOAD) {
-            c->counter = c->reload_value;
-        } else if (c->counter > 0) {
-            c->counter--;
+        if (c.flags & LIN_FLAG_RELOAD) {
+            c.counter = c.reload_value;
+        } else if (c.counter > 0) {
+            c.counter--;
         }
 
-        if (!(c->flags & LIN_FLAG_CONTROL)) {
+        if (!(c.flags & LIN_FLAG_CONTROL)) {
+#if SHAPONES_MUTEX_FAST
             Exclusive lock(LOCK_APU);
-            c->flags &= ~LIN_FLAG_RELOAD;  // clear reload flag
+#endif
+            c.flags &= ~LIN_FLAG_RELOAD;  // clear reload flag
         }
     }
-    return c->counter > 0 ? 1 : 0;
+    return c.counter > 0 ? 1 : 0;
 }
 
 // see: https://www.nesdev.org/wiki/APU_Pulse
-static int sample_pulse(PulseState *s) {
+static SHAPONES_INLINE int sample_pulse(PulseState &s) {
     // envelope unit
-    int vol = step_envelope(&(s->envelope));
+    int vol = step_envelope(&(s.envelope));
 
     // sweep unit
     vol *= step_sweep(s);
 
     // length counter
-    if (half_frame_step && !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
-        if (s->length >= 0) {
+    if (half_frame_step && !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
+        if (s.length >= 0) {
+#if SHAPONES_MUTEX_FAST
             Exclusive lock(LOCK_APU);
-            s->length--;
+#endif
+            s.length--;
         }
     }
 
     // mute
-    if (s->timer_period < 8) vol = 0;
-    if (s->length < 0) vol = 0;
+    if (s.timer_period < 8) vol = 0;
+    if (s.length < 0) vol = 0;
 
     // sequencer
     uint32_t phase;
     {
+#if SHAPONES_MUTEX_FAST
         Exclusive lock(LOCK_APU);
-        s->timer += pulse_timer_step;
+#endif
+        s.timer += pulse_timer_step;
         int step = 0;
-        if (s->timer_period != 0) {
-            step = s->timer / s->timer_period;
+        if (s.timer_period != 0) {
+            step = s.timer / s.timer_period;
         }
-        s->timer -= step * s->timer_period;
-        s->phase = (s->phase + step) & 0x7;
-        phase = s->phase;
+        s.timer -= step * s.timer_period;
+        s.phase = (s.phase + step) & 0x7;
+        phase = s.phase;
     }
 
-    int amp = (s->waveform >> phase) & 1;
+    int amp = (s.waveform >> phase) & 1;
     return amp * vol;
 }
 
 // see: https://www.nesdev.org/wiki/APU_Triangle
-static int sample_triangle(TriangleState *s) {
+static SHAPONES_INLINE int sample_triangle(TriangleState &s) {
     int vol = 1;
 
     // length counter
-    if (half_frame_step && !(s->linear.flags & LIN_FLAG_CONTROL)) {
-        if (s->length >= 0) {
+    if (half_frame_step && !(s.linear.flags & LIN_FLAG_CONTROL)) {
+        if (s.length >= 0) {
+#if SHAPONES_MUTEX_FAST
             Exclusive lock(LOCK_APU);
-            s->length--;
+#endif
+            s.length--;
         }
     }
 
     // linear counter
-    step_linear_counter(&(s->linear));
+    step_linear_counter(s.linear);
 
     // phase counter
     uint32_t phase;
     {
+#if SHAPONES_MUTEX_FAST
         Exclusive lock(LOCK_APU);
-        s->timer += triangle_timer_step;
+#endif
+        s.timer += triangle_timer_step;
         int step = 0;
-        if (s->timer_period != 0) {
-            step = s->timer / s->timer_period;
+        if (s.timer_period != 0) {
+            step = s.timer / s.timer_period;
         }
-        s->timer -= step * s->timer_period;
-        if (s->length > 0 && s->linear.counter > 0) {
-            s->phase = (s->phase + step) & 0x1f;
+        s.timer -= step * s.timer_period;
+        if (s.length > 0 && s.linear.counter > 0) {
+            s.phase = (s.phase + step) & 0x1f;
         }
-        phase = s->phase;
+        phase = s.phase;
     }
 
     // mute
-    if (s->timer_period < 8) vol = 0;
-
+    if (s.timer_period < 8) vol = 0;
     // sequencer
     if (phase <= 15) {
         return (15 - phase) * vol;
@@ -480,77 +457,119 @@ static int sample_triangle(TriangleState *s) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_Noise
-static int sample_noise(NoiseState *s) {
+static SHAPONES_INLINE int sample_noise(NoiseState &s) {
     // envelope unit
-    int vol = step_envelope(&(s->envelope));
+    int vol = step_envelope(&(s.envelope));
 
     // length counter
-    if (half_frame_step && !(s->envelope.flags & ENV_FLAG_HALT_LOOP)) {
-        if (s->length >= 0) {
+    if (half_frame_step && !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
+        if (s.length >= 0) {
+#if SHAPONES_MUTEX_FAST
             Exclusive lock(LOCK_APU);
-            s->length--;
+#endif
+            s.length--;
         }
     }
 
     // mute
-    if (s->length < 0) vol = 0;
+    if (s.length < 0) vol = 0;
 
     // LFSR
-    int feedback = ((s->lfsr >> 1) ^ s->lfsr) & 1;
-    s->lfsr = ((s->lfsr >> 1) & 0x3fff) | (feedback << 14);
-    int amp = s->lfsr & 0xf;
+    int feedback = ((s.lfsr >> 1) ^ s.lfsr) & 1;
+    s.lfsr = ((s.lfsr >> 1) & 0x3fff) | (feedback << 14);
+    int amp = s.lfsr & 0xf;
 
     return (amp * vol) >> 4;
 }
 
 // see: https://www.nesdev.org/wiki/APU_DMC
-static int sample_dmc(DmcState *s) {
+static SHAPONES_INLINE int sample_dmc(DmcState &s) {
     int step;
     {
+#if SHAPONES_MUTEX_FAST
         Exclusive lock(LOCK_APU);
-        s->timer += s->timer_step;
-        step = s->timer >> TIMER_PREC;
-        s->timer &= (1 << TIMER_PREC) - 1;
+#endif
+        s.timer += s.timer_step;
+        step = s.timer >> TIMER_PREC;
+        s.timer &= (1 << TIMER_PREC) - 1;
     }
 
     for (int i = 0; i < step; i++) {
-        if (s->bits_remaining == 0) {
-            Exclusive lock(LOCK_APU);;
-            if (s->bytes_remaining > 0) {
-                s->shift_reg = cpu::bus_read(s->addr_counter | 0x8000);
-                s->addr_counter++;
-                s->bytes_remaining--;
-                if (s->bytes_remaining == 0) {
-                    if (s->loop) {
-                        s->addr_counter = s->sample_addr;
-                        s->bytes_remaining = s->sample_length;
-                    } else if (s->irq_enabled) {
+        if (s.bits_remaining == 0) {
+#if SHAPONES_MUTEX_FAST
+            Exclusive lock(LOCK_APU);
+            ;
+#endif
+            if (s.bytes_remaining > 0) {
+                s.shift_reg = cpu::bus_read(s.addr_counter | 0x8000);
+                s.addr_counter++;
+                s.bytes_remaining--;
+                if (s.bytes_remaining == 0) {
+                    if (s.loop) {
+                        s.addr_counter = s.sample_addr;
+                        s.bytes_remaining = s.sample_length;
+                    } else if (s.irq_enabled) {
                         interrupt::assert_irq(interrupt::Source::APU_DMC);
                     }
                 }
             }
-            s->bits_remaining = 8;
+            s.bits_remaining = 8;
         }
-        if (s->bits_remaining > 0) {
-            if (!s->silence) {
-                if (s->shift_reg & 1) {
+        if (s.bits_remaining > 0) {
+            if (!s.silence) {
+                if (s.shift_reg & 1) {
+#if SHAPONES_MUTEX_FAST
                     Exclusive lock(LOCK_APU);
-                    if (s->out_level <= 125) {
-                        s->out_level += 2;
+#endif
+                    if (s.out_level <= 125) {
+                        s.out_level += 2;
                     }
                 } else {
+#if SHAPONES_MUTEX_FAST
                     Exclusive lock(LOCK_APU);
-                    if (s->out_level >= 2) {
-                        s->out_level -= 2;
+#endif
+                    if (s.out_level >= 2) {
+                        s.out_level -= 2;
                     }
                 }
-                s->shift_reg >>= 1;
+                s.shift_reg >>= 1;
             }
-            s->bits_remaining--;
+            s.bits_remaining--;
         }
     }
 
-    return s->out_level;
+    return s.out_level;
+}
+
+void service(uint8_t *buff, int len) {
+#if !SHAPONES_MUTEX_FAST
+    Exclusive lock(LOCK_APU);
+#endif
+    for (int i = 0; i < len; i++) {
+        quarter_frame_phase += qframe_phase_step;
+        if (quarter_frame_phase >= QUARTER_FRAME_PHASE_PERIOD) {
+            quarter_frame_phase -= QUARTER_FRAME_PHASE_PERIOD;
+
+            frame_step = (quarter_frame_count & 3) == 3;
+            half_frame_step = (quarter_frame_count & 1) == 1;
+            quarter_frame_step = true;
+
+            quarter_frame_count = (quarter_frame_count + 1) & 0x3;
+        } else {
+            frame_step = false;
+            half_frame_step = false;
+            quarter_frame_step = false;
+        }
+
+        uint8_t sample = 0;
+        sample += sample_pulse(pulse[0]);
+        sample += sample_pulse(pulse[1]);
+        sample += sample_triangle(triangle);
+        sample += sample_noise(noise);
+        sample *= 2;
+        sample += sample_dmc(dmc);
+        buff[i] = sample;
+    }
 }
 
 }  // namespace nes::apu

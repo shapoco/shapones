@@ -51,6 +51,8 @@ struct Registers {
 
 enum RegSel { A, X, Y };
 
+extern volatile cycle_t ppu_cycle_count;
+
 void service();
 
 void reset();
@@ -61,7 +63,7 @@ bool is_stopped();
 uint8_t bus_read(addr_t addr);
 void bus_write(addr_t addr, uint8_t data);
 
-cycle_t ppu_cycle_leading();
+static SHAPONES_INLINE cycle_t ppu_cycle_leading() { return ppu_cycle_count; }
 
 }  // namespace nes::cpu
 

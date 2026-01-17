@@ -7,6 +7,7 @@
 #include "AdcButton.hpp"
 
 #define SHAPONES_USE_CANVAS (0)
+#define SHAPONES_ENABLE_AUDIO (0)
 
 #ifdef ARDUINO_M5STACK_ATOMS3
 static constexpr int TF_CS_PIN = -1;
@@ -45,6 +46,11 @@ static constexpr int BUTTON_LEFT = 6;
 static constexpr int BUTTON_RIGHT = 7;
 static constexpr int BUTTON_DUMMY = 8;
 
+static constexpr int SPEAKER_SAMPLE_FREQ_HZ = 11025;
+static constexpr int SPEAKER_BUFF_SIZE = 256;
+static constexpr int SPEAKER_PIN = 38;
+static constexpr ledc_channel_t SPEAKER_LEDC_CH = LEDC_CHANNEL_1;
+
 static uint16_t frame_buff[BUFF_W * BUFF_H];
 static int dma_next_y = nes::SCREEN_HEIGHT;
 
@@ -61,7 +67,7 @@ static nes::input::InputStatus input_state = {0};
 
 #ifdef ARDUINO_M5STACK_ATOMS3
 // clang-format off
-const uint32_t COLOR_TABLE[] = {
+static const uint32_t COLOR_TABLE[] = {
   0x0e1d0e, 0x040611, 0x000015, 0x080013, 0x11000e, 0x150002, 0x140000, 0x0f0200,
   0x080b00, 0x001100, 0x001400, 0x000f02, 0x030f0b, 0x000000, 0x000000, 0x000000,
   0x172f17, 0x001c1d, 0x040e1d, 0x10001e, 0x170017, 0x1c000b, 0x1b0a00, 0x191301,
@@ -74,7 +80,7 @@ const uint32_t COLOR_TABLE[] = {
 // clang-format on
 #else
 // clang-format off
-const uint16_t COLOR_TABLE[] = {
+static const uint16_t COLOR_TABLE[] = {
   0xae73, 0xd120, 0x1500, 0x1340, 0x0e88, 0x02a8, 0x00a0, 0x4078, 0x6041, 0x2002, 0x8002, 0xe201, 0xeb19, 0x0000, 0x0000, 0x0000,
   0xf7bd, 0x9d03, 0xdd21, 0x1e80, 0x17b8, 0x0be0, 0x40d9, 0x61ca, 0x808b, 0xa004, 0x4005, 0x8704, 0x1104, 0x0000, 0x0000, 0x0000,
   0xffff, 0xff3d, 0x9f5b, 0x5fa4, 0xdff3, 0xb6fb, 0xacfb, 0xc7fc, 0xe7f5, 0x8286, 0xe94e, 0xd35f, 0x5b07, 0xae73, 0x0000, 0x0000,
@@ -82,6 +88,47 @@ const uint16_t COLOR_TABLE[] = {
 };
 // clang-format on
 #endif
+
+static uint32_t fps_frame_count = 0;
+static uint64_t fps_last_meas_ms = 0;
+static float fps = 0.0f;
+
+struct stat_t {
+  uint64_t start_us = 0;
+  uint32_t time_us = 0;
+  uint32_t count = 0;
+};
+
+static stat_t stat_cpu_service;
+static stat_t stat_ppu_service;
+static stat_t stat_apu_service;
+static uint32_t stat_ppu_delay_clock = 0;
+static uint32_t stat_ppu_delay_count = 0;
+
+static void stat_start(stat_t &s) {
+  s.start_us = micros();
+}
+
+static void stat_end(stat_t &s) {
+  uint32_t elapsed_us = micros() - s.start_us;
+  s.time_us += elapsed_us;
+  s.count++;
+}
+
+static uint32_t stat_get_average(stat_t &s) {
+  uint32_t ave = 0;
+  if (s.count > 0) {
+    ave = s.time_us / s.count;
+  }
+  s.time_us = 0;
+  s.count = 0;
+  return ave;
+}
+
+static hw_timer_t *speaker_pwm_timer;
+static uint8_t speaker_buff[SPEAKER_BUFF_SIZE];
+static volatile uint32_t speaker_wr_ptr = 0;
+static volatile uint32_t speaker_rd_ptr = 0;
 
 static SHAPONES_INLINE void unpack565(uint16_t c, uint32_t *r, uint32_t *g, uint32_t *b) {
   c = ((c << 8) & 0xff00) | ((c >> 8) & 0x00ff);
@@ -95,11 +142,15 @@ static SHAPONES_INLINE uint16_t pack565(uint32_t r, uint32_t g, uint32_t b) {
   return ((c << 8) & 0xff00) | ((c >> 8) & 0x00ff);
 }
 
+static void read_input();
 static void ppu_loop(void *arg);
 static bool wait_vsync();
 static bool dma_busy();
 static void dma_start();
 static void dma_maintain();
+static void meas();
+static void speaker_fill_buff();
+static void IRAM_ATTR speaker_pwm_update();
 
 void setup() {
   auto cfg = M5.config();
@@ -132,7 +183,7 @@ void setup() {
 
   nes::memory::map_ines(ines);
   auto nes_cfg = nes::get_default_config();
-  nes_cfg.apu_sampling_rate = 22050;
+  nes_cfg.apu_sampling_rate = SPEAKER_SAMPLE_FREQ_HZ;
   nes::init(nes_cfg);
   
   xTaskCreatePinnedToCore(ppu_loop, "PPULoop", 8192, NULL, 10, NULL, PRO_CPU_NUM);
@@ -141,19 +192,40 @@ void setup() {
     pinMode(BUTTON_ADC_PINS[i], INPUT);
   }
   analogContinuousSetWidth(12);
-  if (!analogContinuous(BUTTON_ADC_PINS, BUTTON_NUM_PINS, 3, 1000, &adc_complete)) {
-    Serial.println("adc init fail");  
+  if (!analogContinuous(BUTTON_ADC_PINS, BUTTON_NUM_PINS, 3, 1000, nullptr)) {
+    Serial.println("adc init failed");  
   }
   analogContinuousStart();
+
+#if SHAPONES_ENABLE_AUDIO
+  if (!ledcAttachChannel(SPEAKER_PIN, SPEAKER_SAMPLE_FREQ_HZ * 2, 8, SPEAKER_LEDC_CH)) {
+    Serial.println("ledc init failed");  
+  }
+  ledcWriteChannel(SPEAKER_LEDC_CH, 0);
+
+  speaker_fill_buff();
+
+  speaker_pwm_timer = timerBegin(SPEAKER_SAMPLE_FREQ_HZ);
+  timerAttachInterrupt(speaker_pwm_timer, &speaker_pwm_update);
+  timerAlarm(speaker_pwm_timer, 1, true, 0);
+#endif
 }
 
 void loop() {
+  read_input();
+
+  stat_start(stat_cpu_service);
   for (int i = 0; i < 100; i++) {
     nes::cpu::service();
   }
+  stat_end(stat_cpu_service);
+  
+#if SHAPONES_ENABLE_AUDIO
+  speaker_fill_buff();
+#endif
 }
 
-void ARDUINO_ISR_ATTR adc_complete() {
+static void read_input() {
   adc_continuous_data_t *data = nullptr;
   if (!analogContinuousRead(&data, 0)) return;
   for (int i = 0; i < BUTTON_NUM_PINS; i++) {
@@ -182,8 +254,14 @@ void ARDUINO_ISR_ATTR adc_complete() {
 static void ppu_loop(void *arg) {
   uint64_t next_wdt_reset_ms = 0;
   while (true) {
+    stat_ppu_delay_clock += nes::cpu::ppu_cycle_leading() - nes::ppu::cycle_following();
+    stat_ppu_delay_count += 1;
     int y;
+    stat_start(stat_ppu_service);
     uint32_t timing = nes::ppu::service(line_buff, skip_frame, &y);
+    if (!skip_frame) {
+      stat_end(stat_ppu_service);
+    }
     if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
 #ifdef ARDUINO_M5STACK_ATOMS3
       if (y % 2 == 0) {
@@ -215,6 +293,7 @@ static void ppu_loop(void *arg) {
     if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
       if (!skip_frame) {
         dma_start();
+        meas();
       }
       skip_frame = wait_vsync();
     }
@@ -231,18 +310,18 @@ static void ppu_loop(void *arg) {
 }
 
 static bool wait_vsync() {
-    constexpr int FRAME_DELAY_US = 1000000 / 60;
-    uint64_t now_us = micros();
-    int64_t wait_us = next_vsync_us - now_us;
-    bool delaying = (wait_us <= 0);
-    if (!delaying) {
-        delayMicroseconds(wait_us);
-    }
-    next_vsync_us += FRAME_DELAY_US;
-    if (now_us > next_vsync_us) {
-        next_vsync_us = now_us;
-    }
-    return delaying;
+  constexpr int FRAME_DELAY_US = 1000000 / 60;
+  uint64_t now_us = micros();
+  int64_t wait_us = next_vsync_us - now_us;
+  bool delaying = (wait_us <= 0);
+  if (!delaying) {
+      delayMicroseconds(wait_us);
+  }
+  next_vsync_us += FRAME_DELAY_US;
+  if (now_us > next_vsync_us) {
+      next_vsync_us = now_us;
+  }
+  return delaying;
 }
 
 static bool dma_busy() {
@@ -274,6 +353,27 @@ static void dma_maintain() {
   dma_next_y += h;
 }
 
+static void meas() {
+  uint64_t now_ms = millis();
+  uint32_t elapsed_ms = now_ms - fps_last_meas_ms;
+
+  uint32_t cpu_time_us = stat_get_average(stat_cpu_service);
+  uint32_t ppu_time_us = stat_get_average(stat_ppu_service);
+  uint32_t apu_time_us = stat_get_average(stat_apu_service);
+  float ppu_delay_clocks = (float)stat_ppu_delay_clock / stat_ppu_delay_count;
+  stat_ppu_delay_clock = 0;
+  stat_ppu_delay_count = 0;
+
+  fps_frame_count++;
+  if (elapsed_ms >= 1000) {
+    fps = (float)(fps_frame_count * 1000) / elapsed_ms;
+    Serial.printf("%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc)\n",
+      fps, cpu_time_us, ppu_time_us, apu_time_us, ppu_delay_clocks);
+    fps_last_meas_ms = now_ms;
+    fps_frame_count = 0;
+  }
+}
+
 void nes::lock_init(int id){
   spinlock_initialize(&locks[id]);
 }
@@ -285,3 +385,29 @@ void nes::lock_release(int id){
   taskEXIT_CRITICAL(&locks[id]);
 }
 
+static void speaker_fill_buff() {
+  uint32_t wr_ptr = speaker_wr_ptr;
+  uint32_t rd_ptr = speaker_rd_ptr;
+  if (rd_ptr < wr_ptr) {
+    int n = SPEAKER_BUFF_SIZE - wr_ptr;
+    stat_start(stat_apu_service);
+    nes::apu::service(speaker_buff + wr_ptr, n);
+    stat_end(stat_apu_service);
+    wr_ptr = 0;
+  }
+  if (wr_ptr < rd_ptr) {
+    int n = rd_ptr - wr_ptr;
+    stat_start(stat_apu_service);
+    nes::apu::service(speaker_buff + wr_ptr, n);
+    stat_end(stat_apu_service);
+    wr_ptr = (wr_ptr + n) % SPEAKER_BUFF_SIZE;
+  }
+  speaker_wr_ptr = wr_ptr;
+}
+
+static void IRAM_ATTR speaker_pwm_update() {
+  uint32_t rd_ptr = speaker_rd_ptr;
+  uint8_t duty = speaker_buff[rd_ptr];
+  speaker_rd_ptr = (rd_ptr + 1) % SPEAKER_BUFF_SIZE;
+  ledcWriteChannel(SPEAKER_LEDC_CH, duty);
+}

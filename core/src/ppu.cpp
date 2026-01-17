@@ -7,7 +7,7 @@ namespace nes::ppu {
 
 static Registers reg;
 
-static volatile cycle_t cycle_count;
+volatile cycle_t cycle_count;
 
 static int focus_x;
 static int focus_y;
@@ -370,6 +370,10 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
 
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
+#if !SHAPONES_MUTEX_FAST
+    Exclusive lock(LOCK_PPU);
+#endif
+
     bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
     bool bg_enabled = reg.mask.bg_enable;
 
@@ -385,7 +389,9 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
         {
             uint_fast16_t scr;
             {
+#if SHAPONES_MUTEX_FAST
                 Exclusive lock(LOCK_PPU);
+#endif
                 scr = scroll;
             }
 
@@ -477,14 +483,18 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
         // update scroll counter
         // see: https://www.nesdev.org/wiki/PPU_scrolling
         if (reg.mask.bg_enable || reg.mask.sprite_enable) {
+#if SHAPONES_MUTEX_FAST
             Exclusive lock(LOCK_PPU);
+#endif
             uint_fast16_t scr = scroll;
-            if (focus_y < SCREEN_HEIGHT) {
+            int fy = focus_y;
+            int fx = fine_x;
+            if (fy < SCREEN_HEIGHT) {
                 if (x0 < SCREEN_WIDTH) {
                     // step scroll counter for x-axis
-                    fine_x += (x1 - x0);
-                    while (fine_x >= TILE_SIZE) {
-                        fine_x -= TILE_SIZE;
+                    fx += (x1 - x0);
+                    while (fx >= TILE_SIZE) {
+                        fx -= TILE_SIZE;
                         // if coarse_x < 31
                         if ((scr & SCROLL_MASK_COARSE_X) <
                             SCROLL_MASK_COARSE_X) {
@@ -523,9 +533,10 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                     constexpr uint16_t copy_mask = 0x041fu;
                     scr &= ~copy_mask;
                     scr |= reg.scroll & copy_mask;
-                    fine_x = reg.fine_x;
+                    fx = reg.fine_x;
                 }
-            } else if (focus_y == SCAN_LINES - 1) {
+                fine_x = fx;
+            } else if (fy == SCAN_LINES - 1) {
                 if (280 <= x1 && x0 <= 304) {
                     // vertical recovery
                     constexpr uint16_t copy_mask = 0x7be0u;
@@ -648,8 +659,6 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
         }
     }
 }
-
-cycle_t cycle_following() { return cycle_count; }
 
 void mmc3_irq_set_enable(bool enable) {
     bool enable_old = mmc3_irq_enable;

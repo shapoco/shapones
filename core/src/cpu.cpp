@@ -1,4 +1,5 @@
 #include "shapones/common.hpp"
+#include "shapones/cpu.hpp"
 #include "shapones/memory.hpp"
 #include "shapones/ppu.hpp"
 #include "shapones/input.hpp"
@@ -18,7 +19,7 @@ static int irq_pending = 0;
 #else
 static constexpr int irq_pending = 0;
 #endif
-static volatile cycle_t ppu_cycle_count;
+volatile cycle_t ppu_cycle_count;
 
 uint8_t bus_read(addr_t addr) {
     uint8_t retval;
@@ -834,10 +835,6 @@ void service() {
         ppu_cycle_count += cycle * 3;
 
     } // while
-}
-
-cycle_t ppu_cycle_leading() {
-    return ppu_cycle_count;    
 }
 
 }
