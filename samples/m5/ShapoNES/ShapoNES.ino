@@ -47,7 +47,8 @@ static constexpr int BUTTON_LEFT = 6;
 static constexpr int BUTTON_RIGHT = 7;
 static constexpr int BUTTON_DUMMY = 8;
 
-static constexpr uint32_t AUDIO_SAMPLE_FREQ_HZ = 16000;
+static constexpr uint32_t AUDIO_PDM_FREQ_HZ = 96000;
+static constexpr uint32_t AUDIO_SAMPLE_FREQ_HZ = AUDIO_PDM_FREQ_HZ / 6;
 static constexpr int AUDIO_BUFF_SIZE = 256;
 static constexpr int AUDIO_DOUT_PIN = 38;
 static constexpr int AUDIO_CLK_PIN = 39;
@@ -213,7 +214,7 @@ void loop() {
   read_input();
 
   stat_start(stat_cpu_service);
-  for (int i = 0; i < 30; i++) {
+  for (int i = 0; i < 100; i++) {
     nes::cpu::service();
   }
   stat_end(stat_cpu_service);
@@ -311,15 +312,14 @@ static bool wait_vsync() {
   constexpr int FRAME_DELAY_US = 1000000 / 60;
   uint64_t now_us = micros();
   int64_t wait_us = next_vsync_us - now_us;
-  bool delaying = (wait_us <= 0);
-  if (!delaying) {
+  if (wait_us > 0) {
       delayMicroseconds(wait_us);
   }
   next_vsync_us += FRAME_DELAY_US;
   if (now_us > next_vsync_us) {
       next_vsync_us = now_us;
   }
-  return delaying;
+  return wait_us <= -5000;
 }
 
 static bool dma_busy() {
@@ -397,7 +397,6 @@ static void audio_init() {
 
   i2s_pdm_tx_slot_config_t slot_cfg =
     I2S_PDM_TX_SLOT_DAC_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
-  slot_cfg.hp_en = false;
 
   i2s_pdm_tx_config_t tx_cfg {
     .clk_cfg = clk_cfg,
