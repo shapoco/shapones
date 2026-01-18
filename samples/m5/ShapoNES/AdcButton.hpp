@@ -80,7 +80,7 @@ class Pin {
       stable_count = 0;
     }
     
-    if (stable_count >= 5) {
+    if (stable_count >= 3) {
       current_code = CODES[raw_level];
     }
   }

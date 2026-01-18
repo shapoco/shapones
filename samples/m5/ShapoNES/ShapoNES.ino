@@ -1,5 +1,6 @@
 #include "SD.h"
 #include <M5Unified.h>
+#include <driver/i2s_pdm.h>
 
 #define SHAPONES_IMPLEMENTATION
 #include "shapones_core.h"
@@ -7,7 +8,7 @@
 #include "AdcButton.hpp"
 
 #define SHAPONES_USE_CANVAS (0)
-#define SHAPONES_ENABLE_AUDIO (0)
+#define SHAPONES_ENABLE_AUDIO (1)
 
 #ifdef ARDUINO_M5STACK_ATOMS3
 static constexpr int TF_CS_PIN = -1;
@@ -46,10 +47,10 @@ static constexpr int BUTTON_LEFT = 6;
 static constexpr int BUTTON_RIGHT = 7;
 static constexpr int BUTTON_DUMMY = 8;
 
-static constexpr int SPEAKER_SAMPLE_FREQ_HZ = 11025;
-static constexpr int SPEAKER_BUFF_SIZE = 256;
-static constexpr int SPEAKER_PIN = 38;
-static constexpr ledc_channel_t SPEAKER_LEDC_CH = LEDC_CHANNEL_1;
+static constexpr uint32_t AUDIO_SAMPLE_FREQ_HZ = 16000;
+static constexpr int AUDIO_BUFF_SIZE = 256;
+static constexpr int AUDIO_DOUT_PIN = 38;
+static constexpr int AUDIO_CLK_PIN = 39;
 
 static uint16_t frame_buff[BUFF_W * BUFF_H];
 static int dma_next_y = nes::SCREEN_HEIGHT;
@@ -104,18 +105,20 @@ static stat_t stat_ppu_service;
 static stat_t stat_apu_service;
 static uint32_t stat_ppu_delay_clock = 0;
 static uint32_t stat_ppu_delay_count = 0;
+static uint32_t stat_pdm_sent_bytes = 0;
+static uint32_t stat_pdm_sent_count = 0;
 
-static void stat_start(stat_t &s) {
+static SHAPONES_INLINE void stat_start(stat_t &s) {
   s.start_us = micros();
 }
 
-static void stat_end(stat_t &s) {
+static SHAPONES_INLINE void stat_end(stat_t &s) {
   uint32_t elapsed_us = micros() - s.start_us;
   s.time_us += elapsed_us;
   s.count++;
 }
 
-static uint32_t stat_get_average(stat_t &s) {
+static SHAPONES_INLINE uint32_t stat_get_average(stat_t &s) {
   uint32_t ave = 0;
   if (s.count > 0) {
     ave = s.time_us / s.count;
@@ -125,10 +128,12 @@ static uint32_t stat_get_average(stat_t &s) {
   return ave;
 }
 
-static hw_timer_t *speaker_pwm_timer;
-static uint8_t speaker_buff[SPEAKER_BUFF_SIZE];
-static volatile uint32_t speaker_wr_ptr = 0;
-static volatile uint32_t speaker_rd_ptr = 0;
+static i2s_chan_handle_t audio_i2s_ch;
+static uint8_t apu_out_buff[AUDIO_BUFF_SIZE];
+static int16_t audio_buff[AUDIO_BUFF_SIZE];
+static constexpr uint32_t SAMPLE_SIZE = sizeof(audio_buff[0]);
+static volatile uint32_t audio_wr_ptr = 0;
+static volatile uint32_t audio_rd_ptr = 0;
 
 static SHAPONES_INLINE void unpack565(uint16_t c, uint32_t *r, uint32_t *g, uint32_t *b) {
   c = ((c << 8) & 0xff00) | ((c >> 8) & 0x00ff);
@@ -149,14 +154,16 @@ static bool dma_busy();
 static void dma_start();
 static void dma_maintain();
 static void meas();
-static void speaker_fill_buff();
-static void IRAM_ATTR speaker_pwm_update();
+static void audio_init();
+static void speaker_fill_buff(bool preload);
 
 void setup() {
   auto cfg = M5.config();
   cfg.serial_baudrate = 115200;
   M5.begin(cfg);
   delay(500);
+
+  Serial.printf("ESP-IDF Version: %s\n", esp_get_idf_version());
 
 #ifdef ARDUINO_M5STACK_ATOMS3
   SPI.begin(TF_SCK_PIN, TF_MISO_PIN, TF_MOSI_PIN, TF_CS_PIN);
@@ -183,7 +190,7 @@ void setup() {
 
   nes::memory::map_ines(ines);
   auto nes_cfg = nes::get_default_config();
-  nes_cfg.apu_sampling_rate = SPEAKER_SAMPLE_FREQ_HZ;
+  nes_cfg.apu_sampling_rate = AUDIO_SAMPLE_FREQ_HZ;
   nes::init(nes_cfg);
   
   xTaskCreatePinnedToCore(ppu_loop, "PPULoop", 8192, NULL, 10, NULL, PRO_CPU_NUM);
@@ -198,16 +205,7 @@ void setup() {
   analogContinuousStart();
 
 #if SHAPONES_ENABLE_AUDIO
-  if (!ledcAttachChannel(SPEAKER_PIN, SPEAKER_SAMPLE_FREQ_HZ * 2, 8, SPEAKER_LEDC_CH)) {
-    Serial.println("ledc init failed");  
-  }
-  ledcWriteChannel(SPEAKER_LEDC_CH, 0);
-
-  speaker_fill_buff();
-
-  speaker_pwm_timer = timerBegin(SPEAKER_SAMPLE_FREQ_HZ);
-  timerAttachInterrupt(speaker_pwm_timer, &speaker_pwm_update);
-  timerAlarm(speaker_pwm_timer, 1, true, 0);
+  audio_init();
 #endif
 }
 
@@ -215,13 +213,13 @@ void loop() {
   read_input();
 
   stat_start(stat_cpu_service);
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 30; i++) {
     nes::cpu::service();
   }
   stat_end(stat_cpu_service);
   
 #if SHAPONES_ENABLE_AUDIO
-  speaker_fill_buff();
+  speaker_fill_buff(false);
 #endif
 }
 
@@ -303,7 +301,7 @@ static void ppu_loop(void *arg) {
 
     uint64_t now_ms = millis();
     if (now_ms > next_wdt_reset_ms) {
-      next_wdt_reset_ms = now_ms + 4000;
+      next_wdt_reset_ms = now_ms + 1000;
       vTaskDelay(1);
     }
   }
@@ -363,12 +361,15 @@ static void meas() {
   float ppu_delay_clocks = (float)stat_ppu_delay_clock / stat_ppu_delay_count;
   stat_ppu_delay_clock = 0;
   stat_ppu_delay_count = 0;
+  float pdm_sent_bytes = (float)stat_pdm_sent_bytes / stat_pdm_sent_count;
+  stat_pdm_sent_bytes = 0;
+  stat_pdm_sent_count = 0;
 
   fps_frame_count++;
   if (elapsed_ms >= 1000) {
     fps = (float)(fps_frame_count * 1000) / elapsed_ms;
-    Serial.printf("%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc)\n",
-      fps, cpu_time_us, ppu_time_us, apu_time_us, ppu_delay_clocks);
+    Serial.printf("%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc, PDM sent:%7.1f)\n",
+      fps, cpu_time_us, ppu_time_us, apu_time_us, ppu_delay_clocks, pdm_sent_bytes);
     fps_last_meas_ms = now_ms;
     fps_frame_count = 0;
   }
@@ -385,29 +386,86 @@ void nes::lock_release(int id){
   taskEXIT_CRITICAL(&locks[id]);
 }
 
-static void speaker_fill_buff() {
-  uint32_t wr_ptr = speaker_wr_ptr;
-  uint32_t rd_ptr = speaker_rd_ptr;
-  if (rd_ptr < wr_ptr) {
-    int n = SPEAKER_BUFF_SIZE - wr_ptr;
-    stat_start(stat_apu_service);
-    nes::apu::service(speaker_buff + wr_ptr, n);
-    stat_end(stat_apu_service);
-    wr_ptr = 0;
-  }
-  if (wr_ptr < rd_ptr) {
-    int n = rd_ptr - wr_ptr;
-    stat_start(stat_apu_service);
-    nes::apu::service(speaker_buff + wr_ptr, n);
-    stat_end(stat_apu_service);
-    wr_ptr = (wr_ptr + n) % SPEAKER_BUFF_SIZE;
-  }
-  speaker_wr_ptr = wr_ptr;
+static void audio_init() {
+  i2s_chan_config_t chan_cfg =
+    I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+
+  ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &audio_i2s_ch, nullptr));
+
+  i2s_pdm_tx_clk_config_t clk_cfg =
+    I2S_PDM_TX_CLK_DAC_DEFAULT_CONFIG(AUDIO_SAMPLE_FREQ_HZ);
+
+  i2s_pdm_tx_slot_config_t slot_cfg =
+    I2S_PDM_TX_SLOT_DAC_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+  slot_cfg.hp_en = false;
+
+  i2s_pdm_tx_config_t tx_cfg {
+    .clk_cfg = clk_cfg,
+    .slot_cfg = slot_cfg,
+    .gpio_cfg = {
+      .clk = I2S_GPIO_UNUSED, //(gpio_num_t)AUDIO_CLK_PIN,
+      .dout = (gpio_num_t)AUDIO_DOUT_PIN,
+      .dout2 = I2S_GPIO_UNUSED,
+      .invert_flags = {
+        .clk_inv = false,
+      },
+    },
+  };
+
+  ESP_ERROR_CHECK(i2s_channel_init_pdm_tx_mode(audio_i2s_ch, &tx_cfg));
+
+  speaker_fill_buff(true);
+
+  ESP_ERROR_CHECK(i2s_channel_enable(audio_i2s_ch));
 }
 
-static void IRAM_ATTR speaker_pwm_update() {
-  uint32_t rd_ptr = speaker_rd_ptr;
-  uint8_t duty = speaker_buff[rd_ptr];
-  speaker_rd_ptr = (rd_ptr + 1) % SPEAKER_BUFF_SIZE;
-  ledcWriteChannel(SPEAKER_LEDC_CH, duty);
+static void speaker_fill_buff(bool preload) {
+  uint32_t wr_ptr = audio_wr_ptr;
+  uint32_t rd_ptr = audio_rd_ptr;
+
+  uint32_t buff_free = (rd_ptr - wr_ptr) & (AUDIO_BUFF_SIZE - 1);
+  if (buff_free == 0) {
+    buff_free = AUDIO_BUFF_SIZE;
+  }
+  if (buff_free > 1) {
+    buff_free--;
+    stat_start(stat_apu_service);
+    nes::apu::service(apu_out_buff, buff_free);
+    for (int i = 0; i < buff_free; i++) {
+      int16_t val = ((int16_t)apu_out_buff[i] - 128) * 256;
+      audio_buff[wr_ptr] = val /* - audio_bias*/;
+      wr_ptr = (wr_ptr + 1) & (AUDIO_BUFF_SIZE - 1);
+    }
+    stat_end(stat_apu_service);
+  }
+
+  if (wr_ptr < rd_ptr) {
+    size_t to_write = (AUDIO_BUFF_SIZE - rd_ptr) * SAMPLE_SIZE;
+    size_t written = 0;
+    if (preload) {
+      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written);
+    } else {
+      i2s_channel_write(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written, 0);
+    }
+    rd_ptr = (rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_SIZE - 1);
+    stat_pdm_sent_bytes += written;
+    stat_pdm_sent_count += 1;
+  }
+  if (rd_ptr < wr_ptr) {
+    size_t to_write = (wr_ptr - rd_ptr) * SAMPLE_SIZE;
+    size_t written = 0;
+    if (preload) {
+      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written);
+    } else {
+      i2s_channel_write(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written, 0);
+    }
+    rd_ptr = (rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_SIZE - 1);
+    stat_pdm_sent_bytes += written;
+    stat_pdm_sent_count += 1;
+  }
+
+  audio_wr_ptr = wr_ptr;
+  audio_rd_ptr = rd_ptr;
 }
+
+
