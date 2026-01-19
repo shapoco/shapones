@@ -6,6 +6,8 @@
 
 #include "AdcButton.hpp"
 
+#pragma GCC optimize ("Ofast")
+
 #define SHAPONES_USE_CANVAS (0)
 #define SHAPONES_ENABLE_AUDIO (1)
 
