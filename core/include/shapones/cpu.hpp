@@ -29,24 +29,24 @@ static constexpr uint8_t STATUS_OVERFLOW = 0x40;
 static constexpr uint8_t STATUS_NEGATIVE = 0x80;
 
 struct Registers {
-    uint8_t A;   // accumulator
-    uint8_t X;   // index
-    uint8_t Y;   // index
-    uint8_t SP;  // stack pointer (low byte)
-    union {      // status
-        uint8_t raw;
-        struct {
-            uint8_t carry : 1;
-            uint8_t zero : 1;
-            uint8_t interrupt : 1;
-            uint8_t decimalmode : 1;
-            uint8_t breakmode : 1;
-            uint8_t reserved : 1;
-            uint8_t overflow : 1;
-            uint8_t negative : 1;
-        };
-    } status;
-    addr_t PC;  // program counter
+  uint8_t A;   // accumulator
+  uint8_t X;   // index
+  uint8_t Y;   // index
+  uint8_t SP;  // stack pointer (low byte)
+  union {      // status
+    uint8_t raw;
+    struct {
+      uint8_t carry : 1;
+      uint8_t zero : 1;
+      uint8_t interrupt : 1;
+      uint8_t decimalmode : 1;
+      uint8_t breakmode : 1;
+      uint8_t reserved : 1;
+      uint8_t overflow : 1;
+      uint8_t negative : 1;
+    };
+  } status;
+  addr_t PC;  // program counter
 };
 
 enum RegSel { A, X, Y };

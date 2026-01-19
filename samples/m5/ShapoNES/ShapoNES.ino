@@ -1,12 +1,12 @@
-#include "SD.h"
 #include <M5Unified.h>
 #include <driver/i2s_pdm.h>
+#include "SD.h"
 
 #include "shapones_core.h"
 
 #include "AdcButton.hpp"
 
-#pragma GCC optimize ("Ofast")
+#pragma GCC optimize("Ofast")
 
 #define SHAPONES_USE_CANVAS (0)
 #define SHAPONES_ENABLE_AUDIO (1)
@@ -32,11 +32,12 @@ constexpr int DMA_HEIGHT = 60;
 #endif
 
 static const uint8_t BUTTON_ADC_PINS[] = {
-  5,
-  2,
-  1,
+    5,
+    2,
+    1,
 };
-static constexpr int BUTTON_NUM_PINS = sizeof(BUTTON_ADC_PINS) / sizeof(BUTTON_ADC_PINS[0]);
+static constexpr int BUTTON_NUM_PINS =
+    sizeof(BUTTON_ADC_PINS) / sizeof(BUTTON_ADC_PINS[0]);
 
 static constexpr int BUTTON_A = 0;
 static constexpr int BUTTON_B = 1;
@@ -110,9 +111,7 @@ static uint32_t stat_ppu_delay_count = 0;
 static uint32_t stat_pdm_sent_bytes = 0;
 static uint32_t stat_pdm_sent_count = 0;
 
-static SHAPONES_INLINE void stat_start(stat_t &s) {
-  s.start_us = micros();
-}
+static SHAPONES_INLINE void stat_start(stat_t &s) { s.start_us = micros(); }
 
 static SHAPONES_INLINE void stat_end(stat_t &s) {
   uint32_t elapsed_us = micros() - s.start_us;
@@ -137,7 +136,8 @@ static constexpr uint32_t SAMPLE_SIZE = sizeof(audio_buff[0]);
 static volatile uint32_t audio_wr_ptr = 0;
 static volatile uint32_t audio_rd_ptr = 0;
 
-static SHAPONES_INLINE void unpack565(uint16_t c, uint32_t *r, uint32_t *g, uint32_t *b) {
+static SHAPONES_INLINE void unpack565(uint16_t c, uint32_t *r, uint32_t *g,
+                                      uint32_t *b) {
   c = ((c << 8) & 0xff00) | ((c >> 8) & 0x00ff);
   *r = (c >> 11) & 0x1F;
   *g = (c >> 5) & 0x3F;
@@ -176,7 +176,7 @@ void setup() {
     delay(500);
   }
 
-  const char* ines_path = "/super_mario_bros.nes";
+  const char *ines_path = "/super_mario_bros.nes";
   File ines_file = SD.open(ines_path, FILE_READ);
   if (!ines_file) {
     Serial.printf("Failed to open INES file: %s\n", ines_path);
@@ -194,15 +194,16 @@ void setup() {
   auto nes_cfg = nes::get_default_config();
   nes_cfg.apu_sampling_rate = AUDIO_SAMPLE_FREQ_HZ;
   nes::init(nes_cfg);
-  
-  xTaskCreatePinnedToCore(ppu_loop, "PPULoop", 8192, NULL, 10, NULL, PRO_CPU_NUM);
+
+  xTaskCreatePinnedToCore(ppu_loop, "PPULoop", 8192, NULL, 10, NULL,
+                          PRO_CPU_NUM);
 
   for (int i = 0; i < BUTTON_NUM_PINS; i++) {
     pinMode(BUTTON_ADC_PINS[i], INPUT);
   }
   analogContinuousSetWidth(12);
   if (!analogContinuous(BUTTON_ADC_PINS, BUTTON_NUM_PINS, 3, 1000, nullptr)) {
-    Serial.println("adc init failed");  
+    Serial.println("adc init failed");
   }
   analogContinuousStart();
 
@@ -219,7 +220,7 @@ void loop() {
     nes::cpu::service();
   }
   stat_end(stat_cpu_service);
-  
+
 #if SHAPONES_ENABLE_AUDIO
   speaker_fill_buff(false);
 #endif
@@ -254,7 +255,8 @@ static void read_input() {
 static void ppu_loop(void *arg) {
   uint64_t next_wdt_reset_ms = 0;
   while (true) {
-    stat_ppu_delay_clock += nes::cpu::ppu_cycle_leading() - nes::ppu::cycle_following();
+    stat_ppu_delay_clock +=
+        nes::cpu::ppu_cycle_leading() - nes::ppu::cycle_following();
     stat_ppu_delay_count += 1;
     int y;
     stat_start(stat_ppu_service);
@@ -270,8 +272,7 @@ static void ppu_loop(void *arg) {
           uint32_t c1 = COLOR_TABLE[line_buff[x * 2 + 1] & 0x3f];
           resize_buff[x] = c0 + c1;
         }
-      }
-      else {
+      } else {
         uint16_t *wptr = frame_buff + y / 2 * BUFF_W;
         for (int x = 0; x < BUFF_W; x++) {
           uint32_t c01 = resize_buff[x];
@@ -296,8 +297,7 @@ static void ppu_loop(void *arg) {
         meas();
       }
       skip_frame = wait_vsync();
-    }
-    else {
+    } else {
       dma_maintain();
     }
 
@@ -314,18 +314,16 @@ static bool wait_vsync() {
   uint64_t now_us = micros();
   int64_t wait_us = next_vsync_us - now_us;
   if (wait_us > 0) {
-      delayMicroseconds(wait_us);
+    delayMicroseconds(wait_us);
   }
   next_vsync_us += FRAME_DELAY_US;
   if (now_us > next_vsync_us) {
-      next_vsync_us = now_us;
+    next_vsync_us = now_us;
   }
   return wait_us <= -5000;
 }
 
-static bool dma_busy() {
-  return (dma_next_y < BUFF_H) || M5.Display.dmaBusy();
-}
+static bool dma_busy() { return (dma_next_y < BUFF_H) || M5.Display.dmaBusy(); }
 
 static void dma_start() {
   if (dma_busy()) return;
@@ -369,47 +367,46 @@ static void meas() {
   fps_frame_count++;
   if (elapsed_ms >= 1000) {
     fps = (float)(fps_frame_count * 1000) / elapsed_ms;
-    Serial.printf("%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc, PDM sent:%7.1f)\n",
-      fps, cpu_time_us, ppu_time_us, apu_time_us, ppu_delay_clocks, pdm_sent_bytes);
+    Serial.printf(
+        "%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc, PDM "
+        "sent:%7.1f)\n",
+        fps, cpu_time_us, ppu_time_us, apu_time_us, ppu_delay_clocks,
+        pdm_sent_bytes);
     fps_last_meas_ms = now_ms;
     fps_frame_count = 0;
   }
 }
 
-void nes::lock_init(int id){
-  spinlock_initialize(&locks[id]);
-}
-void nes::lock_deinit(int id){}
-void nes::lock_get(int id){
-  taskENTER_CRITICAL(&locks[id]);
-}
-void nes::lock_release(int id){
-  taskEXIT_CRITICAL(&locks[id]);
-}
+void nes::lock_init(int id) { spinlock_initialize(&locks[id]); }
+void nes::lock_deinit(int id) {}
+void nes::lock_get(int id) { taskENTER_CRITICAL(&locks[id]); }
+void nes::lock_release(int id) { taskEXIT_CRITICAL(&locks[id]); }
 
 static void audio_init() {
   i2s_chan_config_t chan_cfg =
-    I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+      I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
 
   ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &audio_i2s_ch, nullptr));
 
   i2s_pdm_tx_clk_config_t clk_cfg =
-    I2S_PDM_TX_CLK_DAC_DEFAULT_CONFIG(AUDIO_SAMPLE_FREQ_HZ);
+      I2S_PDM_TX_CLK_DAC_DEFAULT_CONFIG(AUDIO_SAMPLE_FREQ_HZ);
 
-  i2s_pdm_tx_slot_config_t slot_cfg =
-    I2S_PDM_TX_SLOT_DAC_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+  i2s_pdm_tx_slot_config_t slot_cfg = I2S_PDM_TX_SLOT_DAC_DEFAULT_CONFIG(
+      I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
 
-  i2s_pdm_tx_config_t tx_cfg {
-    .clk_cfg = clk_cfg,
-    .slot_cfg = slot_cfg,
-    .gpio_cfg = {
-      .clk = I2S_GPIO_UNUSED, //(gpio_num_t)AUDIO_CLK_PIN,
-      .dout = (gpio_num_t)AUDIO_DOUT_PIN,
-      .dout2 = I2S_GPIO_UNUSED,
-      .invert_flags = {
-        .clk_inv = false,
-      },
-    },
+  i2s_pdm_tx_config_t tx_cfg{
+      .clk_cfg = clk_cfg,
+      .slot_cfg = slot_cfg,
+      .gpio_cfg =
+          {
+              .clk = I2S_GPIO_UNUSED,  //(gpio_num_t)AUDIO_CLK_PIN,
+              .dout = (gpio_num_t)AUDIO_DOUT_PIN,
+              .dout2 = I2S_GPIO_UNUSED,
+              .invert_flags =
+                  {
+                      .clk_inv = false,
+                  },
+          },
   };
 
   ESP_ERROR_CHECK(i2s_channel_init_pdm_tx_mode(audio_i2s_ch, &tx_cfg));
@@ -443,9 +440,11 @@ static void speaker_fill_buff(bool preload) {
     size_t to_write = (AUDIO_BUFF_SIZE - rd_ptr) * SAMPLE_SIZE;
     size_t written = 0;
     if (preload) {
-      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written);
+      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[rd_ptr], to_write,
+                               &written);
     } else {
-      i2s_channel_write(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written, 0);
+      i2s_channel_write(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written,
+                        0);
     }
     rd_ptr = (rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_SIZE - 1);
     stat_pdm_sent_bytes += written;
@@ -455,9 +454,11 @@ static void speaker_fill_buff(bool preload) {
     size_t to_write = (wr_ptr - rd_ptr) * SAMPLE_SIZE;
     size_t written = 0;
     if (preload) {
-      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written);
+      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[rd_ptr], to_write,
+                               &written);
     } else {
-      i2s_channel_write(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written, 0);
+      i2s_channel_write(audio_i2s_ch, &audio_buff[rd_ptr], to_write, &written,
+                        0);
     }
     rd_ptr = (rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_SIZE - 1);
     stat_pdm_sent_bytes += written;
@@ -467,5 +468,3 @@ static void speaker_fill_buff(bool preload) {
   audio_wr_ptr = wr_ptr;
   audio_rd_ptr = rd_ptr;
 }
-
-

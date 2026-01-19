@@ -6,32 +6,32 @@
 namespace nes::interrupt {
 
 enum class Source : uint32_t {
-    APU_FRAME_COUNTER = (1 << 0),
-    APU_DMC = (1 << 1),
-    MMC3 = (1 << 2),
+  APU_FRAME_COUNTER = (1 << 0),
+  APU_DMC = (1 << 1),
+  MMC3 = (1 << 2),
 };
 
 static SHAPONES_INLINE Source operator|(Source a, Source b) {
-    return static_cast<Source>(static_cast<uint32_t>(a) |
-                               static_cast<uint32_t>(b));
+  return static_cast<Source>(static_cast<uint32_t>(a) |
+                             static_cast<uint32_t>(b));
 }
 static SHAPONES_INLINE Source operator&(Source a, Source b) {
-    return static_cast<Source>(static_cast<uint32_t>(a) &
-                               static_cast<uint32_t>(b));
+  return static_cast<Source>(static_cast<uint32_t>(a) &
+                             static_cast<uint32_t>(b));
 }
 static SHAPONES_INLINE bool operator!(Source a) {
-    return !static_cast<uint32_t>(a);
+  return !static_cast<uint32_t>(a);
 }
 static SHAPONES_INLINE Source operator~(Source a) {
-    return static_cast<Source>(~static_cast<uint32_t>(a));
+  return static_cast<Source>(~static_cast<uint32_t>(a));
 }
-static SHAPONES_INLINE Source& operator|=(Source &a, Source b) {
-    a = a | b;
-    return a;
+static SHAPONES_INLINE Source& operator|=(Source& a, Source b) {
+  a = a | b;
+  return a;
 }
-static SHAPONES_INLINE Source& operator&=(Source &a, Source b) {
-    a = a & b;
-    return a;
+static SHAPONES_INLINE Source& operator&=(Source& a, Source b) {
+  a = a & b;
+  return a;
 }
 
 void assert_irq(Source src);

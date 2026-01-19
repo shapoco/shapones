@@ -1,4 +1,4 @@
 BasedOnStyle: Google
-IndentWidth: 4
+IndentWidth: 2
 IncludeBlocks: Preserve
 AllowShortCaseLabelsOnASingleLine: true

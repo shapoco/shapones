@@ -62,54 +62,54 @@ static constexpr uint16_t SCROLL_MASK_FINE_Y = 0x7000u;
 static constexpr uint16_t SCROLL_MASK_PPU_ADDR = 0x3fffu;
 
 struct Registers {
-   public:
-    // Control Register
-    union {
-        uint8_t raw;
-        struct {
-            uint8_t unused : 2;           // [1:0]
-            uint8_t incr_stride : 1;      // [2] addr increment (0:+1, 1:+32)
-            uint8_t sprite_name_sel : 1;  // [3] sprite pattern sel (0:0x0000,
-                                          // 1:0x1000)
-            uint8_t bg_name_sel : 1;  // [4] BG pattern sel (0:0x0000, 1:0x1000)
-            uint8_t sprite_size : 1;  // [5] sprite size (0:8x8, 1:8x16)
-            uint8_t ppu_master : 1;   // [6] ppu master/slave
-            uint8_t vblank_nmi_enable : 1;  // [7] vblank interrupt enable
-        };
-    } control;
+ public:
+  // Control Register
+  union {
+    uint8_t raw;
+    struct {
+      uint8_t unused : 2;             // [1:0]
+      uint8_t incr_stride : 1;        // [2] addr increment (0:+1, 1:+32)
+      uint8_t sprite_name_sel : 1;    // [3] sprite pattern sel (0:0x0000,
+                                      // 1:0x1000)
+      uint8_t bg_name_sel : 1;        // [4] BG pattern sel (0:0x0000, 1:0x1000)
+      uint8_t sprite_size : 1;        // [5] sprite size (0:8x8, 1:8x16)
+      uint8_t ppu_master : 1;         // [6] ppu master/slave
+      uint8_t vblank_nmi_enable : 1;  // [7] vblank interrupt enable
+    };
+  } control;
 
-    // Mask Register
-    union {
-        uint8_t raw;
-        struct {
-            uint8_t color : 1;          // [0] 0:color, 1:mono
-            uint8_t bg_clip : 1;        // [1] BG clipping
-            uint8_t sprite_clip : 1;    // [2] sprite clipping
-            uint8_t bg_enable : 1;      // [3] BG enable
-            uint8_t sprite_enable : 1;  // [4] sprite enable
-            uint8_t emphasis_r : 1;     // [5] emphasis R
-            uint8_t emphasis_g : 1;     // [6] emphasis G
-            uint8_t emphasis_b : 1;     // [7] emphasis B
-        };
-    } mask;
+  // Mask Register
+  union {
+    uint8_t raw;
+    struct {
+      uint8_t color : 1;          // [0] 0:color, 1:mono
+      uint8_t bg_clip : 1;        // [1] BG clipping
+      uint8_t sprite_clip : 1;    // [2] sprite clipping
+      uint8_t bg_enable : 1;      // [3] BG enable
+      uint8_t sprite_enable : 1;  // [4] sprite enable
+      uint8_t emphasis_r : 1;     // [5] emphasis R
+      uint8_t emphasis_g : 1;     // [6] emphasis G
+      uint8_t emphasis_b : 1;     // [7] emphasis B
+    };
+  } mask;
 
-    // Status Register
-    union {
-        uint8_t raw;
-        struct {
-            uint8_t reserved : 5;     // [4:0]
-            uint8_t overflow : 1;     // [5] overflow (unused)
-            uint8_t sprite0_hit : 1;  // [6] sprite 0 hit
-            uint8_t vblank_flag : 1;  // [7] vblank flag
-        };
-    } status;
+  // Status Register
+  union {
+    uint8_t raw;
+    struct {
+      uint8_t reserved : 5;     // [4:0]
+      uint8_t overflow : 1;     // [5] overflow (unused)
+      uint8_t sprite0_hit : 1;  // [6] sprite 0 hit
+      uint8_t vblank_flag : 1;  // [7] vblank flag
+    };
+  } status;
 
-    // OAM Indirect Address
-    uint8_t oam_addr;
+  // OAM Indirect Address
+  uint8_t oam_addr;
 
-    // Scroll Registers
-    uint8_t fine_x;
-    uint16_t scroll;
+  // Scroll Registers
+  uint8_t fine_x;
+  uint16_t scroll;
 };
 
 static constexpr uint8_t OAM_ATTR_PALETTE = 0x3;
@@ -118,20 +118,20 @@ static constexpr uint8_t OAM_ATTR_INVERT_H = 0x40;
 static constexpr uint8_t OAM_ATTR_INVERT_V = 0x80;
 
 struct OamEntry {
-    uint8_t y;
-    uint8_t tile;
-    uint8_t attr;
-    uint8_t x;
+  uint8_t y;
+  uint8_t tile;
+  uint8_t attr;
+  uint8_t x;
 };
 
 static constexpr uint8_t SL_ATTR_BEHIND = 0x1;
 static constexpr uint8_t SL_ATTR_ZERO = 0x2;
 
 struct SpriteLine {
-    uint8_t x;
-    uint8_t attr;
-    uint16_t chr;
-    uint8_t palette_offset;
+  uint8_t x;
+  uint8_t attr;
+  uint16_t chr;
+  uint8_t palette_offset;
 };
 
 static constexpr int FOCUS_HBLANK = 1;

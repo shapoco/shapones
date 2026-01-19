@@ -3,13 +3,13 @@
 
 #include <stdint.h>
 
-#include "pico/stdlib.h"
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
+#include "pico/stdlib.h"
 
+#include "mono8x16.hpp"
 #include "shapones/shapones.hpp"
 #include "ws19804.hpp"
-#include "mono8x16.hpp"
 
 // system clock frequency
 static constexpr uint32_t SYS_CLK_FREQ = 250 * MHZ;
@@ -21,14 +21,14 @@ constexpr int FRAME_BUFF_HEIGHT = nes::SCREEN_HEIGHT;
 extern uint8_t frame_buff[FRAME_BUFF_STRIDE * nes::SCREEN_HEIGHT];
 
 // pad pins
-static constexpr int PIN_PAD_A      = 2;
-static constexpr int PIN_PAD_B      = 3;
-static constexpr int PIN_PAD_START  = 4;
+static constexpr int PIN_PAD_A = 2;
+static constexpr int PIN_PAD_B = 3;
+static constexpr int PIN_PAD_START = 4;
 static constexpr int PIN_PAD_SELECT = 6;
-static constexpr int PIN_PAD_RIGHT  = 7;
-static constexpr int PIN_PAD_DOWN   = 14;
-static constexpr int PIN_PAD_LEFT   = 26;
-static constexpr int PIN_PAD_UP     = 27;
+static constexpr int PIN_PAD_RIGHT = 7;
+static constexpr int PIN_PAD_DOWN = 14;
+static constexpr int PIN_PAD_LEFT = 26;
+static constexpr int PIN_PAD_UP = 27;
 extern const int input_pins[];
 
 // wait until some key is pressed

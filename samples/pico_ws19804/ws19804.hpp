@@ -3,16 +3,16 @@
 
 #define SHAPONES_USE_PIO (1)
 
-#include "stdint.h"
 #include "pico/stdlib.h"
+#include "stdint.h"
 #if SHAPONES_USE_PIO
 #include "hardware/pio.h"
 #else
 #include "hardware/spi.h"
 #endif
-#include "hardware/gpio.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
+#include "hardware/gpio.h"
 
 namespace ws19804 {
 
@@ -27,9 +27,7 @@ static constexpr uint PIN_MISO = 12;
 static constexpr uint PIN_RST = 15;
 static constexpr uint PIN_BL = 13;
 
-enum direction_t {
-    EMPTY, TX, RX
-};
+enum direction_t { EMPTY, TX, RX };
 
 // setup GPIO, PIO, LCD
 void init(int sys_clk_hz);
@@ -58,6 +56,6 @@ void write_blocking(const uint8_t *data, int len);
 // SPI read
 void read_blocking(uint8_t tx_repeat, uint8_t *buff, int len);
 
-}
+}  // namespace ws19804
 
 #endif

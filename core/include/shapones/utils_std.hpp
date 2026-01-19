@@ -7,6 +7,6 @@ namespace nes {
 void load_ines_file(const char* path);
 #endif
 
-}
+}  // namespace nes
 
 #endif

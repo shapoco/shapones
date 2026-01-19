@@ -30,31 +30,32 @@ using int_fast32_t = int32_t;
 #include <stdlib.h>
 #endif
 
+#define SHAPONES_PRINTF(fmt, ...)                \
+  do {                                           \
+    printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
+    printf((fmt), ##__VA_ARGS__);                \
+    fflush(stdout);                              \
+  } while (0)
+
+#define SHAPONES_ERRORF(fmt, ...)                \
+  do {                                           \
+    printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
+    printf("*ERROR: ");                          \
+    printf(fmt, ##__VA_ARGS__);                  \
+    fflush(stdout);                              \
+    nes::cpu::stop();                            \
+  } while (0)
+
+#else
+
 #define SHAPONES_PRINTF(fmt, ...) \
-    do { \
-        printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
-        printf((fmt), ##__VA_ARGS__); \
-        fflush(stdout); \
-    } while(0)
+  do {                            \
+  } while (0)
 
 #define SHAPONES_ERRORF(fmt, ...) \
-    do { \
-        printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
-        printf("*ERROR: "); \
-        printf(fmt, ##__VA_ARGS__); \
-        fflush(stdout); \
-        nes::cpu::stop(); \
-    } while(0)
-
-#else 
-
-#define SHAPONES_PRINTF(fmt, ...) \
-    do { } while(0)
-
-#define SHAPONES_ERRORF(fmt, ...) \
-    do { \
-        nes::cpu::stop(); \
-    } while(0)
+  do {                            \
+    nes::cpu::stop();             \
+  } while (0)
 
 #endif
 
@@ -89,15 +90,15 @@ static constexpr int LOCK_PPU = 1;
 static constexpr int LOCK_APU = 2;
 
 struct Config {
-    uint32_t apu_sampling_rate;
+  uint32_t apu_sampling_rate;
 };
 
 enum class NametableArrangement : uint8_t {
-    HORIZONTAL = 0,
-    VERTICAL = 1,
-    SINGLE_LOWER = 2,
-    SINGLE_UPPER = 3,
-    FOUR_SCREEN = 4,
+  HORIZONTAL = 0,
+  VERTICAL = 1,
+  SINGLE_LOWER = 2,
+  SINGLE_UPPER = 3,
+  FOUR_SCREEN = 4,
 };
 
 void lock_init(int id);
@@ -106,14 +107,10 @@ void lock_get(int id);
 void lock_release(int id);
 
 class Exclusive {
-public:
-    const int id;
-    SHAPONES_INLINE Exclusive(int id) : id(id) {
-        lock_get(id);
-    }
-    SHAPONES_INLINE ~Exclusive() {
-        lock_release(id);
-    }
+ public:
+  const int id;
+  SHAPONES_INLINE Exclusive(int id) : id(id) { lock_get(id); }
+  SHAPONES_INLINE ~Exclusive() { lock_release(id); }
 };
 
 }  // namespace nes

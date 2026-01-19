@@ -11,6 +11,6 @@ bool is_running();
 void start(int src_page);
 int exec_next_cycle();
 
-}
+}  // namespace nes::dma
 
 #endif

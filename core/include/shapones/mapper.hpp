@@ -19,19 +19,19 @@ static constexpr int CHRROM_BLOCK_SIZE = 1 << CHRROM_BLOCK_ADDR_BITS;
 static constexpr int CHRROM_REMAP_TABLE_SIZE = CHRROM_RANGE / CHRROM_BLOCK_SIZE;
 
 static constexpr uint16_t expfwd(uint8_t val) {
-    uint_fast16_t tmp = val;
-    tmp = ((tmp & 0x00f0) << 4) | (tmp & 0x000f);
-    tmp = ((tmp & 0x0c0c) << 2) | (tmp & 0x0303);
-    tmp = ((tmp & 0x2222) << 1) | (tmp & 0x1111);
-    return tmp;
+  uint_fast16_t tmp = val;
+  tmp = ((tmp & 0x00f0) << 4) | (tmp & 0x000f);
+  tmp = ((tmp & 0x0c0c) << 2) | (tmp & 0x0303);
+  tmp = ((tmp & 0x2222) << 1) | (tmp & 0x1111);
+  return tmp;
 }
 
 static constexpr uint16_t exprev(uint8_t val) {
-    uint_fast16_t tmp = val;
-    tmp = ((tmp & 0x000f) << 12) | (tmp & 0x00f0);
-    tmp = ((tmp & 0xc0c0) >> 6) | (tmp & 0x3030);
-    tmp = ((tmp & 0x1111) << 3) | (tmp & 0x2222);
-    return tmp;
+  uint_fast16_t tmp = val;
+  tmp = ((tmp & 0x000f) << 12) | (tmp & 0x00f0);
+  tmp = ((tmp & 0xc0c0) >> 6) | (tmp & 0x3030);
+  tmp = ((tmp & 0x1111) << 3) | (tmp & 0x2222);
+  return tmp;
 }
 
 // clang-format off
@@ -98,79 +98,77 @@ extern uint32_t chrrom_phys_addr_mask;
 static SHAPONES_INLINE int get_id() { return id; }
 
 static SHAPONES_INLINE void prgrom_remap(addr_t cpu_base, uint32_t phys_base,
-                                           uint32_t size) {
-    uint32_t cpu_block =
-        (cpu_base - cpu::PRGROM_BASE) >> PRGROM_BLOCK_ADDR_BITS;
-    uint32_t phys_block = phys_base >> PRGROM_BLOCK_ADDR_BITS;
-    uint32_t num_blocks = size >> PRGROM_BLOCK_ADDR_BITS;
-    for (int i = 0; i < num_blocks; i++) {
-        prgrom_remap_table[cpu_block + i] = phys_block + i;
-    }
+                                         uint32_t size) {
+  uint32_t cpu_block = (cpu_base - cpu::PRGROM_BASE) >> PRGROM_BLOCK_ADDR_BITS;
+  uint32_t phys_block = phys_base >> PRGROM_BLOCK_ADDR_BITS;
+  uint32_t num_blocks = size >> PRGROM_BLOCK_ADDR_BITS;
+  for (int i = 0; i < num_blocks; i++) {
+    prgrom_remap_table[cpu_block + i] = phys_block + i;
+  }
 }
 
 static SHAPONES_INLINE void chrrom_remap(addr_t ppu_base, uint32_t phys_base,
-                                           uint32_t size) {
-    uint32_t ppu_block =
-        (ppu_base - ppu::CHRROM_BASE) >> CHRROM_BLOCK_ADDR_BITS;
-    uint32_t phys_block = phys_base >> CHRROM_BLOCK_ADDR_BITS;
-    uint32_t num_blocks = size >> CHRROM_BLOCK_ADDR_BITS;
-    for (int i = 0; i < num_blocks; i++) {
-        chrrom_remap_table[ppu_block + i] = phys_block + i;
-    }
+                                         uint32_t size) {
+  uint32_t ppu_block = (ppu_base - ppu::CHRROM_BASE) >> CHRROM_BLOCK_ADDR_BITS;
+  uint32_t phys_block = phys_base >> CHRROM_BLOCK_ADDR_BITS;
+  uint32_t num_blocks = size >> CHRROM_BLOCK_ADDR_BITS;
+  for (int i = 0; i < num_blocks; i++) {
+    chrrom_remap_table[ppu_block + i] = phys_block + i;
+  }
 }
 
 static SHAPONES_INLINE uint8_t prgrom_read(addr_t addr) {
-    uint32_t cpu_block = (addr & (PRGROM_RANGE - 1)) >> PRGROM_BLOCK_ADDR_BITS;
-    uint32_t phys_block = prgrom_remap_table[cpu_block];
-    uint32_t phys_addr = (phys_block << PRGROM_BLOCK_ADDR_BITS) +
-                         (addr & (PRGROM_BLOCK_SIZE - 1));
-    return prgrom[phys_addr & prgrom_phys_addr_mask];
+  uint32_t cpu_block = (addr & (PRGROM_RANGE - 1)) >> PRGROM_BLOCK_ADDR_BITS;
+  uint32_t phys_block = prgrom_remap_table[cpu_block];
+  uint32_t phys_addr =
+      (phys_block << PRGROM_BLOCK_ADDR_BITS) + (addr & (PRGROM_BLOCK_SIZE - 1));
+  return prgrom[phys_addr & prgrom_phys_addr_mask];
 }
 
 static SHAPONES_INLINE uint8_t prgram_read(addr_t addr) {
-    return prgram[addr & prgram_addr_mask];
+  return prgram[addr & prgram_addr_mask];
 }
 
 static SHAPONES_INLINE void prgram_write(addr_t addr, uint8_t value) {
-    prgram[addr & prgram_addr_mask] = value;
+  prgram[addr & prgram_addr_mask] = value;
 }
 
 static SHAPONES_INLINE uint8_t chrrom_read(addr_t addr) {
-    uint32_t ppu_block = (addr & (CHRROM_RANGE - 1)) >> CHRROM_BLOCK_ADDR_BITS;
-    uint32_t phys_block = chrrom_remap_table[ppu_block];
-    uint32_t phys_addr = (phys_block << CHRROM_BLOCK_ADDR_BITS) +
-                         (addr & (CHRROM_BLOCK_SIZE - 1));
-    return chrrom[phys_addr & chrrom_phys_addr_mask];
+  uint32_t ppu_block = (addr & (CHRROM_RANGE - 1)) >> CHRROM_BLOCK_ADDR_BITS;
+  uint32_t phys_block = chrrom_remap_table[ppu_block];
+  uint32_t phys_addr =
+      (phys_block << CHRROM_BLOCK_ADDR_BITS) + (addr & (CHRROM_BLOCK_SIZE - 1));
+  return chrrom[phys_addr & chrrom_phys_addr_mask];
 }
 
 #if SHAPONES_ENABLE_CHROM_CACHE
 static SHAPONES_INLINE uint16_t chrrom_read_cache(addr_t addr, bool invert) {
-    uint32_t ppu_block =
-        (addr & (CHRROM_RANGE / 2 - 1)) >> (CHRROM_BLOCK_ADDR_BITS - 1);
-    uint32_t phys_block = chrrom_remap_table[ppu_block];
-    uint32_t phys_addr = (phys_block << (CHRROM_BLOCK_ADDR_BITS - 1)) +
-                         (addr & (CHRROM_BLOCK_SIZE / 2 - 1));
-    if (invert) {
-        return chrrom_reordered1[phys_addr & (chrrom_phys_addr_mask >> 1)];
-    } else {
-        return chrrom_reordered0[phys_addr & (chrrom_phys_addr_mask >> 1)];
-    }
+  uint32_t ppu_block =
+      (addr & (CHRROM_RANGE / 2 - 1)) >> (CHRROM_BLOCK_ADDR_BITS - 1);
+  uint32_t phys_block = chrrom_remap_table[ppu_block];
+  uint32_t phys_addr = (phys_block << (CHRROM_BLOCK_ADDR_BITS - 1)) +
+                       (addr & (CHRROM_BLOCK_SIZE / 2 - 1));
+  if (invert) {
+    return chrrom_reordered1[phys_addr & (chrrom_phys_addr_mask >> 1)];
+  } else {
+    return chrrom_reordered0[phys_addr & (chrrom_phys_addr_mask >> 1)];
+  }
 }
 #else
 static SHAPONES_INLINE uint_fast16_t chrrom_read_double(addr_t addr,
-                                                          bool reverse) {
-    uint32_t ppu_block = (addr & (CHRROM_RANGE - 1)) >> CHRROM_BLOCK_ADDR_BITS;
-    uint32_t phys_block = chrrom_remap_table[ppu_block];
-    uint32_t phys_addr = (phys_block << CHRROM_BLOCK_ADDR_BITS) +
-                         (addr & (CHRROM_BLOCK_SIZE - 1));
+                                                        bool reverse) {
+  uint32_t ppu_block = (addr & (CHRROM_RANGE - 1)) >> CHRROM_BLOCK_ADDR_BITS;
+  uint32_t phys_block = chrrom_remap_table[ppu_block];
+  uint32_t phys_addr =
+      (phys_block << CHRROM_BLOCK_ADDR_BITS) + (addr & (CHRROM_BLOCK_SIZE - 1));
 
-    uint8_t lo = chrrom[phys_addr & chrrom_phys_addr_mask];
-    uint8_t hi = chrrom[(phys_addr & chrrom_phys_addr_mask) + 8];
-    if (reverse) {
-        return (EXPAND_FWD_TABLE[hi] << 1) | EXPAND_FWD_TABLE[lo];
-    } else {
-        return EXPAND_REV_TABLE[hi] | (EXPAND_REV_TABLE[lo] >> 1);
-    }
+  uint8_t lo = chrrom[phys_addr & chrrom_phys_addr_mask];
+  uint8_t hi = chrrom[(phys_addr & chrrom_phys_addr_mask) + 8];
+  if (reverse) {
+    return (EXPAND_FWD_TABLE[hi] << 1) | EXPAND_FWD_TABLE[lo];
+  } else {
+    return EXPAND_REV_TABLE[hi] | (EXPAND_REV_TABLE[lo] >> 1);
+  }
 }
 #endif
 

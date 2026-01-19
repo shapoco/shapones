@@ -87,221 +87,219 @@ PwmAudio speaker(PIN_SPEAKER, SPK_LATENCY, 8,
                  (float)SYS_CLK_FREQ / SPK_PWM_FREQ, apu_dma_handler);
 
 int main() {
-    // setup clocks
-    vreg_set_voltage(VREG_VOLTAGE_1_30);
-    sleep_ms(100);
-    stdio_init_all();
-    set_sys_clock_khz(SYS_CLK_FREQ / 1000, true);
-    clock_configure(clk_peri, 0,
-                    CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
-                    SYS_CLK_FREQ, SYS_CLK_FREQ);
-    setup_default_uart();
+  // setup clocks
+  vreg_set_voltage(VREG_VOLTAGE_1_30);
+  sleep_ms(100);
+  stdio_init_all();
+  set_sys_clock_khz(SYS_CLK_FREQ / 1000, true);
+  clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
+                  SYS_CLK_FREQ, SYS_CLK_FREQ);
+  setup_default_uart();
 
-    // setup monitor pin
-    gpio_init(PIN_MONITOR);
-    gpio_set_dir(PIN_MONITOR, GPIO_OUT);
-    gpio_put(PIN_MONITOR, 0);
+  // setup monitor pin
+  gpio_init(PIN_MONITOR);
+  gpio_set_dir(PIN_MONITOR, GPIO_OUT);
+  gpio_put(PIN_MONITOR, 0);
 
-    // setup input pins
-    for (int i = 0; i < 8; i++) {
-        int pin = input_pins[i];
-        gpio_init(pin);
-        gpio_set_dir(pin, GPIO_IN);
-        gpio_pull_up(pin);
-    }
+  // setup input pins
+  for (int i = 0; i < 8; i++) {
+    int pin = input_pins[i];
+    gpio_init(pin);
+    gpio_set_dir(pin, GPIO_IN);
+    gpio_pull_up(pin);
+  }
 
-    // setup WAVESHARE-19804
-    ws19804::init(SYS_CLK_FREQ);
+  // setup WAVESHARE-19804
+  ws19804::init(SYS_CLK_FREQ);
 
-    // show boot menu
-    if (!boot_menu()) {
-        for (;;) sleep_ms(100);
-    }
+  // show boot menu
+  if (!boot_menu()) {
+    for (;;) sleep_ms(100);
+  }
 
-    // boot game
-    boot_nes();
+  // boot game
+  boot_nes();
 
-    return 0;
+  return 0;
 }
 
 static void boot_nes() {
-    // reset
-    auto cfg = nes::get_default_config();
-    cfg.apu_sampling_rate = SPK_PWM_FREQ;
-    nes::init(cfg);
+  // reset
+  auto cfg = nes::get_default_config();
+  cfg.apu_sampling_rate = SPK_PWM_FREQ;
+  nes::init(cfg);
 
-    // start APU loop
-    apu_fill_buffer(speaker.get_buffer(0));
-    apu_fill_buffer(speaker.get_buffer(1));
-    speaker.play();
+  // start APU loop
+  apu_fill_buffer(speaker.get_buffer(0));
+  apu_fill_buffer(speaker.get_buffer(1));
+  speaker.play();
 
-    // start PPU loop
-    multicore_launch_core1(ppu_loop);
+  // start PPU loop
+  multicore_launch_core1(ppu_loop);
 
-    // start CPU loop
-    cpu_loop();
+  // start CPU loop
+  cpu_loop();
 }
 
 static void cpu_loop() {
 #if SHAPONES_DISP_DMA_CORE == 0
-    auto t_last_frame = get_absolute_time();
-    int frame_count = 0;
-    char fps_str[16];
+  auto t_last_frame = get_absolute_time();
+  int frame_count = 0;
+  char fps_str[16];
 #endif
-    for (;;) {
-        // update input status
-        nes::input::InputStatus input_status;
-        input_status.raw = 0;
-        for (int i = 0; i < 8; i++) {
-            if (!gpio_get(input_pins[i])) {
-                input_status.raw |= (1 << i);
-            }
-        }
-        nes::input::set_raw(0, input_status);
+  for (;;) {
+    // update input status
+    nes::input::InputStatus input_status;
+    input_status.raw = 0;
+    for (int i = 0; i < 8; i++) {
+      if (!gpio_get(input_pins[i])) {
+        input_status.raw |= (1 << i);
+      }
+    }
+    nes::input::set_raw(0, input_status);
 
-        // run CPU
-        nes::cpu::service();
+    // run CPU
+    nes::cpu::service();
 
 #if SHAPONES_DISP_DMA_CORE == 0
-        // check line buffer FIFO state
-        int fifo_rptr = line_fifo_rptr;
-        if (line_fifo_wptr != fifo_rptr) {
-            // convert color number to RGB444
-            int y = line_buff[fifo_rptr * LINE_FIFO_STRIDE];
-            int x0 = (nes::SCREEN_WIDTH - FRAME_BUFF_WIDTH) / 2;
-            uint8_t *rd_ptr =
-                line_buff + (fifo_rptr * LINE_FIFO_STRIDE + x0 + 1);
-            uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
-            for (int x = 0; x < FRAME_BUFF_WIDTH; x += 2) {
-                uint_fast16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
-                uint_fast16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
-                *(wr_ptr++) = (c0 >> 4) & 0xff;
-                *(wr_ptr++) = ((c0 << 4) & 0xf0) | (c1 >> 8) & 0xf;
-                *(wr_ptr++) = c1 & 0xff;
-            }
-            line_fifo_rptr = (fifo_rptr + 1) % LINE_FIFO_DEPTH;
+    // check line buffer FIFO state
+    int fifo_rptr = line_fifo_rptr;
+    if (line_fifo_wptr != fifo_rptr) {
+      // convert color number to RGB444
+      int y = line_buff[fifo_rptr * LINE_FIFO_STRIDE];
+      int x0 = (nes::SCREEN_WIDTH - FRAME_BUFF_WIDTH) / 2;
+      uint8_t *rd_ptr = line_buff + (fifo_rptr * LINE_FIFO_STRIDE + x0 + 1);
+      uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
+      for (int x = 0; x < FRAME_BUFF_WIDTH; x += 2) {
+        uint_fast16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+        uint_fast16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+        *(wr_ptr++) = (c0 >> 4) & 0xff;
+        *(wr_ptr++) = ((c0 << 4) & 0xf0) | (c1 >> 8) & 0xf;
+        *(wr_ptr++) = c1 & 0xff;
+      }
+      line_fifo_rptr = (fifo_rptr + 1) % LINE_FIFO_DEPTH;
 
-            if (y == nes::SCREEN_HEIGHT - 1) {
-                // fps measurement
-                auto t_now = get_absolute_time();
-                if (frame_count < 60 - 1) {
-                    frame_count++;
-                } else {
-                    auto t_diff = absolute_time_diff_us(t_last_frame, t_now);
-                    float fps = (60.0f * 1000000) / t_diff;
-                    sprintf(fps_str, "%5.2ffps", fps);
-                    t_last_frame = t_now;
-                    frame_count = 0;
-                }
-
-                // DMA transfer
-                ws19804::finish_write_data();
-                draw_string(0, 0, fps_str);
-                ws19804::start_write_data(25, 0, FRAME_BUFF_WIDTH,
-                                          FRAME_BUFF_HEIGHT, frame_buff);
-                static int tmp = 0;
-                gpio_put(PIN_MONITOR, tmp);
-                tmp ^= 1;
-            }
+      if (y == nes::SCREEN_HEIGHT - 1) {
+        // fps measurement
+        auto t_now = get_absolute_time();
+        if (frame_count < 60 - 1) {
+          frame_count++;
+        } else {
+          auto t_diff = absolute_time_diff_us(t_last_frame, t_now);
+          float fps = (60.0f * 1000000) / t_diff;
+          sprintf(fps_str, "%5.2ffps", fps);
+          t_last_frame = t_now;
+          frame_count = 0;
         }
-#endif
+
+        // DMA transfer
+        ws19804::finish_write_data();
+        draw_string(0, 0, fps_str);
+        ws19804::start_write_data(25, 0, FRAME_BUFF_WIDTH, FRAME_BUFF_HEIGHT,
+                                  frame_buff);
+        static int tmp = 0;
+        gpio_put(PIN_MONITOR, tmp);
+        tmp ^= 1;
+      }
     }
+#endif
+  }
 }
 
 static void ppu_loop() {
 #if SHAPONES_DISP_DMA_CORE == 1
-    auto t_last_frame = get_absolute_time();
-    int frame_count = 0;
-    char fps_str[16];
+  auto t_last_frame = get_absolute_time();
+  int frame_count = 0;
+  char fps_str[16];
 #endif
 
-    bool skip_frame = false;
+  bool skip_frame = false;
 
-    for (;;) {
+  for (;;) {
 #if SHAPONES_DISP_DMA_CORE == 0
-        int wptr = line_fifo_wptr;
-        int y;
-        uint32_t timing = nes::ppu::service(
-            &line_buff[wptr * LINE_FIFO_STRIDE + 1], skip_frame, &y);
-        if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
-            // push new line
-            line_buff[wptr * LINE_FIFO_STRIDE] = y;
-            line_fifo_wptr = (wptr + 1) % LINE_FIFO_DEPTH;
-        }
-        if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
-            skip_frame = wait_vsync();
-        }
-#else
-        int y;
-        uint32_t timing = nes::ppu::service(line_buff, skip_frame, &y);
-        if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
-            int x0 = (nes::SCREEN_WIDTH - FRAME_BUFF_WIDTH) / 2;
-            uint8_t *rd_ptr = line_buff;
-            uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
-            for (int x = 0; x < FRAME_BUFF_WIDTH; x += 2) {
-                uint16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
-                uint16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
-                *(wr_ptr++) = (c0 >> 4) & 0xff;
-                *(wr_ptr++) = ((c0 << 4) & 0xf0) | (c1 >> 8) & 0xf;
-                *(wr_ptr++) = c1 & 0xff;
-            }
-        }
-        if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
-            if (!skip_frame) {
-                // fps measurement
-                auto t_now = get_absolute_time();
-                if (frame_count < 60 - 1) {
-                    frame_count++;
-                } else {
-                    auto t_diff = absolute_time_diff_us(t_last_frame, t_now);
-                    float fps = (60.0f * 1000000) / t_diff;
-                    sprintf(fps_str, "%5.2ffps", fps);
-                    t_last_frame = t_now;
-                    frame_count = 0;
-                }
-
-                // DMA transfer
-                ws19804::finish_write_data();
-                draw_string(0, 0, fps_str);
-                ws19804::start_write_data(25, 0, FRAME_BUFF_WIDTH,
-                                          FRAME_BUFF_HEIGHT, frame_buff);
-            }
-            skip_frame = wait_vsync() && !skip_frame;
-        }
-#endif
+    int wptr = line_fifo_wptr;
+    int y;
+    uint32_t timing = nes::ppu::service(&line_buff[wptr * LINE_FIFO_STRIDE + 1],
+                                        skip_frame, &y);
+    if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
+      // push new line
+      line_buff[wptr * LINE_FIFO_STRIDE] = y;
+      line_fifo_wptr = (wptr + 1) % LINE_FIFO_DEPTH;
     }
+    if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
+      skip_frame = wait_vsync();
+    }
+#else
+    int y;
+    uint32_t timing = nes::ppu::service(line_buff, skip_frame, &y);
+    if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
+      int x0 = (nes::SCREEN_WIDTH - FRAME_BUFF_WIDTH) / 2;
+      uint8_t *rd_ptr = line_buff;
+      uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
+      for (int x = 0; x < FRAME_BUFF_WIDTH; x += 2) {
+        uint16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+        uint16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
+        *(wr_ptr++) = (c0 >> 4) & 0xff;
+        *(wr_ptr++) = ((c0 << 4) & 0xf0) | (c1 >> 8) & 0xf;
+        *(wr_ptr++) = c1 & 0xff;
+      }
+    }
+    if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
+      if (!skip_frame) {
+        // fps measurement
+        auto t_now = get_absolute_time();
+        if (frame_count < 60 - 1) {
+          frame_count++;
+        } else {
+          auto t_diff = absolute_time_diff_us(t_last_frame, t_now);
+          float fps = (60.0f * 1000000) / t_diff;
+          sprintf(fps_str, "%5.2ffps", fps);
+          t_last_frame = t_now;
+          frame_count = 0;
+        }
+
+        // DMA transfer
+        ws19804::finish_write_data();
+        draw_string(0, 0, fps_str);
+        ws19804::start_write_data(25, 0, FRAME_BUFF_WIDTH, FRAME_BUFF_HEIGHT,
+                                  frame_buff);
+      }
+      skip_frame = wait_vsync() && !skip_frame;
+    }
+#endif
+  }
 }
 
 static bool wait_vsync() {
-    constexpr int FRAME_DELAY_US = 1000000 / 60;
-    uint64_t now_us = to_us_since_boot(get_absolute_time());
-    int64_t wait_us = next_vsync_us - now_us;
-    bool delaying = (wait_us <= 0);
-    if (!delaying) {
-        sleep_us(wait_us);
-    }
-    next_vsync_us += FRAME_DELAY_US;
-    if (now_us > next_vsync_us) {
-        next_vsync_us = now_us;
-    }
-    return delaying;
+  constexpr int FRAME_DELAY_US = 1000000 / 60;
+  uint64_t now_us = to_us_since_boot(get_absolute_time());
+  int64_t wait_us = next_vsync_us - now_us;
+  bool delaying = (wait_us <= 0);
+  if (!delaying) {
+    sleep_us(wait_us);
+  }
+  next_vsync_us += FRAME_DELAY_US;
+  if (now_us > next_vsync_us) {
+    next_vsync_us = now_us;
+  }
+  return delaying;
 }
 
 static void apu_dma_handler() {
-    speaker.flip_buffer();
-    apu_fill_buffer(speaker.get_next_buffer());
+  speaker.flip_buffer();
+  apu_fill_buffer(speaker.get_next_buffer());
 }
 
 static void apu_fill_buffer(PwmAudio::sample_t *buff) {
-    nes::apu::service(spk_buff, speaker.LATENCY);
-    for (int i = 0; i < speaker.LATENCY; i++) {
-        buff[i] = spk_buff[i];
-    }
+  nes::apu::service(spk_buff, speaker.LATENCY);
+  for (int i = 0; i < speaker.LATENCY; i++) {
+    buff[i] = spk_buff[i];
+  }
 }
 
 void nes::lock_init(int id) {
-    lock_hws[id] = spin_lock_init(id);
-    spin_lock_claim(id);
+  lock_hws[id] = spin_lock_init(id);
+  spin_lock_claim(id);
 }
 void nes::lock_deinit(int id) { spin_lock_unclaim(id); }
 void nes::lock_get(int id) { lock_irqs[id] = spin_lock_blocking(lock_hws[id]); }

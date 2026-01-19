@@ -4,18 +4,17 @@
 #include <wx/wx.h>
 
 class FcScreen : public wxScrolledWindow {
-public:
-    FcScreen(wxFrame *parent, wxWindowID id);
-    void OnPaint(wxPaintEvent &event);
-    void OnKeyDown(wxKeyEvent &event);
-    void OnKeyUp(wxKeyEvent &event);
-    void Render();
+ public:
+  FcScreen(wxFrame *parent, wxWindowID id);
+  void OnPaint(wxPaintEvent &event);
+  void OnKeyDown(wxKeyEvent &event);
+  void OnKeyUp(wxKeyEvent &event);
+  void Render();
 
-private:
-    wxFrame *owner;
-    wxImage frame_buff;
-    DECLARE_EVENT_TABLE();
+ private:
+  wxFrame *owner;
+  wxImage frame_buff;
+  DECLARE_EVENT_TABLE();
 };
-
 
 #endif
