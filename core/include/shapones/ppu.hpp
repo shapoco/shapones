@@ -30,7 +30,6 @@ static constexpr int PALETTE_FILE_SIZE_WITH_MIRROR = 0x100;
 static constexpr uint8_t OPAQUE_FLAG = 0x80;
 static constexpr uint8_t BEHIND_FLAG = 0x40;
 
-static constexpr addr_t CHRROM_BASE = 0x0000;
 static constexpr addr_t VRAM_BASE = 0x2000;
 static constexpr addr_t VRAM_MIRROR_BASE = 0x3000;
 static constexpr addr_t VRAM_MIRROR_SIZE = 0xf00;
@@ -156,9 +155,12 @@ uint32_t service(uint8_t *line_buff, bool skip_render = false,
 
 cycle_t cycle_following();
 
+// todo: delete
+#if 0
 void mmc3_irq_set_enable(bool enable);
 void mmc3_irq_set_reload();
 void mmc3_irq_set_latch(uint8_t data);
+#endif
 
 }  // namespace nes::ppu
 

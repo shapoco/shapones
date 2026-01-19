@@ -13,8 +13,6 @@ static constexpr addr_t PPUREG_BASE = 0x2000;
 static constexpr addr_t OAM_DMA_REG = 0x4014;
 static constexpr addr_t INPUT_REG_0 = 0x4016;
 static constexpr addr_t INPUT_REG_1 = 0x4017;
-static constexpr addr_t PRGRAM_BASE = 0x6000;
-static constexpr addr_t PRGROM_BASE = 0x8000;
 
 static constexpr addr_t VEC_NMI = 0xfffa;
 static constexpr addr_t VEC_RESET = 0xfffc;

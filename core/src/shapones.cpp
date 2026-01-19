@@ -24,6 +24,8 @@ void reset() {
   apu::reset();
 }
 
+void stop() { cpu::stop(); }
+
 uint32_t render_next_line(uint8_t *line_buff, bool skip_render) {
   uint32_t timing;
   do {

@@ -52,6 +52,7 @@ void FcFrame::OnTimer(wxTimerEvent &event) { screen->Render(); }
 
 void FcFrame::OnClose(wxCloseEvent &event) {
   nes_audio::stop();
+  nes::deinit();
   event.Skip();
 }
 

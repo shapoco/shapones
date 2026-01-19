@@ -64,10 +64,7 @@
                 "${workspaceFolder}/samples/pico_ws19804/build/pico2",
                 "${workspaceFolder}/samples/pico_ws19804/build/pico2/generated/pico_base"
             ],
-            "defines": [
-                "FIXBROT_ITER_12BIT=1",
-                "FIXBROT_ARGB4444_BSWAP=1"
-            ],
+            "defines": [],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c17",
             "cppStandard": "gnu++17",

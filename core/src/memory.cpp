@@ -11,6 +11,21 @@ uint8_t vram[VRAM_SIZE];
 addr_t vram_addr_and = VRAM_SIZE - 1;
 addr_t vram_addr_or = 0;
 
+uint8_t *prgram = nullptr;
+const uint8_t *prgrom;
+const uint8_t *chrrom;
+
+int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
+int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
+
+addr_t prgram_addr_mask;
+uint32_t prgrom_phys_size;
+uint32_t prgrom_phys_addr_mask;
+uint32_t chrrom_phys_size;
+uint32_t chrrom_phys_addr_mask;
+addr_t prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
+addr_t vram_addr_mask = VRAM_SIZE - 1;
+
 bool map_ines(const uint8_t *ines) {
   // iNES file format
   // https://www.nesdev.org/wiki/INES
@@ -19,6 +34,33 @@ bool map_ines(const uint8_t *ines) {
   if (ines[0] != 0x4e && ines[1] != 0x45 && ines[2] != 0x53 &&
       ines[3] != 0x1a) {
     return false;
+  }
+
+  // Size of PRG ROM in 16 KB units
+  int num_prg_rom_pages = ines[4];
+  prgrom_phys_size = num_prg_rom_pages * PRGROM_PAGE_SIZE;
+  prgrom_phys_addr_mask = prgrom_phys_size - 1;
+  if (num_prg_rom_pages <= 1) {
+    prgrom_cpu_addr_mask = 0x3fff;
+  } else {
+    prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
+  }
+  SHAPONES_PRINTF("Number of PRGROM pages = %d (%dkB)\n", num_prg_rom_pages,
+                  prgrom_phys_size / 1024);
+
+  // Size of CHR ROM in 8 KB units
+  int num_chr_rom_pages = ines[5];
+  chrrom_phys_size = num_chr_rom_pages * CHRROM_PAGE_SIZE;
+  chrrom_phys_addr_mask = chrrom_phys_size - 1;
+  SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB)\n", num_chr_rom_pages,
+                  chrrom_phys_size / 1024);
+
+  prgram_addr_mask = 0;
+  for (int i = 0; i < PRGROM_REMAP_TABLE_SIZE; i++) {
+    prgrom_remap_table[i] = i;
+  }
+  for (int i = 0; i < CHRROM_REMAP_TABLE_SIZE; i++) {
+    chrrom_remap_table[i] = i;
   }
 
   uint8_t flags6 = ines[6];
@@ -53,14 +95,32 @@ bool map_ines(const uint8_t *ines) {
                       static_cast<int>(mode));
       break;
   }
-  set_nametable_mirroring(mode);
+  set_nametable_arrangement(mode);
+
+  int prgram_size = ines[8] * 8192;
+  if (prgram_size == 0) {
+    prgram_size = 8192;  // 8KB PRG RAM if not specified
+  }
+  SHAPONES_PRINTF("PRG RAM size = %d kB\n", prgram_size / 1024);
+  prgram = new uint8_t[prgram_size];
+  prgram_addr_mask = prgram_size - 1;
+
+  // 512-byte trainer at $7000-$71FF (stored before PRG data)
+  bool has_trainer = (flags6 & 0x2) != 0;
+
+  int start_of_prg_rom = 0x10;
+  if (has_trainer) start_of_prg_rom += 0x200;
+  prgrom = ines + start_of_prg_rom;
+
+  int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
+  chrrom = ines + start_of_chr_rom;
 
   mapper::init(ines);
 
   return true;
 }
 
-void set_nametable_mirroring(NametableArrangement mode) {
+void set_nametable_arrangement(NametableArrangement mode) {
   switch (mode) {
     case NametableArrangement::FOUR_SCREEN:
       vram_addr_and = VRAM_SIZE - 1;

@@ -23,12 +23,14 @@ volatile cycle_t ppu_cycle_count;
 
 uint8_t bus_read(addr_t addr) {
   uint8_t retval;
-  if (PRGROM_BASE <= addr && addr < PRGROM_BASE + PRGROM_RANGE) {
-    retval = mapper::prgrom_read(addr - PRGROM_BASE);
+  if (memory::PRGROM_BASE <= addr &&
+      addr < memory::PRGROM_BASE + PRGROM_RANGE) {
+    retval = memory::prgrom_read(addr - memory::PRGROM_BASE);
   } else if (WRAM_BASE <= addr && addr < WRAM_BASE + WRAM_SIZE) {
     retval = memory::wram[addr - WRAM_BASE];
-  } else if (PRGRAM_BASE <= addr && addr < PRGRAM_BASE + PRGRAM_RANGE) {
-    retval = mapper::prgram_read(addr - PRGRAM_BASE);
+  } else if (memory::PRGRAM_BASE <= addr &&
+             addr < memory::PRGRAM_BASE + PRGRAM_RANGE) {
+    retval = memory::prgram_read(addr - memory::PRGRAM_BASE);
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     retval = ppu::reg_read(addr);
   } else if (INPUT_REG_0 <= addr && addr <= INPUT_REG_1) {
@@ -44,8 +46,9 @@ uint8_t bus_read(addr_t addr) {
 void bus_write(addr_t addr, uint8_t data) {
   if (WRAM_BASE <= addr && addr < WRAM_BASE + WRAM_SIZE) {
     memory::wram[addr - WRAM_BASE] = data;
-  } else if (PRGRAM_BASE <= addr && addr < PRGRAM_BASE + PRGRAM_RANGE) {
-    mapper::prgram_write(addr - PRGRAM_BASE, data);
+  } else if (memory::PRGRAM_BASE <= addr &&
+             addr < memory::PRGRAM_BASE + PRGRAM_RANGE) {
+    memory::prgram_write(addr - memory::PRGRAM_BASE, data);
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     ppu::reg_write(addr, data);
   } else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_DMC_REG3 ||
@@ -58,7 +61,7 @@ void bus_write(addr_t addr, uint8_t data) {
   } else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + WRAM_SIZE) {
     memory::wram[addr - WRAM_MIRROR_BASE] = data;
   } else {
-    mapper::ext_write(addr, data);
+    mapper::instance->write(addr, data);
   }
 }
 

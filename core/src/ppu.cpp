@@ -1,4 +1,5 @@
 #include "shapones/ppu.hpp"
+#include "shapones/cpu.hpp"
 #include "shapones/interrupt.hpp"
 #include "shapones/mapper.hpp"
 #include "shapones/memory.hpp"
@@ -30,10 +31,13 @@ static OamEntry oam[MAX_SPRITE_COUNT];
 static SpriteLine sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
+// todo: delete
+#if 0
 static volatile bool mmc3_irq_enable = false;
 static volatile bool mmc3_irq_reloading = false;
 static volatile uint8_t mmc3_irq_latch = 255;
 static volatile uint8_t mmc3_irq_counter = 0;
+#endif
 
 static uint8_t bus_read(addr_t addr);
 static void bus_write(addr_t addr, uint8_t data);
@@ -173,9 +177,10 @@ void oam_dma_write(addr_t offset, uint8_t data) {
 }
 
 static SHAPONES_INLINE uint8_t bus_read(addr_t addr) {
-  if (CHRROM_BASE <= addr && addr < CHRROM_BASE + CHRROM_RANGE) {
+  if (memory::CHRROM_BASE <= addr &&
+      addr < memory::CHRROM_BASE + CHRROM_RANGE) {
     bus_read_data_delayed = bus_read_data_latest;
-    bus_read_data_latest = mapper::chrrom_read(addr - CHRROM_BASE);
+    bus_read_data_latest = memory::chrrom_read(addr - memory::CHRROM_BASE);
   } else if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
     bus_read_data_delayed = bus_read_data_latest;
     bus_read_data_latest = memory::vram_read(addr - VRAM_BASE);
@@ -312,7 +317,19 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
       render_sprite(line_buff, focus_x, next_focus_x, skip_render);
     }
 
-    if (mapper::get_id() == 4 && focus_y < SCREEN_HEIGHT) {
+    if (focus_y < SCREEN_HEIGHT) {
+      if (focus_x <= SCREEN_WIDTH && SCREEN_WIDTH < next_focus_x) {
+        mapper::instance->hblank(reg, focus_y);
+      }
+    } else {
+      if (focus_x == 0) {
+        mapper::instance->vblank(reg);
+      }
+    }
+
+// todo: delete
+#if 0
+    if (mapper::get_id() == 4 && focus_y < SCREEN_HEIGHT ) {
       // MMC3 IRQ counter clock
       // see: https://www.nesdev.org/wiki/MMC3
       if (focus_x <= 260 && next_focus_x > 260 && reg.mask.bg_enable &&
@@ -330,6 +347,7 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
         }
       }
     }
+#endif
 
     // step focus
     focus_x = next_focus_x;
@@ -419,25 +437,15 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
           uint32_t chr = 0xFFFFFFFF;
           const uint8_t *palette = nullptr;
           if (!skip_render) {
-#if SHAPONES_ENABLE_CHROM_CACHE
-            // read CHRROM
-            uint32_t chrrom_index0 = (name0 << 3) + fine_y;
-            uint32_t chrrom_index1 = (name1 << 3) + fine_y;
-            chrrom_index0 += bg_offset / 2;
-            chrrom_index1 += bg_offset / 2;
-            uint16_t chr0 = mapper::chrrom_read_cache(chrrom_index0, false);
-            uint16_t chr1 = mapper::chrrom_read_cache(chrrom_index1, false);
-#else
             // read CHRROM
             uint32_t chrrom_index0 = (name0 << 4) + fine_y;
             uint32_t chrrom_index1 = (name1 << 4) + fine_y;
             chrrom_index0 += bg_offset;
             chrrom_index1 += bg_offset;
             uint_fast16_t chr0 =
-                mapper::chrrom_read_double(chrrom_index0, false);
+                memory::chrrom_read_double(chrrom_index0, false);
             uint_fast16_t chr1 =
-                mapper::chrrom_read_double(chrrom_index1, false);
-#endif
+                memory::chrrom_read_double(chrrom_index1, false);
             chr = ((uint32_t)chr1 << 16) | (uint32_t)chr0;
 
             // adjust CHR bit pos
@@ -593,17 +601,10 @@ static void enum_visible_sprites(bool skip_render) {
             tile_index += 0x1000 / 16;
           }
         }
-#if SHAPONES_ENABLE_CHROM_CACHE
-        // read CHRROM
-        int chrrom_index = (tile_index << 3) + (src_y & 0x7);
-        chr =
-            mapper::chrrom_read_cache(chrrom_index, s.attr & OAM_ATTR_INVERT_H);
-#else
         // read CHRROM
         int chrrom_index = (tile_index << 4) + (src_y & 0x7);
-        chr = mapper::chrrom_read_double(chrrom_index,
+        chr = memory::chrrom_read_double(chrrom_index,
                                          s.attr & OAM_ATTR_INVERT_H);
-#endif
       }
 
       // store sprite information
@@ -654,6 +655,8 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
   }
 }
 
+// todo: delete
+#if 0
 void mmc3_irq_set_enable(bool enable) {
   bool enable_old = mmc3_irq_enable;
   if (enable && !enable_old) {
@@ -666,5 +669,6 @@ void mmc3_irq_set_enable(bool enable) {
 void mmc3_irq_set_reload() { mmc3_irq_reloading = true; }
 
 void mmc3_irq_set_latch(uint8_t data) { mmc3_irq_latch = data; }
+#endif
 
 }  // namespace nes::ppu

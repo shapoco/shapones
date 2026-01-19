@@ -43,7 +43,7 @@ using int_fast32_t = int32_t;
     printf("*ERROR: ");                          \
     printf(fmt, ##__VA_ARGS__);                  \
     fflush(stdout);                              \
-    nes::cpu::stop();                            \
+    nes::stop();                            \
   } while (0)
 
 #else
@@ -54,17 +54,13 @@ using int_fast32_t = int32_t;
 
 #define SHAPONES_ERRORF(fmt, ...) \
   do {                            \
-    nes::cpu::stop();             \
+    nes::stop();             \
   } while (0)
 
 #endif
 
 #define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
-
-#ifndef SHAPONES_ENABLE_CHROM_CACHE
-#define SHAPONES_ENABLE_CHROM_CACHE (0)
-#endif
 
 #ifndef SHAPONES_MUTEX_FAST
 #define SHAPONES_MUTEX_FAST (0)
@@ -100,6 +96,8 @@ enum class NametableArrangement : uint8_t {
   SINGLE_UPPER = 3,
   FOUR_SCREEN = 4,
 };
+
+void stop();
 
 void lock_init(int id);
 void lock_deinit(int id);

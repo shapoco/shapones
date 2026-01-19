@@ -373,15 +373,14 @@ static bool disp_wait_vsync() {
   constexpr uint32_t FRAME_INTERVAL_US = 1000000 / 60;
   uint64_t now_us = Time64();
   int64_t wait_us = disp_next_vsync_us - now_us;
-  bool delaying = (wait_us <= 0);
-  if (!delaying) {
+  if (wait_us > 0) {
     WaitUs(wait_us);
   }
   disp_next_vsync_us += FRAME_INTERVAL_US;
   if (now_us > disp_next_vsync_us) {
     disp_next_vsync_us = now_us;
   }
-  return delaying;
+  return wait_us <= -5000;
 }
 
 static const uint8_t *sound_refill() {

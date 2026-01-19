@@ -56,7 +56,7 @@ using int_fast32_t = int32_t;
     printf("*ERROR: ");                          \
     printf(fmt, ##__VA_ARGS__);                  \
     fflush(stdout);                              \
-    nes::cpu::stop();                            \
+    nes::stop();                            \
   } while (0)
 
 #else
@@ -67,17 +67,13 @@ using int_fast32_t = int32_t;
 
 #define SHAPONES_ERRORF(fmt, ...) \
   do {                            \
-    nes::cpu::stop();             \
+    nes::stop();             \
   } while (0)
 
 #endif
 
 #define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
-
-#ifndef SHAPONES_ENABLE_CHROM_CACHE
-#define SHAPONES_ENABLE_CHROM_CACHE (0)
-#endif
 
 #ifndef SHAPONES_MUTEX_FAST
 #define SHAPONES_MUTEX_FAST (0)
@@ -113,6 +109,8 @@ enum class NametableArrangement : uint8_t {
   SINGLE_UPPER = 3,
   FOUR_SCREEN = 4,
 };
+
+void stop();
 
 void lock_init(int id);
 void lock_deinit(int id);
@@ -267,8 +265,6 @@ static constexpr addr_t PPUREG_BASE = 0x2000;
 static constexpr addr_t OAM_DMA_REG = 0x4014;
 static constexpr addr_t INPUT_REG_0 = 0x4016;
 static constexpr addr_t INPUT_REG_1 = 0x4017;
-static constexpr addr_t PRGRAM_BASE = 0x6000;
-static constexpr addr_t PRGROM_BASE = 0x8000;
 
 static constexpr addr_t VEC_NMI = 0xfffa;
 static constexpr addr_t VEC_RESET = 0xfffc;
@@ -448,8 +444,6 @@ bool is_nmi_asserted();
 
 // #include "shapones/common.hpp"
 
-// #include "shapones/cpu.hpp"
-
 // #include "shapones/ppu.hpp"
 
 #ifndef SHAPONES_PPU_HPP
@@ -485,7 +479,6 @@ static constexpr int PALETTE_FILE_SIZE_WITH_MIRROR = 0x100;
 static constexpr uint8_t OPAQUE_FLAG = 0x80;
 static constexpr uint8_t BEHIND_FLAG = 0x40;
 
-static constexpr addr_t CHRROM_BASE = 0x0000;
 static constexpr addr_t VRAM_BASE = 0x2000;
 static constexpr addr_t VRAM_MIRROR_BASE = 0x3000;
 static constexpr addr_t VRAM_MIRROR_SIZE = 0xf00;
@@ -611,15 +604,51 @@ uint32_t service(uint8_t *line_buff, bool skip_render = false,
 
 cycle_t cycle_following();
 
+// todo: delete
+#if 0
 void mmc3_irq_set_enable(bool enable);
 void mmc3_irq_set_reload();
 void mmc3_irq_set_latch(uint8_t data);
+#endif
 
 }  // namespace nes::ppu
 
 #endif
 
 namespace nes::mapper {
+
+class Mapper {
+ public:
+  const int number;
+  const char *name;
+
+  Mapper(int number, const char *name) : number(number), name(name) {}
+
+  virtual void init() {}
+  virtual void reset() {}
+  virtual bool vblank(const nes::ppu::Registers &reg) { return false; }
+  virtual bool hblank(const nes::ppu::Registers &reg, int y) { return false; }
+  virtual uint8_t read(addr_t addr) { return 0; }
+  virtual void write(addr_t addr, uint8_t value) {}
+};
+
+extern Mapper *instance;
+
+void init(const uint8_t *ines);
+
+void deinit();
+
+}  // namespace nes::mapper
+
+#endif// #include "shapones/memory.hpp"
+
+#ifndef SHAPONES_MEMORY_HPP
+#define SHAPONES_MEMORY_HPP
+
+// #include "shapones/common.hpp"
+
+
+namespace nes::memory {
 
 static constexpr int PRGROM_PAGE_SIZE = 16384;
 static constexpr int CHRROM_PAGE_SIZE = 8192;
@@ -631,6 +660,10 @@ static constexpr int PRGROM_REMAP_TABLE_SIZE = PRGROM_RANGE / PRGROM_BLOCK_SIZE;
 static constexpr int CHRROM_BLOCK_ADDR_BITS = 10;
 static constexpr int CHRROM_BLOCK_SIZE = 1 << CHRROM_BLOCK_ADDR_BITS;
 static constexpr int CHRROM_REMAP_TABLE_SIZE = CHRROM_RANGE / CHRROM_BLOCK_SIZE;
+
+static constexpr addr_t CHRROM_BASE = 0x0000;
+static constexpr addr_t PRGRAM_BASE = 0x6000;
+static constexpr addr_t PRGROM_BASE = 0x8000;
 
 static constexpr uint16_t expfwd(uint8_t val) {
   uint_fast16_t tmp = val;
@@ -688,20 +721,17 @@ static const uint16_t EXPAND_REV_TABLE[] = {
 };
 // clang-format on
 
-extern int id;
+extern uint8_t wram[WRAM_SIZE];
+extern uint8_t vram[VRAM_SIZE];
+extern addr_t vram_addr_and;
+extern addr_t vram_addr_or;
 
 extern const uint8_t *prgrom;
 extern const uint8_t *chrrom;
-
 extern uint8_t *prgram;
 
 extern int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
 extern int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
-
-#if SHAPONES_ENABLE_CHROM_CACHE
-extern uint16_t *chrrom_reordered0;
-extern uint16_t *chrrom_reordered1;
-#endif
 
 extern addr_t prgram_addr_mask;
 extern uint32_t prgrom_phys_size;
@@ -709,11 +739,19 @@ extern uint32_t prgrom_phys_addr_mask;
 extern uint32_t chrrom_phys_size;
 extern uint32_t chrrom_phys_addr_mask;
 
-static SHAPONES_INLINE int get_id() { return id; }
+bool map_ines(const uint8_t *ines);
+
+static SHAPONES_INLINE uint8_t vram_read(addr_t addr) {
+  return vram[(addr & vram_addr_and) | vram_addr_or];
+}
+
+static SHAPONES_INLINE void vram_write(addr_t addr, uint8_t value) {
+  vram[(addr & vram_addr_and) | vram_addr_or] = value;
+}
 
 static SHAPONES_INLINE void prgrom_remap(addr_t cpu_base, uint32_t phys_base,
                                          uint32_t size) {
-  uint32_t cpu_block = (cpu_base - cpu::PRGROM_BASE) >> PRGROM_BLOCK_ADDR_BITS;
+  uint32_t cpu_block = (cpu_base - PRGROM_BASE) >> PRGROM_BLOCK_ADDR_BITS;
   uint32_t phys_block = phys_base >> PRGROM_BLOCK_ADDR_BITS;
   uint32_t num_blocks = size >> PRGROM_BLOCK_ADDR_BITS;
   for (int i = 0; i < num_blocks; i++) {
@@ -723,7 +761,7 @@ static SHAPONES_INLINE void prgrom_remap(addr_t cpu_base, uint32_t phys_base,
 
 static SHAPONES_INLINE void chrrom_remap(addr_t ppu_base, uint32_t phys_base,
                                          uint32_t size) {
-  uint32_t ppu_block = (ppu_base - ppu::CHRROM_BASE) >> CHRROM_BLOCK_ADDR_BITS;
+  uint32_t ppu_block = (ppu_base - CHRROM_BASE) >> CHRROM_BLOCK_ADDR_BITS;
   uint32_t phys_block = phys_base >> CHRROM_BLOCK_ADDR_BITS;
   uint32_t num_blocks = size >> CHRROM_BLOCK_ADDR_BITS;
   for (int i = 0; i < num_blocks; i++) {
@@ -755,20 +793,6 @@ static SHAPONES_INLINE uint8_t chrrom_read(addr_t addr) {
   return chrrom[phys_addr & chrrom_phys_addr_mask];
 }
 
-#if SHAPONES_ENABLE_CHROM_CACHE
-static SHAPONES_INLINE uint16_t chrrom_read_cache(addr_t addr, bool invert) {
-  uint32_t ppu_block =
-      (addr & (CHRROM_RANGE / 2 - 1)) >> (CHRROM_BLOCK_ADDR_BITS - 1);
-  uint32_t phys_block = chrrom_remap_table[ppu_block];
-  uint32_t phys_addr = (phys_block << (CHRROM_BLOCK_ADDR_BITS - 1)) +
-                       (addr & (CHRROM_BLOCK_SIZE / 2 - 1));
-  if (invert) {
-    return chrrom_reordered1[phys_addr & (chrrom_phys_addr_mask >> 1)];
-  } else {
-    return chrrom_reordered0[phys_addr & (chrrom_phys_addr_mask >> 1)];
-  }
-}
-#else
 static SHAPONES_INLINE uint_fast16_t chrrom_read_double(addr_t addr,
                                                         bool reverse) {
   uint32_t ppu_block = (addr & (CHRROM_RANGE - 1)) >> CHRROM_BLOCK_ADDR_BITS;
@@ -784,41 +808,8 @@ static SHAPONES_INLINE uint_fast16_t chrrom_read_double(addr_t addr,
     return EXPAND_REV_TABLE[hi] | (EXPAND_REV_TABLE[lo] >> 1);
   }
 }
-#endif
 
-void init(const uint8_t *ines);
-void ext_write(addr_t addr, uint8_t value);
-uint16_t *get_chrrom_cache(addr_t ppu_addr, bool reverse);
-void age_chrrom_cache();
-
-}  // namespace nes::mapper
-
-#endif// #include "shapones/memory.hpp"
-
-#ifndef SHAPONES_MEMORY_HPP
-#define SHAPONES_MEMORY_HPP
-
-// #include "shapones/common.hpp"
-
-
-namespace nes::memory {
-
-extern uint8_t wram[WRAM_SIZE];
-extern uint8_t vram[VRAM_SIZE];
-extern addr_t vram_addr_and;
-extern addr_t vram_addr_or;
-
-bool map_ines(const uint8_t *ines);
-
-static SHAPONES_INLINE uint8_t vram_read(addr_t addr) {
-  return vram[(addr & vram_addr_and) | vram_addr_or];
-}
-
-static SHAPONES_INLINE void vram_write(addr_t addr, uint8_t value) {
-  vram[(addr & vram_addr_and) | vram_addr_or] = value;
-}
-
-void set_nametable_mirroring(NametableArrangement mode);
+void set_nametable_arrangement(NametableArrangement mode);
 
 }  // namespace nes::memory
 
@@ -1455,12 +1446,14 @@ volatile cycle_t ppu_cycle_count;
 
 uint8_t bus_read(addr_t addr) {
   uint8_t retval;
-  if (PRGROM_BASE <= addr && addr < PRGROM_BASE + PRGROM_RANGE) {
-    retval = mapper::prgrom_read(addr - PRGROM_BASE);
+  if (memory::PRGROM_BASE <= addr &&
+      addr < memory::PRGROM_BASE + PRGROM_RANGE) {
+    retval = memory::prgrom_read(addr - memory::PRGROM_BASE);
   } else if (WRAM_BASE <= addr && addr < WRAM_BASE + WRAM_SIZE) {
     retval = memory::wram[addr - WRAM_BASE];
-  } else if (PRGRAM_BASE <= addr && addr < PRGRAM_BASE + PRGRAM_RANGE) {
-    retval = mapper::prgram_read(addr - PRGRAM_BASE);
+  } else if (memory::PRGRAM_BASE <= addr &&
+             addr < memory::PRGRAM_BASE + PRGRAM_RANGE) {
+    retval = memory::prgram_read(addr - memory::PRGRAM_BASE);
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     retval = ppu::reg_read(addr);
   } else if (INPUT_REG_0 <= addr && addr <= INPUT_REG_1) {
@@ -1476,8 +1469,9 @@ uint8_t bus_read(addr_t addr) {
 void bus_write(addr_t addr, uint8_t data) {
   if (WRAM_BASE <= addr && addr < WRAM_BASE + WRAM_SIZE) {
     memory::wram[addr - WRAM_BASE] = data;
-  } else if (PRGRAM_BASE <= addr && addr < PRGRAM_BASE + PRGRAM_RANGE) {
-    mapper::prgram_write(addr - PRGRAM_BASE, data);
+  } else if (memory::PRGRAM_BASE <= addr &&
+             addr < memory::PRGRAM_BASE + PRGRAM_RANGE) {
+    memory::prgram_write(addr - memory::PRGRAM_BASE, data);
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     ppu::reg_write(addr, data);
   } else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_DMC_REG3 ||
@@ -1490,7 +1484,7 @@ void bus_write(addr_t addr, uint8_t data) {
   } else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + WRAM_SIZE) {
     memory::wram[addr - WRAM_MIRROR_BASE] = data;
   } else {
-    mapper::ext_write(addr, data);
+    mapper::instance->write(addr, data);
   }
 }
 
@@ -2401,315 +2395,301 @@ bool is_nmi_asserted() { return nmi; }
 // #include "shapones/memory.hpp"
 
 
+#define SHAPONES_MAPPER_IMPLEMENTATION
+// #include "shapones/mappers/map000.hpp"
+
+#ifndef SHAPONES_MAP000_HPP
+#define SHAPONES_MAP000_HPP
+
+// #include "shapones/mapper.hpp"
+
+
+namespace nes::mapper {
+
+class Map000 : public Mapper {
+ public:
+  Map000() : Mapper(0, "NROM") {}
+};
+
+}  // namespace nes::mapper
+
+#endif
+// #include "shapones/mappers/map001.hpp"
+
+#ifndef SHAPONES_MAP001_HPP
+#define SHAPONES_MAP001_HPP
+
+// #include "shapones/mapper.hpp"
+
+// #include "shapones/memory.hpp"
+
+
+namespace nes::mapper {
+
+using namespace nes::memory;
+
+class Map001 : public Mapper {
+ private:
+  uint8_t shift_reg = 0b10000;
+  uint8_t ctrl_reg = 0;
+  uint8_t chr_bank0 = 0;
+  uint8_t chr_bank1 = 0;
+  uint8_t prg_bank = 0;
+
+ public:
+  Map001() : Mapper(1, "MMC1") {}
+
+  void write(addr_t addr, uint8_t value) override {
+    bool remap = false;
+    if (value & 0x80) {
+      shift_reg = 0b10000;
+      ctrl_reg |= 0x0C;
+      remap = true;
+    } else {
+      bool shift = !(shift_reg & 0x01);
+      uint8_t val = (shift_reg >> 1) | ((value & 0x01) << 4);
+      if (shift) {
+        shift_reg = val;
+      } else {
+        shift_reg = 0b10000;
+        switch (addr & 0x6000) {
+          default:
+          case 0x0000: ctrl_reg = val; break;
+          case 0x2000: chr_bank0 = val; break;
+          case 0x4000: chr_bank1 = val; break;
+          case 0x6000: prg_bank = val; break;
+        }
+        remap = true;
+      }
+    }
+
+    if (remap) {
+      switch (ctrl_reg & 0x03) {
+        default:
+        case 0:
+          set_nametable_arrangement(NametableArrangement::SINGLE_LOWER);
+          break;
+        case 1:
+          set_nametable_arrangement(NametableArrangement::SINGLE_UPPER);
+          break;
+        case 2:
+          set_nametable_arrangement(NametableArrangement::HORIZONTAL);
+          break;
+        case 3: set_nametable_arrangement(NametableArrangement::VERTICAL); break;
+      }
+
+      switch (ctrl_reg & 0x0C) {
+        default:
+        case 0x00:
+        case 0x04: prgrom_remap(0x8000, (prg_bank & 0x0E) << 14, 0x8000); break;
+        case 0x08:
+          prgrom_remap(0x8000, 0, 0x4000);
+          prgrom_remap(0xC000, (prg_bank & 0x0F) << 14, 0x4000);
+          break;
+        case 0x0C:
+          prgrom_remap(0x8000, (prg_bank & 0x0F) << 14, 0x4000);
+          prgrom_remap(0xC000, prgrom_phys_size - 0x4000, 0x4000);
+          break;
+      }
+
+      if ((ctrl_reg & 0x10) == 0) {
+        chrrom_remap(0x0000, (chr_bank0 & 0x1E) << 12, 0x2000);
+      } else {
+        chrrom_remap(0x0000, (chr_bank0 & 0x1F) << 12, 0x1000);
+        chrrom_remap(0x1000, (chr_bank1 & 0x1F) << 12, 0x1000);
+      }
+    }
+  }
+};
+
+}  // namespace nes::mapper
+
+#endif
+// #include "shapones/mappers/map003.hpp"
+
+#ifndef SHAPONES_MAP003_HPP
+#define SHAPONES_MAP003_HPP
+
+// #include "shapones/mapper.hpp"
+
+// #include "shapones/memory.hpp"
+
+
+namespace nes::mapper {
+
+using namespace nes::memory;
+
+class Map003 : public Mapper {
+ public:
+  Map003() : Mapper(3, "CNROM") {}
+
+  void write(addr_t addr, uint8_t value) override {
+    if (0x8000 <= addr && addr <= 0xffff) {
+      chrrom_remap(0x0000, (value & 0x3) * 0x2000, 0x2000);
+    }
+  }
+};
+
+}  // namespace nes::mapper
+
+#endif
+// #include "shapones/mappers/map004.hpp"
+
+#ifndef SHAPONES_MAP004_HPP
+#define SHAPONES_MAP004_HPP
+
+// #include "shapones/interrupt.hpp"
+
+// #include "shapones/mapper.hpp"
+
+// #include "shapones/memory.hpp"
+
+
+namespace nes::mapper {
+
+using namespace nes::memory;
+
+class Map004 : public Mapper {
+ private:
+  uint8_t reg_sel;
+  uint8_t map_reg[8];
+
+  volatile bool irq_enable = false;
+  volatile bool irq_reloading = false;
+  volatile uint8_t irq_latch = 255;
+  volatile uint8_t irq_counter = 0;
+
+ public:
+  Map004() : Mapper(4, "MMC3") {}
+
+  void init() override { prgrom_remap(0xE000, prgrom_phys_size - 8192, 8192); }
+
+  void write(addr_t addr, uint8_t value) override {
+    if (0x8000 <= addr && addr <= 0x9FFF) {
+      if ((addr & 0x0001) == 0) {
+        reg_sel = value;
+      } else {
+        int ireg = reg_sel & 0x07;
+        if (ireg <= 1) {
+          value &= 0xfe;  // ignore LSB for 2KB bank
+        }
+        map_reg[ireg] = value;
+      }
+
+      constexpr int pbs = 8192;
+      prgrom_remap(0xA000, map_reg[7] * pbs, pbs);
+      if ((reg_sel & 0x40) == 0) {
+        prgrom_remap(0x8000, map_reg[6] * pbs, pbs);
+        prgrom_remap(0xC000, prgrom_phys_size - pbs * 2, pbs);
+      } else {
+        prgrom_remap(0x8000, prgrom_phys_size - pbs * 2, pbs);
+        prgrom_remap(0xC000, map_reg[6] * pbs, pbs);
+      }
+
+      constexpr int cbs = 1024;
+      if ((reg_sel & 0x80) == 0) {
+        chrrom_remap(0x0000, map_reg[0] * cbs, cbs * 2);
+        chrrom_remap(0x0800, map_reg[1] * cbs, cbs * 2);
+        chrrom_remap(0x1000, map_reg[2] * cbs, cbs);
+        chrrom_remap(0x1400, map_reg[3] * cbs, cbs);
+        chrrom_remap(0x1800, map_reg[4] * cbs, cbs);
+        chrrom_remap(0x1C00, map_reg[5] * cbs, cbs);
+      } else {
+        chrrom_remap(0x0000, map_reg[2] * cbs, cbs);
+        chrrom_remap(0x0400, map_reg[3] * cbs, cbs);
+        chrrom_remap(0x0800, map_reg[4] * cbs, cbs);
+        chrrom_remap(0x0C00, map_reg[5] * cbs, cbs);
+        chrrom_remap(0x1000, map_reg[0] * cbs, cbs * 2);
+        chrrom_remap(0x1800, map_reg[1] * cbs, cbs * 2);
+      }
+    } else if (0xA000 <= addr && addr <= 0xBFFF) {
+      if ((addr & 0x0001) == 0) {
+        if ((value & 0x01) == 0) {
+          set_nametable_arrangement(NametableArrangement::HORIZONTAL);
+        } else {
+          set_nametable_arrangement(NametableArrangement::VERTICAL);
+        }
+      } else {
+        // PRG RAM protect
+        // TODO
+      }
+    } else if (0xC000 <= addr && addr <= 0xDFFF) {
+      if ((addr & 0x0001) == 0) {
+        // IRQ latch
+        irq_latch = value;
+      } else {
+        // IRQ reload
+        irq_reloading = true;
+      }
+    } else if (0xE000 <= addr && addr <= 0xFFFF) {
+      bool enable_old = irq_enable;
+      bool enable_new = !!(addr & 0x0001);
+      if (!enable_new && enable_old) {
+        interrupt::deassert_irq(interrupt::Source::MMC3);
+      }
+      irq_enable = enable_new;
+    }
+  }
+
+  bool hblank(const nes::ppu::Registers &reg, int y) override {
+    bool irq = false;
+    if (reg.mask.bg_enable && reg.mask.sprite_enable) {
+      uint8_t irq_counter_before = irq_counter;
+      if (irq_counter == 0 || irq_reloading) {
+        irq_reloading = false;
+        irq_counter = irq_latch;
+      } else {
+        irq_counter--;
+      }
+      if (irq_enable && irq_counter == 0) {
+        interrupt::assert_irq(interrupt::Source::MMC3);
+        irq = true;
+      }
+    }
+    return irq;
+  }
+};
+
+}  // namespace nes::mapper
+
+#endif
+
 // #pragma GCC optimize("Ofast")
 
 
 namespace nes::mapper {
 
-int id;
-
-uint8_t *prgram = nullptr;
-const uint8_t *prgrom;
-const uint8_t *chrrom;
-
-int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
-int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
-
-#if SHAPONES_ENABLE_CHROM_CACHE
-uint16_t *chrrom_reordered0;
-uint16_t *chrrom_reordered1;
-#endif
-
-addr_t prgram_addr_mask;
-uint32_t prgrom_phys_size;
-uint32_t prgrom_phys_addr_mask;
-uint32_t chrrom_phys_size;
-uint32_t chrrom_phys_addr_mask;
-addr_t prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
-addr_t vram_addr_mask = VRAM_SIZE - 1;
-
-uint8_t map001_shift_reg = 0b10000;
-uint8_t map001_ctrl_reg = 0;
-uint8_t map001_chr_bank0 = 0;
-uint8_t map001_chr_bank1 = 0;
-uint8_t map001_prg_bank = 0;
-
-uint8_t map004_reg_sel;
-uint8_t map004_map_reg[8];
-
-static void map001_ext_write(addr_t addr, uint8_t value);
-static void map003_ext_write(addr_t addr, uint8_t value);
-static void map004_ext_write(addr_t addr, uint8_t value);
-
-static void reorder_chrrom_block(const uint8_t *src, uint16_t *dst_fwd,
-                                 uint16_t *dst_rev, int num_words);
+Mapper *instance = nullptr;
 
 void init(const uint8_t *ines) {
-  // Size of PRG ROM in 16 KB units
-  int num_prg_rom_pages = ines[4];
-  prgrom_phys_size = num_prg_rom_pages * PRGROM_PAGE_SIZE;
-  prgrom_phys_addr_mask = prgrom_phys_size - 1;
-  if (num_prg_rom_pages <= 1) {
-    prgrom_cpu_addr_mask = 0x3fff;
-  } else {
-    prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
-  }
-  SHAPONES_PRINTF("Number of PRGROM pages = %d (%dkB)\n", num_prg_rom_pages,
-                  prgrom_phys_size / 1024);
-
-  // Size of CHR ROM in 8 KB units
-  int num_chr_rom_pages = ines[5];
-  chrrom_phys_size = num_chr_rom_pages * CHRROM_PAGE_SIZE;
-  chrrom_phys_addr_mask = chrrom_phys_size - 1;
-  SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB)\n", num_chr_rom_pages,
-                  chrrom_phys_size / 1024);
-
   uint8_t flags6 = ines[6];
   uint8_t flags7 = ines[7];
 
-  id = (flags7 & 0xf0) | ((flags6 >> 4) & 0xf);
+  int id = (flags7 & 0xf0) | ((flags6 >> 4) & 0xf);
   SHAPONES_PRINTF("Mapper No.%d\n", id);
 
-  // 512-byte trainer at $7000-$71FF (stored before PRG data)
-  bool has_trainer = (flags6 & 0x2) != 0;
-
-  prgram_addr_mask = 0;
-  for (int i = 0; i < PRGROM_REMAP_TABLE_SIZE; i++) {
-    prgrom_remap_table[i] = i;
-  }
-  for (int i = 0; i < CHRROM_REMAP_TABLE_SIZE; i++) {
-    chrrom_remap_table[i] = i;
+  if (instance) {
+    delete instance;
+    instance = nullptr;
   }
   switch (id) {
-    case 0: break;
-    case 1: break;
-    case 3: break;
-    case 4: prgrom_remap(0xE000, prgrom_phys_size - 8192, 8192); break;
-    default: SHAPONES_ERRORF("Unsupported Mapper Number\n"); break;
+    case 0: instance = new Map000(); break;
+    case 1: instance = new Map001(); break;
+    case 3: instance = new Map003(); break;
+    case 4: instance = new Map004(); break;
+    default:
+      instance = new Map000();
+      SHAPONES_ERRORF("Unsupported Mapper Number\n");
+      break;
   }
-  SHAPONES_PRINTF("  CHRROM bank mask = 0x%x\n", chrrom_phys_addr_mask);
 
-  int prgram_size = ines[8] * 8192;
-  if (prgram_size == 0) {
-    prgram_size = 8192;  // 8KB PRG RAM if not specified
-  }
-  SHAPONES_PRINTF("PRG RAM size = %d kB\n", prgram_size / 1024);
-  prgram = new uint8_t[prgram_size];
-  prgram_addr_mask = prgram_size - 1;
-
-  int start_of_prg_rom = 0x10;
-  if (has_trainer) start_of_prg_rom += 0x200;
-  prgrom = ines + start_of_prg_rom;
-
-  int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
-  chrrom = ines + start_of_chr_rom;
-
-#if SHAPONES_ENABLE_CHROM_CACHE
-  // reorder CHRROM bits for fast access
-  int num_words = num_chr_rom_pages * (CHRROM_PAGE_SIZE / 2);
-  chrrom_reordered0 = new uint16_t[num_words];
-  chrrom_reordered1 = new uint16_t[num_words];
-  reorder_chrrom_block(chrrom, chrrom_reordered0, chrrom_reordered1, num_words);
-#endif
+  instance->init();
 }
 
-void ext_write(addr_t addr, uint8_t value) {
-  switch (id) {
-    case 1: map001_ext_write(addr, value); break;
-    case 3: map003_ext_write(addr, value); break;
-    case 4: map004_ext_write(addr, value); break;
-  }
-}
-
-// see: https://www.nesdev.org/wiki/INES_Mapper_001
-static void map001_ext_write(addr_t addr, uint8_t value) {
-  bool remap = false;
-  if (value & 0x80) {
-    map001_shift_reg = 0b10000;
-    map001_ctrl_reg |= 0x0C;
-    remap = true;
-  } else {
-    bool shift = !(map001_shift_reg & 0x01);
-    uint8_t val = (map001_shift_reg >> 1) | ((value & 0x01) << 4);
-    if (shift) {
-      map001_shift_reg = val;
-    } else {
-      map001_shift_reg = 0b10000;
-      switch (addr & 0x6000) {
-        default:
-        case 0x0000: map001_ctrl_reg = val; break;
-        case 0x2000: map001_chr_bank0 = val; break;
-        case 0x4000: map001_chr_bank1 = val; break;
-        case 0x6000: map001_prg_bank = val; break;
-      }
-      remap = true;
-    }
-  }
-
-  if (remap) {
-    switch (map001_ctrl_reg & 0x03) {
-      default:
-      case 0:
-        memory::set_nametable_mirroring(NametableArrangement::SINGLE_LOWER);
-        break;
-      case 1:
-        memory::set_nametable_mirroring(NametableArrangement::SINGLE_UPPER);
-        break;
-      case 2:
-        memory::set_nametable_mirroring(NametableArrangement::HORIZONTAL);
-        break;
-      case 3:
-        memory::set_nametable_mirroring(NametableArrangement::VERTICAL);
-        break;
-    }
-
-    switch (map001_ctrl_reg & 0x0C) {
-      default:
-      case 0x00:
-      case 0x04:
-        prgrom_remap(0x8000, (map001_prg_bank & 0x0E) << 14, 0x8000);
-        break;
-      case 0x08:
-        prgrom_remap(0x8000, 0, 0x4000);
-        prgrom_remap(0xC000, (map001_prg_bank & 0x0F) << 14, 0x4000);
-        break;
-      case 0x0C:
-        prgrom_remap(0x8000, (map001_prg_bank & 0x0F) << 14, 0x4000);
-        prgrom_remap(0xC000, prgrom_phys_size - 0x4000, 0x4000);
-        break;
-    }
-
-    if ((map001_ctrl_reg & 0x10) == 0) {
-      chrrom_remap(0x0000, (map001_chr_bank0 & 0x1E) << 12, 0x2000);
-    } else {
-      chrrom_remap(0x0000, (map001_chr_bank0 & 0x1F) << 12, 0x1000);
-      chrrom_remap(0x1000, (map001_chr_bank1 & 0x1F) << 12, 0x1000);
-    }
-  }
-}
-
-// see: https://www.nesdev.org/wiki/CNROM
-static void map003_ext_write(addr_t addr, uint8_t value) {
-  if (0x8000 <= addr && addr <= 0xffff) {
-    chrrom_remap(0x0000, (value & 0x3) * 0x2000, 0x2000);
-  }
-}
-
-// see: https://www.nesdev.org/wiki/MMC3
-static void map004_ext_write(addr_t addr, uint8_t value) {
-  if (0x8000 <= addr && addr <= 0x9FFF) {
-    if ((addr & 0x0001) == 0) {
-      map004_reg_sel = value;
-    } else {
-      int ireg = map004_reg_sel & 0x07;
-      if (ireg <= 1) {
-        value &= 0xfe;  // ignore LSB for 2KB bank
-      }
-      map004_map_reg[ireg] = value;
-    }
-
-    constexpr int pbs = 8192;
-    prgrom_remap(0xA000, map004_map_reg[7] * pbs, pbs);
-    if ((map004_reg_sel & 0x40) == 0) {
-      prgrom_remap(0x8000, map004_map_reg[6] * pbs, pbs);
-      prgrom_remap(0xC000, prgrom_phys_size - pbs * 2, pbs);
-    } else {
-      prgrom_remap(0x8000, prgrom_phys_size - pbs * 2, pbs);
-      prgrom_remap(0xC000, map004_map_reg[6] * pbs, pbs);
-    }
-
-    constexpr int cbs = 1024;
-    if ((map004_reg_sel & 0x80) == 0) {
-      chrrom_remap(0x0000, map004_map_reg[0] * cbs, cbs * 2);
-      chrrom_remap(0x0800, map004_map_reg[1] * cbs, cbs * 2);
-      chrrom_remap(0x1000, map004_map_reg[2] * cbs, cbs);
-      chrrom_remap(0x1400, map004_map_reg[3] * cbs, cbs);
-      chrrom_remap(0x1800, map004_map_reg[4] * cbs, cbs);
-      chrrom_remap(0x1C00, map004_map_reg[5] * cbs, cbs);
-    } else {
-      chrrom_remap(0x0000, map004_map_reg[2] * cbs, cbs);
-      chrrom_remap(0x0400, map004_map_reg[3] * cbs, cbs);
-      chrrom_remap(0x0800, map004_map_reg[4] * cbs, cbs);
-      chrrom_remap(0x0C00, map004_map_reg[5] * cbs, cbs);
-      chrrom_remap(0x1000, map004_map_reg[0] * cbs, cbs * 2);
-      chrrom_remap(0x1800, map004_map_reg[1] * cbs, cbs * 2);
-    }
-  } else if (0xA000 <= addr && addr <= 0xBFFF) {
-    if ((addr & 0x0001) == 0) {
-      if ((value & 0x01) == 0) {
-        memory::set_nametable_mirroring(NametableArrangement::HORIZONTAL);
-      } else {
-        memory::set_nametable_mirroring(NametableArrangement::VERTICAL);
-      }
-    } else {
-      // PRG RAM protect
-      // TODO
-    }
-  } else if (0xC000 <= addr && addr <= 0xDFFF) {
-    if ((addr & 0x0001) == 0) {
-      // IRQ latch
-      ppu::mmc3_irq_set_latch(value);
-    } else {
-      // IRQ reload
-      ppu::mmc3_irq_set_reload();
-    }
-  } else if (0xE000 <= addr && addr <= 0xFFFF) {
-    if ((addr & 0x0001) == 0) {
-      // IRQ disable
-      ppu::mmc3_irq_set_enable(false);
-    } else {
-      // IRQ enable
-      ppu::mmc3_irq_set_enable(true);
-    }
-  }
-}
-
-static void reorder_chrrom_block(const uint8_t *src, uint16_t *dst_fwd,
-                                 uint16_t *dst_rev, int num_words) {
-  int num_chars = num_words / 8;
-  for (int ic = 0; ic < num_chars; ic++) {
-    for (int iy = 0; iy < 8; iy++) {
-      uint8_t chr0 = src[ic * 16 + iy];
-      uint8_t chr1 = src[ic * 16 + iy + 8];
-
-      uint16_t fwd = 0;
-      fwd = (uint16_t)(chr1 & 0x01) << 15;
-      fwd |= (uint16_t)(chr0 & 0x01) << 14;
-      fwd |= (uint16_t)(chr1 & 0x02) << 12;
-      fwd |= (uint16_t)(chr0 & 0x02) << 11;
-      fwd |= (uint16_t)(chr1 & 0x04) << 9;
-      fwd |= (uint16_t)(chr0 & 0x04) << 8;
-      fwd |= (uint16_t)(chr1 & 0x08) << 6;
-      fwd |= (uint16_t)(chr0 & 0x08) << 5;
-      fwd |= (uint16_t)(chr1 & 0x10) << 3;
-      fwd |= (uint16_t)(chr0 & 0x10) << 2;
-      fwd |= (uint16_t)(chr1 & 0x20);
-      fwd |= (uint16_t)(chr0 & 0x20) >> 1;
-      fwd |= (uint16_t)(chr1 & 0x40) >> 3;
-      fwd |= (uint16_t)(chr0 & 0x40) >> 4;
-      fwd |= (uint16_t)(chr1 & 0x80) >> 6;
-      fwd |= (uint16_t)(chr0 & 0x80) >> 7;
-      dst_fwd[ic * 8 + iy] = fwd;
-
-      uint16_t rev = 0;
-      rev = (uint16_t)(chr1 & 0x80) << 8;
-      rev |= (uint16_t)(chr0 & 0x80) << 7;
-      rev |= (uint16_t)(chr1 & 0x40) << 7;
-      rev |= (uint16_t)(chr0 & 0x40) << 6;
-      rev |= (uint16_t)(chr1 & 0x20) << 6;
-      rev |= (uint16_t)(chr0 & 0x20) << 5;
-      rev |= (uint16_t)(chr1 & 0x10) << 5;
-      rev |= (uint16_t)(chr0 & 0x10) << 4;
-      rev |= (uint16_t)(chr1 & 0x08) << 4;
-      rev |= (uint16_t)(chr0 & 0x08) << 3;
-      rev |= (uint16_t)(chr1 & 0x04) << 3;
-      rev |= (uint16_t)(chr0 & 0x04) << 2;
-      rev |= (uint16_t)(chr1 & 0x02) << 2;
-      rev |= (uint16_t)(chr0 & 0x02) << 1;
-      rev |= (uint16_t)(chr1 & 0x01) << 1;
-      rev |= (uint16_t)(chr0 & 0x01);
-      dst_rev[ic * 8 + iy] = rev;
-    }
+void deinit() {
+  if (instance) {
+    delete instance;
+    instance = nullptr;
   }
 }
 
@@ -2731,6 +2711,21 @@ uint8_t vram[VRAM_SIZE];
 addr_t vram_addr_and = VRAM_SIZE - 1;
 addr_t vram_addr_or = 0;
 
+uint8_t *prgram = nullptr;
+const uint8_t *prgrom;
+const uint8_t *chrrom;
+
+int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
+int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
+
+addr_t prgram_addr_mask;
+uint32_t prgrom_phys_size;
+uint32_t prgrom_phys_addr_mask;
+uint32_t chrrom_phys_size;
+uint32_t chrrom_phys_addr_mask;
+addr_t prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
+addr_t vram_addr_mask = VRAM_SIZE - 1;
+
 bool map_ines(const uint8_t *ines) {
   // iNES file format
   // https://www.nesdev.org/wiki/INES
@@ -2739,6 +2734,33 @@ bool map_ines(const uint8_t *ines) {
   if (ines[0] != 0x4e && ines[1] != 0x45 && ines[2] != 0x53 &&
       ines[3] != 0x1a) {
     return false;
+  }
+
+  // Size of PRG ROM in 16 KB units
+  int num_prg_rom_pages = ines[4];
+  prgrom_phys_size = num_prg_rom_pages * PRGROM_PAGE_SIZE;
+  prgrom_phys_addr_mask = prgrom_phys_size - 1;
+  if (num_prg_rom_pages <= 1) {
+    prgrom_cpu_addr_mask = 0x3fff;
+  } else {
+    prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
+  }
+  SHAPONES_PRINTF("Number of PRGROM pages = %d (%dkB)\n", num_prg_rom_pages,
+                  prgrom_phys_size / 1024);
+
+  // Size of CHR ROM in 8 KB units
+  int num_chr_rom_pages = ines[5];
+  chrrom_phys_size = num_chr_rom_pages * CHRROM_PAGE_SIZE;
+  chrrom_phys_addr_mask = chrrom_phys_size - 1;
+  SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB)\n", num_chr_rom_pages,
+                  chrrom_phys_size / 1024);
+
+  prgram_addr_mask = 0;
+  for (int i = 0; i < PRGROM_REMAP_TABLE_SIZE; i++) {
+    prgrom_remap_table[i] = i;
+  }
+  for (int i = 0; i < CHRROM_REMAP_TABLE_SIZE; i++) {
+    chrrom_remap_table[i] = i;
   }
 
   uint8_t flags6 = ines[6];
@@ -2773,14 +2795,32 @@ bool map_ines(const uint8_t *ines) {
                       static_cast<int>(mode));
       break;
   }
-  set_nametable_mirroring(mode);
+  set_nametable_arrangement(mode);
+
+  int prgram_size = ines[8] * 8192;
+  if (prgram_size == 0) {
+    prgram_size = 8192;  // 8KB PRG RAM if not specified
+  }
+  SHAPONES_PRINTF("PRG RAM size = %d kB\n", prgram_size / 1024);
+  prgram = new uint8_t[prgram_size];
+  prgram_addr_mask = prgram_size - 1;
+
+  // 512-byte trainer at $7000-$71FF (stored before PRG data)
+  bool has_trainer = (flags6 & 0x2) != 0;
+
+  int start_of_prg_rom = 0x10;
+  if (has_trainer) start_of_prg_rom += 0x200;
+  prgrom = ines + start_of_prg_rom;
+
+  int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
+  chrrom = ines + start_of_chr_rom;
 
   mapper::init(ines);
 
   return true;
 }
 
-void set_nametable_mirroring(NametableArrangement mode) {
+void set_nametable_arrangement(NametableArrangement mode) {
   switch (mode) {
     case NametableArrangement::FOUR_SCREEN:
       vram_addr_and = VRAM_SIZE - 1;
@@ -2811,6 +2851,8 @@ void set_nametable_mirroring(NametableArrangement mode) {
 
 }  // namespace nes::memory
 // #include "shapones/ppu.hpp"
+
+// #include "shapones/cpu.hpp"
 
 // #include "shapones/interrupt.hpp"
 
@@ -2847,10 +2889,13 @@ static OamEntry oam[MAX_SPRITE_COUNT];
 static SpriteLine sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
+// todo: delete
+#if 0
 static volatile bool mmc3_irq_enable = false;
 static volatile bool mmc3_irq_reloading = false;
 static volatile uint8_t mmc3_irq_latch = 255;
 static volatile uint8_t mmc3_irq_counter = 0;
+#endif
 
 static uint8_t bus_read(addr_t addr);
 static void bus_write(addr_t addr, uint8_t data);
@@ -2990,9 +3035,10 @@ void oam_dma_write(addr_t offset, uint8_t data) {
 }
 
 static SHAPONES_INLINE uint8_t bus_read(addr_t addr) {
-  if (CHRROM_BASE <= addr && addr < CHRROM_BASE + CHRROM_RANGE) {
+  if (memory::CHRROM_BASE <= addr &&
+      addr < memory::CHRROM_BASE + CHRROM_RANGE) {
     bus_read_data_delayed = bus_read_data_latest;
-    bus_read_data_latest = mapper::chrrom_read(addr - CHRROM_BASE);
+    bus_read_data_latest = memory::chrrom_read(addr - memory::CHRROM_BASE);
   } else if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
     bus_read_data_delayed = bus_read_data_latest;
     bus_read_data_latest = memory::vram_read(addr - VRAM_BASE);
@@ -3129,7 +3175,19 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
       render_sprite(line_buff, focus_x, next_focus_x, skip_render);
     }
 
-    if (mapper::get_id() == 4 && focus_y < SCREEN_HEIGHT) {
+    if (focus_y < SCREEN_HEIGHT) {
+      if (focus_x <= SCREEN_WIDTH && SCREEN_WIDTH < next_focus_x) {
+        mapper::instance->hblank(reg, focus_y);
+      }
+    } else {
+      if (focus_x == 0) {
+        mapper::instance->vblank(reg);
+      }
+    }
+
+// todo: delete
+#if 0
+    if (mapper::get_id() == 4 && focus_y < SCREEN_HEIGHT ) {
       // MMC3 IRQ counter clock
       // see: https://www.nesdev.org/wiki/MMC3
       if (focus_x <= 260 && next_focus_x > 260 && reg.mask.bg_enable &&
@@ -3147,6 +3205,7 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
         }
       }
     }
+#endif
 
     // step focus
     focus_x = next_focus_x;
@@ -3236,25 +3295,15 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
           uint32_t chr = 0xFFFFFFFF;
           const uint8_t *palette = nullptr;
           if (!skip_render) {
-#if SHAPONES_ENABLE_CHROM_CACHE
-            // read CHRROM
-            uint32_t chrrom_index0 = (name0 << 3) + fine_y;
-            uint32_t chrrom_index1 = (name1 << 3) + fine_y;
-            chrrom_index0 += bg_offset / 2;
-            chrrom_index1 += bg_offset / 2;
-            uint16_t chr0 = mapper::chrrom_read_cache(chrrom_index0, false);
-            uint16_t chr1 = mapper::chrrom_read_cache(chrrom_index1, false);
-#else
             // read CHRROM
             uint32_t chrrom_index0 = (name0 << 4) + fine_y;
             uint32_t chrrom_index1 = (name1 << 4) + fine_y;
             chrrom_index0 += bg_offset;
             chrrom_index1 += bg_offset;
             uint_fast16_t chr0 =
-                mapper::chrrom_read_double(chrrom_index0, false);
+                memory::chrrom_read_double(chrrom_index0, false);
             uint_fast16_t chr1 =
-                mapper::chrrom_read_double(chrrom_index1, false);
-#endif
+                memory::chrrom_read_double(chrrom_index1, false);
             chr = ((uint32_t)chr1 << 16) | (uint32_t)chr0;
 
             // adjust CHR bit pos
@@ -3410,17 +3459,10 @@ static void enum_visible_sprites(bool skip_render) {
             tile_index += 0x1000 / 16;
           }
         }
-#if SHAPONES_ENABLE_CHROM_CACHE
-        // read CHRROM
-        int chrrom_index = (tile_index << 3) + (src_y & 0x7);
-        chr =
-            mapper::chrrom_read_cache(chrrom_index, s.attr & OAM_ATTR_INVERT_H);
-#else
         // read CHRROM
         int chrrom_index = (tile_index << 4) + (src_y & 0x7);
-        chr = mapper::chrrom_read_double(chrrom_index,
+        chr = memory::chrrom_read_double(chrrom_index,
                                          s.attr & OAM_ATTR_INVERT_H);
-#endif
       }
 
       // store sprite information
@@ -3471,6 +3513,8 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
   }
 }
 
+// todo: delete
+#if 0
 void mmc3_irq_set_enable(bool enable) {
   bool enable_old = mmc3_irq_enable;
   if (enable && !enable_old) {
@@ -3483,6 +3527,7 @@ void mmc3_irq_set_enable(bool enable) {
 void mmc3_irq_set_reload() { mmc3_irq_reloading = true; }
 
 void mmc3_irq_set_latch(uint8_t data) { mmc3_irq_latch = data; }
+#endif
 
 }  // namespace nes::ppu
 // #include "shapones/shapones.hpp"
@@ -3511,6 +3556,8 @@ void reset() {
   ppu::reset();
   apu::reset();
 }
+
+void stop() { cpu::stop(); }
 
 uint32_t render_next_line(uint8_t *line_buff, bool skip_render) {
   uint32_t timing;

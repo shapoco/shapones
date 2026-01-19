@@ -274,15 +274,14 @@ static bool wait_vsync() {
   constexpr int FRAME_DELAY_US = 1000000 / 60;
   uint64_t now_us = to_us_since_boot(get_absolute_time());
   int64_t wait_us = next_vsync_us - now_us;
-  bool delaying = (wait_us <= 0);
-  if (!delaying) {
+  if (wait_us > 0) {
     sleep_us(wait_us);
   }
   next_vsync_us += FRAME_DELAY_US;
   if (now_us > next_vsync_us) {
     next_vsync_us = now_us;
   }
-  return delaying;
+  return wait_us <= -5000;
 }
 
 static void apu_dma_handler() {
