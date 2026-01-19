@@ -5,3 +5,9 @@ nes_rom.cpp
 settings.json
 tmp.*
 tmp.*/
+
+# for KiCad
+*-backups/
+*.lck
+**/#auto_saved_files#
+_autosave-*.kicad_*
