@@ -8,6 +8,7 @@ INCLUDE_DIR = "../../core/include"
 OUTPUT_HPP = "ShapoNES/shapones_core.h"
 
 RE_INCLUDE = re.compile(r'#include\s+"(.+)"')
+RE_PRAGMA_GCC_OPTIMIZE = re.compile(r'#pragma\s+GCC\s+optimize\s*\(\s*".*"\s*\)')
 
 included_files = set()
 
@@ -21,11 +22,14 @@ def include_file(inc_path):
     with open(path, "r") as f:
         lines = f.readlines()
         for line in lines:
-            match = RE_INCLUDE.search(line)
-            if match:
+            m_include = RE_INCLUDE.search(line)
+            m_pragma_opt = RE_PRAGMA_GCC_OPTIMIZE.search(line)
+            if m_include:
                 out_f.write(f"// {line}\n")
-                inc_path = match.group(1)
+                inc_path = m_include.group(1)
                 line = include_file(inc_path)
+            elif m_pragma_opt:
+                out_f.write(f"// {line}\n")
             else:
                 out_f.write(line)
 

@@ -2,7 +2,6 @@
 #include <M5Unified.h>
 #include <driver/i2s_pdm.h>
 
-#define SHAPONES_IMPLEMENTATION
 #include "shapones_core.h"
 
 #include "AdcButton.hpp"

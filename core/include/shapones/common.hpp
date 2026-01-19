@@ -11,6 +11,10 @@
 #define SHAPONES_DEFINE_FAST_INT (0)
 #endif
 
+#ifndef SHAPONES_IRQ_PENDING_SUPPORT
+#define SHAPONES_IRQ_PENDING_SUPPORT (1)
+#endif
+
 #if SHAPONES_DEFINE_FAST_INT
 using uint_fast8_t = uint8_t;
 using uint_fast16_t = uint16_t;

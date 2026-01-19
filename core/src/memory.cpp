@@ -2,6 +2,8 @@
 #include "shapones/mapper.hpp"
 #include "shapones/ppu.hpp"
 
+#pragma GCC optimize ("Ofast")
+
 namespace nes::memory {
 
 uint8_t wram[WRAM_SIZE];

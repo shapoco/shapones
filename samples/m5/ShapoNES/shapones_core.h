@@ -19,6 +19,10 @@
 #define SHAPONES_DEFINE_FAST_INT (0)
 #endif
 
+#ifndef SHAPONES_IRQ_PENDING_SUPPORT
+#define SHAPONES_IRQ_PENDING_SUPPORT (1)
+#endif
+
 #if SHAPONES_DEFINE_FAST_INT
 using uint_fast8_t = uint8_t;
 using uint_fast16_t = uint16_t;
@@ -847,6 +851,9 @@ void vsync(uint8_t *line_buff, bool skip_render = false);
 // #include "shapones/interrupt.hpp"
 
 
+// #pragma GCC optimize ("Ofast")
+
+
 namespace nes::apu {
 
 static constexpr int QUARTER_FRAME_FREQUENCY = 240;
@@ -1437,13 +1444,14 @@ void service(uint8_t *buff, int len) {
 // #include "shapones/interrupt.hpp"
 
 
-#define NES_IRQ_PENDING_SUPPORT (1)
+// #pragma GCC optimize ("Ofast")
+
 
 namespace nes::cpu {
 
 static Registers reg;
 static bool stopped = false;
-#if NES_IRQ_PENDING_SUPPORT
+#if SHAPONES_IRQ_PENDING_SUPPORT
 static int irq_pending = 0;
 #else
 static constexpr int irq_pending = 0;
@@ -1705,7 +1713,7 @@ static SHAPONES_INLINE void opPLP() {
     reg.status.raw = pop();
     reg.status.reserved = 1;
     reg.status.breakmode = 0;
-#if NES_IRQ_PENDING_SUPPORT
+#if SHAPONES_IRQ_PENDING_SUPPORT
     irq_pending = 2;
 #endif
 }
@@ -1738,13 +1746,13 @@ static SHAPONES_INLINE void opCLC() { reg.status.carry = 0; }
 static SHAPONES_INLINE void opSEC() { reg.status.carry = 1; }
 static SHAPONES_INLINE void opCLI() {
     reg.status.interrupt = 0; 
-#if NES_IRQ_PENDING_SUPPORT
+#if SHAPONES_IRQ_PENDING_SUPPORT
     irq_pending = 2; 
 #endif
 }
 static SHAPONES_INLINE void opSEI() {
     reg.status.interrupt = 1; 
-#if NES_IRQ_PENDING_SUPPORT
+#if SHAPONES_IRQ_PENDING_SUPPORT
     irq_pending = 2; 
 #endif
 }
@@ -2256,7 +2264,7 @@ void service() {
             }
         } // if
 
-#if NES_IRQ_PENDING_SUPPORT
+#if SHAPONES_IRQ_PENDING_SUPPORT
         if (irq_pending > 0) {
             irq_pending--;
         }
@@ -2371,6 +2379,9 @@ bool is_nmi_asserted() { return nmi; }
 // #include "shapones/interrupt.hpp"
 
 // #include "shapones/memory.hpp"
+
+
+// #pragma GCC optimize ("Ofast")
 
 
 namespace nes::mapper {
@@ -2695,6 +2706,9 @@ static void reorder_chrrom_block(const uint8_t *src, uint16_t *dst_fwd,
 // #include "shapones/ppu.hpp"
 
 
+// #pragma GCC optimize ("Ofast")
+
+
 namespace nes::memory {
 
 uint8_t wram[WRAM_SIZE];
@@ -2788,6 +2802,9 @@ void set_nametable_mirroring(NametableArrangement mode) {
 // #include "shapones/mapper.hpp"
 
 // #include "shapones/memory.hpp"
+
+
+// #pragma GCC optimize ("Ofast")
 
 
 namespace nes::ppu {

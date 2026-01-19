@@ -3,6 +3,8 @@
 #include "shapones/mapper.hpp"
 #include "shapones/memory.hpp"
 
+#pragma GCC optimize ("Ofast")
+
 namespace nes::ppu {
 
 static Registers reg;

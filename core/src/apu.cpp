@@ -2,6 +2,8 @@
 #include "shapones/cpu.hpp"
 #include "shapones/interrupt.hpp"
 
+#pragma GCC optimize ("Ofast")
+
 namespace nes::apu {
 
 static constexpr int QUARTER_FRAME_FREQUENCY = 240;

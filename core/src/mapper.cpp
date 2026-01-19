@@ -2,6 +2,8 @@
 #include "shapones/interrupt.hpp"
 #include "shapones/memory.hpp"
 
+#pragma GCC optimize ("Ofast")
+
 namespace nes::mapper {
 
 int id;
