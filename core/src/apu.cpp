@@ -14,6 +14,7 @@ static constexpr uint32_t QUARTER_FRAME_PHASE_PERIOD =
 static uint32_t sampling_rate;
 static uint32_t pulse_timer_step;
 static uint32_t triangle_timer_step;
+static uint32_t noise_timer_step;
 static uint32_t dmc_step_coeff;
 static int qframe_phase_step;
 
@@ -29,6 +30,11 @@ static constexpr uint8_t LENGTH_TABLE[] = {
     12, 16,  24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
 };
 
+// see: https://www.nesdev.org/wiki/APU_Noise
+static constexpr uint16_t NOISE_PERIOD_TABLE[16] = {
+    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
+};
+
 // see: https://www.nesdev.org/wiki/APU_DMC
 static constexpr uint16_t DMC_RATE_TABLE[16] = {
     428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
@@ -40,19 +46,20 @@ static NoiseState noise;
 static DmcState dmc;
 static Status status;
 
-static void pulse_write_reg0(PulseState *s, uint8_t reg0);
-static void pulse_write_reg1(PulseState *s, uint8_t reg1);
-static void pulse_write_reg2(PulseState *s, uint8_t reg1);
-static void pulse_write_reg3(PulseState *s, uint8_t reg3);
-static void triangle_write_reg0(TriangleState *s, uint8_t reg0);
-static void triangle_write_reg2(TriangleState *s, uint8_t reg3);
-static void triangle_write_reg3(TriangleState *s, uint8_t reg3);
-static void noise_write_reg0(NoiseState *s, uint8_t reg0);
-static void noise_write_reg3(NoiseState *s, uint8_t reg3);
-static void dmc_write_reg0(DmcState *s, uint8_t reg0);
-static void dmc_write_reg1(DmcState *s, uint8_t reg1);
-static void dmc_write_reg2(DmcState *s, uint8_t reg2);
-static void dmc_write_reg3(DmcState *s, uint8_t reg3);
+static void pulse_write_reg0(PulseState *s, uint8_t value);
+static void pulse_write_reg1(PulseState *s, uint8_t value);
+static void pulse_write_reg2(PulseState *s, uint8_t value);
+static void pulse_write_reg3(PulseState *s, uint8_t value);
+static void triangle_write_reg0(TriangleState *s, uint8_t value);
+static void triangle_write_reg2(TriangleState *s, uint8_t value);
+static void triangle_write_reg3(TriangleState *s, uint8_t value);
+static void noise_write_reg0(NoiseState *s, uint8_t value);
+static void noise_write_reg2(NoiseState *s, uint8_t value);
+static void noise_write_reg3(NoiseState *s, uint8_t value);
+static void dmc_write_reg0(DmcState *s, uint8_t value);
+static void dmc_write_reg1(DmcState *s, uint8_t value);
+static void dmc_write_reg2(DmcState *s, uint8_t value);
+static void dmc_write_reg3(DmcState *s, uint8_t value);
 
 result_t init() { return result_t::SUCCESS; }
 void deinit() {}
@@ -67,10 +74,14 @@ result_t reset() {
   }
 
   triangle.length = 0;
-  noise.length = 0;
-  noise.lfsr = 1;
+  triangle.timer = 0;
 
-  dmc.silence = true;
+  noise.timer = 0;
+  noise.length = 0;
+  noise.lfsr = 0xFFFF;
+  noise.mode = false;
+  noise.timer_period = NOISE_PERIOD_TABLE[0] * (1u << TIMER_PREC);
+
   dmc.irq_enabled = false;
   dmc.loop = false;
   dmc.timer_step = 0;
@@ -128,6 +139,7 @@ void reg_write(addr_t addr, uint8_t value) {
     case REG_TRIANGLE_REG2: triangle_write_reg2(&triangle, value); break;
     case REG_TRIANGLE_REG3: triangle_write_reg3(&triangle, value); break;
     case REG_NOISE_REG0: noise_write_reg0(&noise, value); break;
+    case REG_NOISE_REG2: noise_write_reg2(&noise, value); break;
     case REG_NOISE_REG3: noise_write_reg3(&noise, value); break;
     case REG_DMC_REG0: dmc_write_reg0(&dmc, value); break;
     case REG_DMC_REG1: dmc_write_reg1(&dmc, value); break;
@@ -143,11 +155,9 @@ void reg_write(addr_t addr, uint8_t value) {
         if (dmc.bytes_remaining == 0) {
           dmc.addr_counter = dmc.sample_addr;
           dmc.bytes_remaining = dmc.sample_length;
-          dmc.silence = false;
         }
       } else {
         dmc.bytes_remaining = 0;
-        dmc.silence = true;
       }
       // see: https://www.nesdev.org/wiki/IRQ
       interrupt::deassert_irq(interrupt::Source::APU_DMC);
@@ -172,19 +182,20 @@ void reg_write(addr_t addr, uint8_t value) {
 result_t set_sampling_rate(uint32_t rate_hz) {
   sampling_rate = rate_hz;
   pulse_timer_step =
-      (1ULL << TIMER_PREC) * cpu::CLOCK_FREQUENCY / sampling_rate / 2;
+      (1ULL << TIMER_PREC) * cpu::CLOCK_FREQ_NTSC / sampling_rate / 2;
   triangle_timer_step =
-      (1ULL << TIMER_PREC) * cpu::CLOCK_FREQUENCY / sampling_rate;
+      (1ULL << TIMER_PREC) * cpu::CLOCK_FREQ_NTSC / sampling_rate;
+  noise_timer_step = cpu::CLOCK_FREQ_NTSC / sampling_rate;
   qframe_phase_step =
       (QUARTER_FRAME_FREQUENCY * QUARTER_FRAME_PHASE_PERIOD) / rate_hz;
-  dmc_step_coeff = ((uint64_t)cpu::CLOCK_FREQUENCY << TIMER_PREC) / rate_hz;
+  dmc_step_coeff = ((uint64_t)cpu::CLOCK_FREQ_NTSC << TIMER_PREC) / rate_hz;
   return result_t::SUCCESS;
 }
 
-static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
+static void pulse_write_reg0(PulseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   // duty pattern
-  switch ((reg0 >> 6) & 0x3) {
+  switch ((value >> 6) & 0x3) {
     case 0: s->waveform = 0b00000001; break;
     case 1: s->waveform = 0b00000011; break;
     case 2: s->waveform = 0b00001111; break;
@@ -192,9 +203,9 @@ static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
   }
 
   s->envelope.flags = 0;
-  if (reg0 & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
-  if (reg0 & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
-  s->envelope.volume = reg0 & 0xf;
+  if (value & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
+  if (value & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
+  s->envelope.volume = value & 0xf;
 
   if (!(s->envelope.flags & ENV_FLAG_CONSTANT)) {
     s->envelope.flags |= ENV_FLAG_START;
@@ -202,63 +213,63 @@ static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
   }
 }
 
-static void pulse_write_reg1(PulseState *s, uint8_t reg1) {
+static void pulse_write_reg1(PulseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->sweep.period = (reg1 >> 4) & 0x7;
-  s->sweep.shift = reg1 & 0x7;
+  s->sweep.period = (value >> 4) & 0x7;
+  s->sweep.shift = value & 0x7;
   s->sweep.flags = 0;
-  if (reg1 & 0x80) s->sweep.flags |= SWP_FLAG_ENABLED;
-  if (reg1 & 0x08) s->sweep.flags |= SWP_FLAG_NEGATE;
+  if (value & 0x80) s->sweep.flags |= SWP_FLAG_ENABLED;
+  if (value & 0x08) s->sweep.flags |= SWP_FLAG_NEGATE;
   s->sweep.divider = 0;
 }
 
-static void pulse_write_reg2(PulseState *s, uint8_t reg2) {
+static void pulse_write_reg2(PulseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0xff << TIMER_PREC);
-  s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
+  s->timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
-static void pulse_write_reg3(PulseState *s, uint8_t reg3) {
+static void pulse_write_reg3(PulseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0x700 << TIMER_PREC);
-  s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
+  s->timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s->timer = 0;
-  s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
+  s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
   s->phase = 0;
 }
 
-static void triangle_write_reg0(TriangleState *s, uint8_t reg0) {
+static void triangle_write_reg0(TriangleState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->linear.reload_value = reg0 & 0x7f;
-  if (reg0 & 0x80) {
+  s->linear.reload_value = value & 0x7f;
+  if (value & 0x80) {
     s->linear.flags |= LIN_FLAG_CONTROL;
   } else {
     s->linear.flags &= ~LIN_FLAG_CONTROL;
   }
 }
 
-static void triangle_write_reg2(TriangleState *s, uint8_t reg2) {
+static void triangle_write_reg2(TriangleState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0xff << TIMER_PREC);
-  s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
+  s->timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
-static void triangle_write_reg3(TriangleState *s, uint8_t reg3) {
+static void triangle_write_reg3(TriangleState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0x700 << TIMER_PREC);
-  s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
+  s->timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s->timer = 0;
-  s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
+  s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
   s->phase = 0;
   s->linear.flags |= LIN_FLAG_RELOAD;
 }
 
-static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
+static void noise_write_reg0(NoiseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->envelope.flags = 0;
-  if (reg0 & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
-  if (reg0 & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
-  s->envelope.volume = reg0 & 0xf;
+  if (value & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
+  if (value & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
+  s->envelope.volume = value & 0xf;
 
   if (!(s->envelope.flags & ENV_FLAG_CONSTANT)) {
     s->envelope.flags |= ENV_FLAG_START;
@@ -266,36 +277,44 @@ static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
   }
 }
 
-static void noise_write_reg3(NoiseState *s, uint8_t reg3) {
+static void noise_write_reg2(NoiseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
+  s->mode = !!(value & 0x80);
+  s->timer_period = NOISE_PERIOD_TABLE[value & 0xF];
 }
 
-static void dmc_write_reg0(DmcState *s, uint8_t reg0) {
+static void noise_write_reg3(NoiseState *s, uint8_t value) {
+  Exclusive lock(LOCK_APU);
+  s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
+}
+
+static void dmc_write_reg0(DmcState *s, uint8_t value) {
   bool irq_ena_old = s->irq_enabled;
-  bool irq_ena_new = (reg0 & 0x80) != 0;
+  bool irq_ena_new = (value & 0x80) != 0;
   if (irq_ena_new && !irq_ena_old) {
     interrupt::deassert_irq(interrupt::Source::APU_DMC);
   }
-  Exclusive lock(LOCK_APU);
-  s->irq_enabled = irq_ena_new;
-  s->loop = (reg0 & 0x40) != 0;
-  s->timer_step = dmc_step_coeff / DMC_RATE_TABLE[reg0 & 0x0f];
+  {
+    Exclusive lock(LOCK_APU);
+    s->irq_enabled = irq_ena_new;
+    s->loop = (value & 0x40) != 0;
+    s->timer_step = dmc_step_coeff / DMC_RATE_TABLE[value & 0x0f];
+  }
 }
 
-static void dmc_write_reg1(DmcState *s, uint8_t reg0) {
+static void dmc_write_reg1(DmcState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->out_level = reg0 & 0x7f;
+  s->out_level = value & 0x7f;
 }
 
-static void dmc_write_reg2(DmcState *s, uint8_t reg0) {
+static void dmc_write_reg2(DmcState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->sample_addr = 0xc000 + ((addr_t)reg0 << 6);
+  s->sample_addr = 0xc000 + ((addr_t)value << 6);
 }
 
-static void dmc_write_reg3(DmcState *s, uint8_t reg0) {
+static void dmc_write_reg3(DmcState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->sample_length = ((int)reg0 << 4) + 1;
+  s->sample_length = ((int)value << 4) + 1;
 }
 
 // see: https://www.nesdev.org/wiki/APU_Envelope
@@ -482,12 +501,25 @@ static SHAPONES_INLINE int sample_noise(NoiseState &s) {
   // mute
   if (s.length < 0) vol = 0;
 
-  // LFSR
-  int feedback = ((s.lfsr >> 1) ^ s.lfsr) & 1;
-  s.lfsr = ((s.lfsr >> 1) & 0x3fff) | (feedback << 14);
-  int amp = s.lfsr & 0xf;
+  // timer
+  s.timer += noise_timer_step;
+  int step = 0;
+  if (s.timer_period != 0) {
+    step = s.timer / s.timer_period;
+  }
+  s.timer -= step * s.timer_period;
 
-  return (amp * vol) >> 4;
+  // LFSR
+  for (int i = 0; i < step; i++) {
+    uint32_t fb;
+    if (s.mode) {
+      fb = ((s.lfsr >> 6) ^ (s.lfsr >> 0)) & 1;
+    } else {
+      fb = ((s.lfsr >> 1) ^ (s.lfsr >> 0)) & 1;
+    }
+    s.lfsr = (s.lfsr >> 1) | (fb << 14);
+  }
+  return ((s.lfsr & 1) == 0) ? (vol >> 1) : 0;
 }
 
 // see: https://www.nesdev.org/wiki/APU_DMC
@@ -506,7 +538,6 @@ static SHAPONES_INLINE int sample_dmc(DmcState &s) {
     if (s.bits_remaining == 0) {
 #if SHAPONES_MUTEX_FAST
       Exclusive lock(LOCK_APU);
-      ;
 #endif
       if (s.bytes_remaining > 0) {
         s.shift_reg = cpu::bus_read(s.addr_counter | 0x8000);
@@ -516,15 +547,18 @@ static SHAPONES_INLINE int sample_dmc(DmcState &s) {
           if (s.loop) {
             s.addr_counter = s.sample_addr;
             s.bytes_remaining = s.sample_length;
-          } else if (s.irq_enabled) {
-            interrupt::assert_irq(interrupt::Source::APU_DMC);
+          } else {
+            status.dmc_enable = 0;
+            if (s.irq_enabled) {
+              interrupt::assert_irq(interrupt::Source::APU_DMC);
+            }
           }
         }
       }
       s.bits_remaining = 8;
     }
     if (s.bits_remaining > 0) {
-      if (!s.silence) {
+      if (status.dmc_enable) {
         if (s.shift_reg & 1) {
 #if SHAPONES_MUTEX_FAST
           Exclusive lock(LOCK_APU);

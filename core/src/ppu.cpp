@@ -207,7 +207,10 @@ static SHAPONES_INLINE uint8_t bus_read(addr_t addr) {
 }
 
 static SHAPONES_INLINE void bus_write(addr_t addr, uint8_t data) {
-  if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
+  if (memory::CHRROM_BASE <= addr &&
+      addr < memory::CHRROM_BASE + CHRROM_RANGE) {
+    memory::chrram_write(addr - memory::CHRROM_BASE, data);
+  } else if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
     memory::vram_write(addr - VRAM_BASE, data);
   } else if (PALETTE_FILE_BASE <= addr &&
              addr < PALETTE_FILE_BASE + PALETTE_FILE_SIZE_WITH_MIRROR) {

@@ -81,6 +81,9 @@ bool FcApp::OnInit() {
       wxMessageBox("Failed to load NES file.", "Error", wxOK | wxICON_ERROR);
     }
   }
+  else {
+    nes::menu::show();
+  }
 
   frame->Show(true);
 

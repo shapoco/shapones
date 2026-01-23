@@ -14,7 +14,8 @@ class Map003 : public Mapper {
 
   void write(addr_t addr, uint8_t value) override {
     if (0x8000 <= addr && addr <= 0xffff) {
-      chrrom_remap(0x0000, (value & 0x3) * 0x2000, 0x2000);
+      uint32_t bank = value & 0x3;
+      chrrom_remap(0x0000, bank * 0x2000, 0x2000);
     }
   }
 };

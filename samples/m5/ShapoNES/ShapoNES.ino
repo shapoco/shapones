@@ -144,19 +144,6 @@ static constexpr uint32_t SAMPLE_SIZE = sizeof(audio_buff[0]);
 static volatile uint32_t audio_wr_ptr = 0;
 static volatile uint32_t audio_rd_ptr = 0;
 
-static SHAPONES_INLINE void unpack565(uint16_t c, uint32_t *r, uint32_t *g,
-                                      uint32_t *b) {
-  c = ((c << 8) & 0xff00) | ((c >> 8) & 0x00ff);
-  *r = (c >> 11) & 0x1F;
-  *g = (c >> 5) & 0x3F;
-  *b = c & 0x1F;
-}
-
-static SHAPONES_INLINE uint16_t pack565(uint32_t r, uint32_t g, uint32_t b) {
-  uint16_t c = ((r & 0x1F) << 11) | ((g & 0x3F) << 5) | (b & 0x1F);
-  return ((c << 8) & 0xff00) | ((c >> 8) & 0x00ff);
-}
-
 static void read_input();
 static void ppu_loop(void *arg);
 static void load_ines(const char* path);

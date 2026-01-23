@@ -77,13 +77,15 @@ struct TriangleState {
 };
 
 struct NoiseState {
+  uint32_t timer;
+  uint32_t timer_period;
+  bool mode;
   uint16_t lfsr;
   int length;
   Envelope envelope;
 };
 
 struct DmcState {
-  bool silence;
   bool irq_enabled;
   bool loop;
   uint32_t timer_step;
@@ -91,7 +93,7 @@ struct DmcState {
   addr_t sample_addr;
   int sample_length;
   addr_t addr_counter;
-  int bytes_remaining;
+  uint32_t bytes_remaining;
   uint8_t shift_reg;
   int bits_remaining;
   uint8_t out_level;

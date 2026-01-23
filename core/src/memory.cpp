@@ -12,6 +12,7 @@ addr_t vram_addr_or = 0;
 uint8_t dummy_memory = 0;
 
 uint8_t *prgram = nullptr;
+uint8_t *chrram = nullptr;
 const uint8_t *prgrom = &dummy_memory;
 const uint8_t *chrrom = &dummy_memory;
 
@@ -26,9 +27,8 @@ uint32_t chrrom_phys_addr_mask = 0;
 addr_t prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
 
 result_t init() {
-  if (prgram) {
-    prgram = new uint8_t[1];
-  }
+  if (prgram) prgram = new uint8_t[1];
+  if (chrram == nullptr) chrram = new uint8_t[1];
   unmap();
   return result_t::SUCCESS;
 }
@@ -38,6 +38,10 @@ void deinit() {
   if (prgram) {
     delete[] prgram;
     prgram = nullptr;
+  }
+  if (chrram) {
+    delete[] chrram;
+    chrram = nullptr;
   }
 }
 
@@ -67,10 +71,16 @@ result_t map_ines(const uint8_t *ines) {
 
   // Size of CHR ROM in 8 KB units
   int num_chr_rom_pages = ines[5];
-  chrrom_phys_size = num_chr_rom_pages * CHRROM_PAGE_SIZE;
+  if (num_chr_rom_pages == 0) {
+    chrrom_phys_size = CHRROM_RANGE;
+    SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB CHRRAM)\n",
+                    num_chr_rom_pages, chrrom_phys_size / 1024);
+  } else {
+    chrrom_phys_size = num_chr_rom_pages * CHRROM_PAGE_SIZE;
+    SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB CHRROM)\n",
+                    num_chr_rom_pages, chrrom_phys_size / 1024);
+  }
   chrrom_phys_addr_mask = chrrom_phys_size - 1;
-  SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB)\n", num_chr_rom_pages,
-                  chrrom_phys_size / 1024);
 
   prgram_addr_mask = 0;
   for (int i = 0; i < PRGROM_REMAP_TABLE_SIZE; i++) {
@@ -132,8 +142,17 @@ result_t map_ines(const uint8_t *ines) {
   if (has_trainer) start_of_prg_rom += 0x200;
   prgrom = ines + start_of_prg_rom;
 
-  int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
-  chrrom = ines + start_of_chr_rom;
+  if (chrram) {
+    delete[] chrram;
+  }
+  if (num_chr_rom_pages == 0) {
+    chrram = new uint8_t[CHRROM_RANGE];
+    chrrom = chrram;
+  } else {
+    chrram = new uint8_t[1];
+    int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
+    chrrom = ines + start_of_chr_rom;
+  }
 
   SHAPONES_TRY(mapper::map_ines(ines));
 

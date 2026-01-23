@@ -6,8 +6,8 @@
 #include "shapones/interrupt.hpp"
 #include "shapones/mapper.hpp"
 #include "shapones/memory.hpp"
-#include "shapones/ppu.hpp"
 #include "shapones/menu.hpp"
+#include "shapones/ppu.hpp"
 
 namespace nes::cpu {
 
@@ -32,6 +32,9 @@ uint8_t bus_read(addr_t addr) {
     retval = memory::prgram_read(addr - memory::PRGRAM_BASE);
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     retval = ppu::reg_read(addr);
+  } else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_DMC_REG3 ||
+             addr == apu::REG_STATUS) {
+    retval = apu::reg_read(addr);
   } else if (INPUT_REG_0 <= addr && addr <= INPUT_REG_1) {
     retval = input::read_latched(addr - INPUT_REG_0);
   } else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + WRAM_SIZE) {
@@ -50,11 +53,11 @@ void bus_write(addr_t addr, uint8_t data) {
     memory::prgram_write(addr - memory::PRGRAM_BASE, data);
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     ppu::reg_write(addr, data);
+  } else if (addr == OAM_DMA_REG) {
+    dma::start(data);
   } else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_DMC_REG3 ||
              addr == apu::REG_STATUS) {
     apu::reg_write(addr, data);
-  } else if (addr == OAM_DMA_REG) {
-    dma::start(data);
   } else if (addr == INPUT_REG_0) {
     input::write_control(data);
   } else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + WRAM_SIZE) {

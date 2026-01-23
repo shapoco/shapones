@@ -81,9 +81,10 @@ extern uint8_t vram[VRAM_SIZE];
 extern addr_t vram_addr_and;
 extern addr_t vram_addr_or;
 
+extern uint8_t *prgram;
+extern uint8_t *chrram;
 extern const uint8_t *prgrom;
 extern const uint8_t *chrrom;
-extern uint8_t *prgram;
 
 extern int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
 extern int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
@@ -150,6 +151,14 @@ static SHAPONES_INLINE uint8_t chrrom_read(addr_t addr) {
   uint32_t phys_addr =
       (phys_block << CHRROM_BLOCK_ADDR_BITS) + (addr & (CHRROM_BLOCK_SIZE - 1));
   return chrrom[phys_addr & chrrom_phys_addr_mask];
+}
+
+static SHAPONES_INLINE void chrram_write(addr_t addr, uint8_t value) {
+  uint32_t ppu_block = (addr & (CHRROM_RANGE - 1)) >> CHRROM_BLOCK_ADDR_BITS;
+  uint32_t phys_block = chrrom_remap_table[ppu_block];
+  uint32_t phys_addr =
+      (phys_block << CHRROM_BLOCK_ADDR_BITS) + (addr & (CHRROM_BLOCK_SIZE - 1));
+  chrram[phys_addr & chrrom_phys_addr_mask] = value;
 }
 
 static SHAPONES_INLINE uint_fast16_t chrrom_read_double(addr_t addr,

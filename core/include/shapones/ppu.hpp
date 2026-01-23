@@ -179,15 +179,6 @@ void oam_dma_write(addr_t offset, uint8_t data);
 
 result_t service(uint8_t *line_buff,  bool skip_render = false, status_t* status = nullptr);
 
-cycle_t cycle_following();
-
-// todo: delete
-#if 0
-void mmc3_irq_set_enable(bool enable);
-void mmc3_irq_set_reload();
-void mmc3_irq_set_latch(uint8_t data);
-#endif
-
 }  // namespace nes::ppu
 
 #endif

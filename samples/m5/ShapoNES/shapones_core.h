@@ -284,7 +284,7 @@ result_t service(uint8_t *buff, int len);
 
 namespace nes::cpu {
 
-static constexpr int CLOCK_FREQUENCY = 1789773;
+static constexpr int CLOCK_FREQ_NTSC = 1789773;
 
 static constexpr addr_t WRAM_BASE = 0x0;
 static constexpr addr_t WRAM_MIRROR_BASE = 0x800;
@@ -1159,12 +1159,12 @@ void reg_write(addr_t addr, uint8_t value) {
 result_t set_sampling_rate(uint32_t rate_hz) {
   sampling_rate = rate_hz;
   pulse_timer_step =
-      (1ULL << TIMER_PREC) * cpu::CLOCK_FREQUENCY / sampling_rate / 2;
+      (1ULL << TIMER_PREC) * cpu::CLOCK_FREQ_NTSC / sampling_rate / 2;
   triangle_timer_step =
-      (1ULL << TIMER_PREC) * cpu::CLOCK_FREQUENCY / sampling_rate;
+      (1ULL << TIMER_PREC) * cpu::CLOCK_FREQ_NTSC / sampling_rate;
   qframe_phase_step =
       (QUARTER_FRAME_FREQUENCY * QUARTER_FRAME_PHASE_PERIOD) / rate_hz;
-  dmc_step_coeff = ((uint64_t)cpu::CLOCK_FREQUENCY << TIMER_PREC) / rate_hz;
+  dmc_step_coeff = ((uint64_t)cpu::CLOCK_FREQ_NTSC << TIMER_PREC) / rate_hz;
   return result_t::SUCCESS;
 }
 

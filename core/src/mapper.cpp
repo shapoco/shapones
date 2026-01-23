@@ -3,9 +3,9 @@
 #include "shapones/lock.hpp"
 #include "shapones/memory.hpp"
 
-#define SHAPONES_MAPPER_IMPLEMENTATION
 #include "shapones/mappers/map000.hpp"
 #include "shapones/mappers/map001.hpp"
+#include "shapones/mappers/map002.hpp"
 #include "shapones/mappers/map003.hpp"
 #include "shapones/mappers/map004.hpp"
 
@@ -36,6 +36,7 @@ result_t map_ines(const uint8_t *ines) {
   switch (id) {
     case 0: instance = new Map000(); break;
     case 1: instance = new Map001(); break;
+    case 2: instance = new Map002(); break;
     case 3: instance = new Map003(); break;
     case 4: instance = new Map004(); break;
     default:
