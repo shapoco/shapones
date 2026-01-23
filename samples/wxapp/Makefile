@@ -21,6 +21,7 @@ APP_CPP_LIST = $(wildcard $(APP_SRC_DIR)/*.cpp)
 APP_OBJ_LIST = $(patsubst $(APP_SRC_DIR)/%.cpp,$(APP_BUILD_DIR)/%.o,$(APP_CPP_LIST))
 
 CXX_FLAGS = \
+	-std=c++17 \
 	-O2 \
 	-I$(CORE_DIR)/include \
 	-I$(APP_SRC_DIR) \

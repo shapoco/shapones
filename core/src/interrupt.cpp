@@ -1,4 +1,5 @@
 #include "shapones/interrupt.hpp"
+#include "shapones/lock.hpp"
 
 namespace nes::interrupt {
 

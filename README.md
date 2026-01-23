@@ -9,7 +9,7 @@ an NES emulator for my programming study.
 |Number|Game (Example)|
 |:--|:--|
 |000 (NROM)|Super Mario Bros.|
-|001 (MMC1)|Mr. Mario|
+|001 (MMC1)|Dr. Mario|
 |003 (CNROM)|Gradius|
 |004 (MMC3)|Super Mario Bros. 3|
 
@@ -166,7 +166,7 @@ If the PPU processing or display update takes too long, you can skip the renderi
 ### Controller Input
 
 1. Set the controller's input state in a variable of type `nes::input::InputStatus`.
-2. Pass that variable to `nes::input::set_raw(int player, nes::input::InputStatus s)` to update the input state. The `player` variable specifies the controller's player number, either 0 or 1.
+2. Pass that variable to `nes::input::set_status(int player, nes::input::InputStatus s)` to update the input state. The `player` variable specifies the controller's player number, either 0 or 1.
 
 ### Audio Stream Output
 
@@ -178,4 +178,4 @@ The audio data is zero during silence, has only positive amplitude, and has a ma
 
 `nes::cpu::service`, `nes::ppu::service` and `nes::apu::service` can run on separate threads (or CPU cores). In that case, the mutual exclusion functions mentioned above must be correctly implemented.
 
-`nes::input::set_raw` should run on the same thread as `nes::cpu::service`.
+`nes::input::set_status` should run on the same thread as `nes::cpu::service`.

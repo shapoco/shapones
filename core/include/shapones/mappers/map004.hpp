@@ -22,7 +22,10 @@ class Map004 : public Mapper {
  public:
   Map004() : Mapper(4, "MMC3") {}
 
-  void init() override { prgrom_remap(0xE000, prgrom_phys_size - 8192, 8192); }
+  result_t init() override {
+    prgrom_remap(0xE000, prgrom_phys_size - 8192, 8192);
+    return result_t::SUCCESS;
+  }
 
   void write(addr_t addr, uint8_t value) override {
     if (0x8000 <= addr && addr <= 0x9FFF) {

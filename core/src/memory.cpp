@@ -2,8 +2,6 @@
 #include "shapones/mapper.hpp"
 #include "shapones/ppu.hpp"
 
-#pragma GCC optimize("Ofast")
-
 namespace nes::memory {
 
 uint8_t wram[WRAM_SIZE];
@@ -11,29 +9,48 @@ uint8_t vram[VRAM_SIZE];
 addr_t vram_addr_and = VRAM_SIZE - 1;
 addr_t vram_addr_or = 0;
 
+uint8_t dummy_memory = 0;
+
 uint8_t *prgram = nullptr;
-const uint8_t *prgrom;
-const uint8_t *chrrom;
+const uint8_t *prgrom = &dummy_memory;
+const uint8_t *chrrom = &dummy_memory;
 
 int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
 int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
 
-addr_t prgram_addr_mask;
-uint32_t prgrom_phys_size;
-uint32_t prgrom_phys_addr_mask;
-uint32_t chrrom_phys_size;
-uint32_t chrrom_phys_addr_mask;
+addr_t prgram_addr_mask = 0;
+uint32_t prgrom_phys_size = PRGROM_RANGE;
+uint32_t prgrom_phys_addr_mask = 0;
+uint32_t chrrom_phys_size = CHRROM_RANGE;
+uint32_t chrrom_phys_addr_mask = 0;
 addr_t prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
-addr_t vram_addr_mask = VRAM_SIZE - 1;
 
-bool map_ines(const uint8_t *ines) {
+result_t init() {
+  if (prgram) {
+    prgram = new uint8_t[1];
+  }
+  unmap();
+  return result_t::SUCCESS;
+}
+
+void deinit() {
+  unmap();
+  if (prgram) {
+    delete[] prgram;
+    prgram = nullptr;
+  }
+}
+
+result_t map_ines(const uint8_t *ines) {
   // iNES file format
   // https://www.nesdev.org/wiki/INES
+
+  unmap();
 
   // marker
   if (ines[0] != 0x4e && ines[1] != 0x45 && ines[2] != 0x53 &&
       ines[3] != 0x1a) {
-    return false;
+    return result_t::ERR_INVALID_NES_FORMAT;
   }
 
   // Size of PRG ROM in 16 KB units
@@ -102,6 +119,9 @@ bool map_ines(const uint8_t *ines) {
     prgram_size = 8192;  // 8KB PRG RAM if not specified
   }
   SHAPONES_PRINTF("PRG RAM size = %d kB\n", prgram_size / 1024);
+  if (prgram) {
+    delete[] prgram;
+  }
   prgram = new uint8_t[prgram_size];
   prgram_addr_mask = prgram_size - 1;
 
@@ -115,9 +135,17 @@ bool map_ines(const uint8_t *ines) {
   int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
   chrrom = ines + start_of_chr_rom;
 
-  mapper::init(ines);
+  SHAPONES_TRY(mapper::map_ines(ines));
 
-  return true;
+  return result_t::SUCCESS;
+}
+
+void unmap() {
+  prgrom = &dummy_memory;
+  chrrom = &dummy_memory;
+  prgram_addr_mask = 0;
+  prgrom_phys_addr_mask = 0;
+  chrrom_phys_addr_mask = 0;
 }
 
 void set_nametable_arrangement(NametableArrangement mode) {

@@ -1,5 +1,6 @@
 #include "shapones/mapper.hpp"
 #include "shapones/interrupt.hpp"
+#include "shapones/lock.hpp"
 #include "shapones/memory.hpp"
 
 #define SHAPONES_MAPPER_IMPLEMENTATION
@@ -8,22 +9,30 @@
 #include "shapones/mappers/map003.hpp"
 #include "shapones/mappers/map004.hpp"
 
-#pragma GCC optimize("Ofast")
-
 namespace nes::mapper {
 
 Mapper *instance = nullptr;
 
-void init(const uint8_t *ines) {
+result_t init() {
+  instance = new Map000();
+  return result_t::SUCCESS;
+}
+
+void deinit() {
+  if (instance) {
+    delete instance;
+    instance = nullptr;
+  }
+}
+
+result_t map_ines(const uint8_t *ines) {
   uint8_t flags6 = ines[6];
   uint8_t flags7 = ines[7];
 
   int id = (flags7 & 0xf0) | ((flags6 >> 4) & 0xf);
   SHAPONES_PRINTF("Mapper No.%d\n", id);
 
-  if (instance) {
-    delete instance;
-  }
+  Mapper *old = instance;
   switch (id) {
     case 0: instance = new Map000(); break;
     case 1: instance = new Map001(); break;
@@ -35,14 +44,13 @@ void init(const uint8_t *ines) {
       break;
   }
 
-  instance->init();
-}
+  SHAPONES_TRY(instance->init());
 
-void deinit() {
-  if (instance) {
-    delete instance;
-    instance = nullptr;
+  if (old) {
+    delete old;
   }
+
+  return result_t::SUCCESS;
 }
 
 }  // namespace nes::mapper

@@ -1,9 +1,15 @@
+#include <string.h>
+#include <filesystem>
+
 #include <wx/wx.h>
 
-#include "nes_audio.hpp"
-#include "nes_screen.hpp"
 #include "shapones/shapones.hpp"
-#include "shapones/utils_std.hpp"
+
+#include "nes_audio.hpp"
+#include "nes_load.hpp"
+#include "nes_screen.hpp"
+
+namespace fs = std::filesystem;
 
 enum { ID_FCFRAME = wxID_HIGHEST, ID_FCSCREEN, ID_TIMER };
 
@@ -65,11 +71,16 @@ class FcApp : public wxApp {
 bool FcApp::OnInit() {
   frame = new FcFrame(wxT("ShapoNES"));
 
-  nes::load_ines_file(wxApp::argv[1]);
-
   auto cfg = nes::get_default_config();
   cfg.apu_sampling_rate = nes_audio::FREQ_HZ;
   nes::init(cfg);
+
+  if (wxApp::argc >= 2) {
+    nes::result_t res = load_nes_file(wxApp::argv[1]);
+    if (res != nes::result_t::SUCCESS) {
+      wxMessageBox("Failed to load NES file.", "Error", wxOK | wxICON_ERROR);
+    }
+  }
 
   frame->Show(true);
 
@@ -80,7 +91,43 @@ DECLARE_APP(FcApp)
 IMPLEMENT_APP(FcApp)
 
 // Exclusive control is not required because it is single-threaded
-void nes::lock_init(int id) {}
+nes::result_t nes::lock_init(int id) { return nes::result_t::SUCCESS; }
 void nes::lock_deinit(int id) {}
 void nes::lock_get(int id) {}
 void nes::lock_release(int id) {}
+
+nes::result_t nes::fs_mount() { return nes::result_t::SUCCESS; }
+void nes::fs_unmount() {}
+
+nes::result_t nes::fs_get_current_dir(char *out_path) {
+  try {
+    std::string path = fs::current_path().string();
+    strncpy(out_path, path.c_str(), nes::MAX_PATH_LENGTH - 1);
+    out_path[nes::MAX_PATH_LENGTH - 1] = '\0';
+  } catch (...) {
+    return nes::result_t::ERR_DIR_NOT_FOUND;
+  }
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::fs_enum_files(const char *path,
+                                 nes::fs_enum_files_cb_t callback) {
+  try {
+    for (const auto &entry : fs::directory_iterator(path)) {
+      nes::file_info_t info;
+      info.is_dir = entry.is_directory();
+      std::string filename = entry.path().filename().string();
+      info.name = (char *)filename.c_str();
+      if (!callback(info)) break;
+    }
+  } catch (...) {
+    return nes::result_t::ERR_DIR_NOT_FOUND;
+  }
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::request_load_nes_file(const char *path) {
+  strncpy(nes_path, path, nes::MAX_PATH_LENGTH - 1);
+  nes_path[nes::MAX_PATH_LENGTH - 1] = '\0';
+  return nes::result_t::SUCCESS;
+}

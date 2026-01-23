@@ -36,8 +36,8 @@ union InputControl {
   };
 };
 
-InputStatus get_raw(int player);
-void set_raw(int player, InputStatus data);
+InputStatus get_status(int player);
+void set_status(int player, InputStatus data);
 void update();
 uint8_t read_latched(int player);
 void write_control(uint8_t data);

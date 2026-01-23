@@ -196,7 +196,7 @@ static bool load_nes(const char *fname, int size) {
 
   f_close(&fil);
 
-  nes::memory::map_ines(ines);
+  nes::map_ines(ines);
   ws19804::set_spi_speed(SYS_CLK_FREQ / 4);
 
   return true;

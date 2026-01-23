@@ -12,8 +12,9 @@ class Mapper {
   const char *name;
 
   Mapper(int number, const char *name) : number(number), name(name) {}
+  virtual ~Mapper() {}
 
-  virtual void init() {}
+  virtual result_t init() { return result_t::SUCCESS; }
   virtual void reset() {}
   virtual bool vblank(const nes::ppu::Registers &reg) { return false; }
   virtual bool hblank(const nes::ppu::Registers &reg, int y) { return false; }
@@ -23,9 +24,10 @@ class Mapper {
 
 extern Mapper *instance;
 
-void init(const uint8_t *ines);
-
+result_t init();
 void deinit();
+
+result_t map_ines(const uint8_t *ines);
 
 }  // namespace nes::mapper
 

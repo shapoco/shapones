@@ -94,7 +94,11 @@ extern uint32_t prgrom_phys_addr_mask;
 extern uint32_t chrrom_phys_size;
 extern uint32_t chrrom_phys_addr_mask;
 
-bool map_ines(const uint8_t *ines);
+result_t init();
+void deinit();
+
+result_t map_ines(const uint8_t *ines);
+void unmap();
 
 static SHAPONES_INLINE uint8_t vram_read(addr_t addr) {
   return vram[(addr & vram_addr_and) | vram_addr_or];

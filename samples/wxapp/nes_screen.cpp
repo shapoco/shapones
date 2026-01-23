@@ -1,7 +1,10 @@
-#include "nes_screen.hpp"
 #include <chrono>
-#include "shapones/shapones.hpp"
 #include "stdlib.h"
+
+#include "shapones/shapones.hpp"
+
+#include "nes_load.hpp"
+#include "nes_screen.hpp"
 
 static const uint32_t colors[] = {
     0x808080, 0x003DA6, 0x0012B0, 0x440096, 0xA1005E, 0xC70028, 0xBA0600,
@@ -40,11 +43,18 @@ EVT_KEY_UP(FcScreen::OnKeyUp)
 END_EVENT_TABLE();
 
 void FcScreen::Render() {
+  nes::result_t res;
+
+  if (nes_path[0] != '\0') {
+    res = load_nes_file(nes_path);
+    nes_path[0] = '\0';
+  }
+
   static int itvl = 0;
   bool upd = (((itvl++) & 0x3) == 0);
   uint8_t line_buff[nes::SCREEN_WIDTH];
 
-  nes::vsync(line_buff);
+  res = nes::vsync(line_buff);
   auto wr_ptr = frame_buff.GetData();
   for (int y = 0; y < nes::SCREEN_HEIGHT; y++) {
     auto t_start = get_time_ms();
@@ -88,7 +98,7 @@ void FcScreen::OnPaint(wxPaintEvent &event) {
 }
 
 void FcScreen::OnKeyDown(wxKeyEvent &event) {
-  auto input0 = nes::input::get_raw(0);
+  auto input0 = nes::input::get_status(0);
   switch (event.GetKeyCode()) {
     case 'Z': input0.A = 1; break;
     case 'X': input0.B = 1; break;
@@ -98,12 +108,19 @@ void FcScreen::OnKeyDown(wxKeyEvent &event) {
     case wxKeyCode::WXK_DOWN: input0.down = 1; break;
     case wxKeyCode::WXK_LEFT: input0.left = 1; break;
     case wxKeyCode::WXK_RIGHT: input0.right = 1; break;
+    case 'Q':
+      if (nes::menu::is_shown()) {
+        nes::menu::hide();
+      } else {
+        nes::menu::show();
+      }
+      break;
   }
-  nes::input::set_raw(0, input0);
+  nes::input::set_status(0, input0);
 }
 
 void FcScreen::OnKeyUp(wxKeyEvent &event) {
-  auto input0 = nes::input::get_raw(0);
+  auto input0 = nes::input::get_status(0);
   switch (event.GetKeyCode()) {
     case 'Z': input0.A = 0; break;
     case 'X': input0.B = 0; break;
@@ -115,5 +132,5 @@ void FcScreen::OnKeyUp(wxKeyEvent &event) {
     case wxKeyCode::WXK_RIGHT: input0.right = 0; break;
     case wxKeyCode::WXK_ESCAPE: owner->Close(); break;
   }
-  nes::input::set_raw(0, input0);
+  nes::input::set_status(0, input0);
 }

@@ -19,6 +19,7 @@
 
 #define SHAPONES_NO_STDLIB 1
 #define SHAPONES_DEFINE_FAST_INT 1
+#define SHAPONES_MUTEX_FAST 0
 
 //#define FONT			FontBold8x8	// default system font
 //#define FONTW			8		// width of system font

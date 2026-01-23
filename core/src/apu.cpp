@@ -1,8 +1,8 @@
 #include "shapones/apu.hpp"
 #include "shapones/cpu.hpp"
 #include "shapones/interrupt.hpp"
-
-#pragma GCC optimize("Ofast")
+#include "shapones/lock.hpp"
+#include "shapones/menu.hpp"
 
 namespace nes::apu {
 
@@ -54,7 +54,10 @@ static void dmc_write_reg1(DmcState *s, uint8_t reg1);
 static void dmc_write_reg2(DmcState *s, uint8_t reg2);
 static void dmc_write_reg3(DmcState *s, uint8_t reg3);
 
-void reset() {
+result_t init() { return result_t::SUCCESS; }
+void deinit() {}
+
+result_t reset() {
   for (int i = 0; i < 2; i++) {
     pulse[i].timer = 0;
     pulse[i].length = 0;
@@ -85,6 +88,8 @@ void reset() {
   frame_step = false;
   half_frame_step = false;
   quarter_frame_step = false;
+
+  return result_t::SUCCESS;
 }
 
 // todo: exclusive control
@@ -164,7 +169,7 @@ void reg_write(addr_t addr, uint8_t value) {
   }
 }
 
-void set_sampling_rate(int rate_hz) {
+result_t set_sampling_rate(uint32_t rate_hz) {
   sampling_rate = rate_hz;
   pulse_timer_step =
       (1ULL << TIMER_PREC) * cpu::CLOCK_FREQUENCY / sampling_rate / 2;
@@ -173,6 +178,7 @@ void set_sampling_rate(int rate_hz) {
   qframe_phase_step =
       (QUARTER_FRAME_FREQUENCY * QUARTER_FRAME_PHASE_PERIOD) / rate_hz;
   dmc_step_coeff = ((uint64_t)cpu::CLOCK_FREQUENCY << TIMER_PREC) / rate_hz;
+  return result_t::SUCCESS;
 }
 
 static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
@@ -543,7 +549,14 @@ static SHAPONES_INLINE int sample_dmc(DmcState &s) {
   return s.out_level;
 }
 
-void service(uint8_t *buff, int len) {
+result_t service(uint8_t *buff, int len) {
+  if (nes::menu::is_shown()) {
+    for (int i = 0; i < len; i++) {
+      buff[i] = 0;
+    }
+    return result_t::SUCCESS;
+  }
+
 #if !SHAPONES_MUTEX_FAST
   Exclusive lock(LOCK_APU);
 #endif
@@ -572,6 +585,7 @@ void service(uint8_t *buff, int len) {
     sample += sample_dmc(dmc);
     buff[i] = sample;
   }
+  return result_t::SUCCESS;
 }
 
 }  // namespace nes::apu

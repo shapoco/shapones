@@ -5,7 +5,7 @@ TARGET := SHAPONES
 DEVICE := picopad20
 
 REPO_DIR := $(shell cd ../.. && pwd)
-LIB_DIR := $(REPO_DIR)/lib
+CORE_DIR := $(REPO_DIR)/core
 WORK_DIR := $(shell pwd)
 WORK_TARGET_DIR := $(WORK_DIR)/$(GRPDIR)/$(TARGET)
 BUILD_DIR := $(PICOLIBSDK_PATH)/PicoPad/$(GRPDIR)/$(TARGET)
@@ -17,7 +17,9 @@ BIN := $(BIN_DIR)/$(TARGET).uf2
 DEPENDENCIES := \
 	Makefile \
 	./build.sh \
-	$(wildcard $(LIB_DIR)/include/fixbrot/*.hpp) \
+	$(wildcard $(CORE_DIR)/include/shapones/*.hpp) \
+	$(wildcard $(CORE_DIR)/include/shapones/mappers*.hpp) \
+	$(wildcard $(CORE_DIR)/src/*.cpp) \
 	$(wildcard $(WORK_TARGET_DIR)/*.h) \
 	$(wildcard $(WORK_TARGET_DIR)/src/*.h) \
 	$(wildcard $(WORK_TARGET_DIR)/src/*.cpp)

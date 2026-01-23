@@ -1,10 +1,10 @@
 #include "shapones/ppu.hpp"
 #include "shapones/cpu.hpp"
 #include "shapones/interrupt.hpp"
+#include "shapones/lock.hpp"
 #include "shapones/mapper.hpp"
 #include "shapones/memory.hpp"
-
-#pragma GCC optimize("Ofast")
+#include "shapones/menu.hpp"
 
 namespace nes::ppu {
 
@@ -50,7 +50,10 @@ static void render_bg(uint8_t *line_buff, int x0, int x1, bool skip_render);
 static void enum_visible_sprites(bool skip_render);
 static void render_sprite(uint8_t *line_buff, int x0, int x1, bool skip_render);
 
-void reset() {
+result_t init() { return result_t::SUCCESS; }
+void deinit() {}
+
+result_t reset() {
   // https://www.nesdev.org/wiki/PPU_power_up_state
   reg.control.raw = 0;
   reg.mask.raw = 0;
@@ -70,6 +73,10 @@ void reset() {
   scroll_ppuaddr_high_stored = false;
 
   nmi_level = false;
+
+  cycle_count = 0;
+
+  return result_t::SUCCESS;
 }
 
 bool is_in_hblank() { return focus_x >= SCREEN_WIDTH; }
@@ -255,14 +262,18 @@ static SHAPONES_INLINE void palette_write(addr_t addr, uint8_t data) {
   }
 }
 
-uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
-  uint32_t timing = 0;
+result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
+  bool menu_shown = nes::menu::is_shown();
+  timing_t timing = timing_t::NONE;
   bool irq = false;
 
   while (true) {
-    cycle_t cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
-    if (cycle_diff <= 0) {
-      break;
+    cycle_t cycle_diff = SCREEN_WIDTH;
+    if (!menu_shown) {
+      cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
+      if (cycle_diff <= 0) {
+        break;
+      }
     }
 
     // events
@@ -317,7 +328,7 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
       render_sprite(line_buff, focus_x, next_focus_x, skip_render);
     }
 
-    if (focus_y < SCREEN_HEIGHT) {
+    if (focus_y < SCREEN_HEIGHT && !menu_shown) {
       if (focus_x <= SCREEN_WIDTH && SCREEN_WIDTH < next_focus_x) {
         mapper::instance->hblank(reg, focus_y);
       }
@@ -327,28 +338,6 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
       }
     }
 
-// todo: delete
-#if 0
-    if (mapper::get_id() == 4 && focus_y < SCREEN_HEIGHT ) {
-      // MMC3 IRQ counter clock
-      // see: https://www.nesdev.org/wiki/MMC3
-      if (focus_x <= 260 && next_focus_x > 260 && reg.mask.bg_enable &&
-          reg.mask.sprite_enable) {
-        uint8_t irq_counter_before = mmc3_irq_counter;
-        if (mmc3_irq_counter == 0 || mmc3_irq_reloading) {
-          mmc3_irq_reloading = false;
-          mmc3_irq_counter = mmc3_irq_latch;
-        } else {
-          mmc3_irq_counter--;
-        }
-        if (mmc3_irq_enable && mmc3_irq_counter == 0) {
-          interrupt::assert_irq(interrupt::Source::MMC3);
-          irq = true;
-        }
-      }
-    }
-#endif
-
     // step focus
     focus_x = next_focus_x;
     if (focus_x >= LINE_CYCLES) {
@@ -356,36 +345,48 @@ uint32_t service(uint8_t *line_buff, bool skip_render, int *y) {
       focus_y++;
       if (focus_y >= SCAN_LINES) {
         focus_y = 0;
-        timing |= END_OF_FRAME;
+        timing |= timing_t::END_OF_FRAME;
       }
     }
 
-    // step cycle counter
-    cycle_count += step_count;
+    if (!menu_shown) {
+      // step cycle counter
+      cycle_count += step_count;
+    }
 
     if (focus_y < SCREEN_HEIGHT) {
       if (focus_x == SCREEN_WIDTH) {
-        timing |= END_OF_VISIBLE_LINE;
+        timing |= timing_t::END_OF_VISIBLE_LINE;
         if (focus_y == SCREEN_HEIGHT - 1) {
-          timing |= END_OF_VISIBLE_AREA;
+          timing |= timing_t::END_OF_VISIBLE_AREA;
         }
       }
     } else {
       if (focus_x == 0) {
-        timing |= START_OF_VBLANK_LINE;
+        timing |= timing_t::START_OF_VBLANK_LINE;
       }
     }
 
-    if (timing || irq) {
+    if (timing != timing_t::NONE || irq) {
       break;
     }
   }
 
-  if (y != nullptr) {
-    *y = focus_y;
+  if (menu_shown) {
+    if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
+      nes::menu::render(focus_y, line_buff);
+    }
+    if (!!(timing & timing_t::START_OF_VBLANK_LINE)) {
+      nes::menu::update();
+    }
   }
 
-  return timing;
+  if (status) {
+    status->focus_y = focus_y;
+    status->timing = timing;
+  }
+
+  return result_t::SUCCESS;
 }
 
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
@@ -654,21 +655,5 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
     }
   }
 }
-
-// todo: delete
-#if 0
-void mmc3_irq_set_enable(bool enable) {
-  bool enable_old = mmc3_irq_enable;
-  if (enable && !enable_old) {
-  } else if (!enable && enable_old) {
-    interrupt::deassert_irq(interrupt::Source::MMC3);
-  }
-  mmc3_irq_enable = enable;
-}
-
-void mmc3_irq_set_reload() { mmc3_irq_reloading = true; }
-
-void mmc3_irq_set_latch(uint8_t data) { mmc3_irq_latch = data; }
-#endif
 
 }  // namespace nes::ppu

@@ -51,12 +51,15 @@ enum RegSel { A, X, Y };
 
 extern volatile cycle_t ppu_cycle_count;
 
-void service();
-
-void reset();
-void stop();
+result_t init();
+void deinit();
 
 bool is_stopped();
+
+result_t reset();
+void stop();
+
+result_t service();
 
 uint8_t bus_read(addr_t addr);
 void bus_write(addr_t addr, uint8_t data);

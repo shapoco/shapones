@@ -7,8 +7,7 @@
 #include "shapones/mapper.hpp"
 #include "shapones/memory.hpp"
 #include "shapones/ppu.hpp"
-
-#pragma GCC optimize("Ofast")
+#include "shapones/menu.hpp"
 
 namespace nes::cpu {
 
@@ -69,7 +68,11 @@ static SHAPONES_INLINE uint16_t bus_read_w(addr_t addr) {
   return (uint16_t)bus_read(addr) | ((uint16_t)bus_read(addr + 1) << 8);
 }
 
-void reset() {
+result_t init() { return result_t::SUCCESS; }
+
+void deinit() {}
+
+result_t reset() {
   reg.A = 0;
   reg.X = 0;
   reg.Y = 0;
@@ -86,6 +89,7 @@ void reset() {
   stopped = false;
   ppu_cycle_count = 0;
   SHAPONES_PRINTF("Entry point: 0x%x\n", (int)reg.PC);
+  return result_t::SUCCESS;
 }
 
 void stop() {
@@ -483,10 +487,14 @@ static SHAPONES_INLINE void opISB(addr_t addr) {
   bus_write(addr, data);
 }
 
-void service() {
+result_t service() {
   constexpr int MAX_BATCH_SIZE = 32;
 
   input::update();
+
+  if (menu::is_shown()) {
+    return result_t::SUCCESS;
+  }
 
   int n = MAX_BATCH_SIZE;
   while (n-- > 0) {
@@ -856,6 +864,8 @@ void service() {
     ppu_cycle_count += cycle * 3;
 
   }  // while
+
+  return result_t::SUCCESS;
 }
 
 }  // namespace nes::cpu

@@ -16,6 +16,7 @@ static uint8_t sound_buff[SOUND_BUFF_SIZE * 2];
 static int sound_buff_index = 0;
 
 static uint8_t *ines_rom = nullptr;
+static bool ines_allocated = false;
 
 static int fps_frame_count = 0;
 static uint64_t fps_last_meas_ms = 0;
@@ -39,12 +40,13 @@ static dma_channel_hw_t *disp_dma_hw = nullptr;
 
 uint64_t disp_next_vsync_us = 0;
 
+static char ines_path[nes::MAX_PATH_LENGTH] = "";
+
 static const uint8_t *sound_refill();
 
 static constexpr int LOCK_ID_BASE = 0;
 
-static void boot_menu();
-static void boot_error(const char *line1, const char *line2 = "");
+static nes::result_t ines_load(const char *path);
 
 static void core0_main();
 static void core1_main();
@@ -64,149 +66,9 @@ int main() {
   set_sys_clock_khz(250000, true);
 #endif
 
-  boot_menu();
-
   core0_main();
 
   return 0;
-}
-
-static void boot_menu() {
-  constexpr int LINE_H = 16;
-  constexpr int MAX_FILES = HEIGHT / LINE_H;
-  const char *INES_DIR = "/EMU/SHAPONES/";
-  char ines_path[256];
-  int ines_size = 0;
-
-  int num_files = 0;
-  char **names = new char *[MAX_FILES];
-  int *sizes = new int[MAX_FILES];
-
-  do {
-    disp_clear(COL_WHITE);
-
-    // Mount disk
-    if (!DiskMount()) {
-      DispDrawText("INSERT DISK.", 64, (HEIGHT - LINE_H) / 2, 0, 0, COL_BLACK,
-                   COL_WHITE);
-    }
-    while (!DiskMount()) {
-      if (KeyGet() == KEY_Y) {
-        boot_error("BOOT CANCELLED.");
-      }
-    }
-
-    // List up NES files
-    sFile find;
-    if (!FindOpen(&find, INES_DIR)) {
-      boot_error("DIRECTORY NOT FOUND:", INES_DIR);
-    }
-    sFileInfo fi;
-    while (num_files < MAX_FILES && FindNext(&find, &fi, ATTR_ARCH, "*.NES")) {
-      if (fi.namelen < 4) continue;
-      names[num_files] = new char[fi.namelen + 1];
-      memcpy(names[num_files], fi.name, fi.namelen + 1);
-      sizes[num_files] = fi.size;
-      num_files++;
-    }
-    FindClose(&find);
-
-    if (num_files == 0) {
-      boot_error("NO NES FILE FOUND IN:", INES_DIR);
-    }
-
-    // Render file list
-    for (int i = 0; i < num_files; i++) {
-      DispDrawText(names[i], 32, i * LINE_H, 0, 0, COL_BLACK, COL_WHITE);
-    }
-    DispDrawText("=>", 8, 0, 0, 0, COL_BLUE, COL_WHITE);
-
-    // Wait file to be selected
-    int sel_index = 0;
-    while (true) {
-      uint8_t key = KeyGet();
-      if (key == KEY_UP || key == KEY_DOWN) {
-        disp_fill_rect(0, sel_index * LINE_H, 32, LINE_H, COL_WHITE);
-        if (key == KEY_UP) {
-          sel_index = (sel_index + num_files - 1) % num_files;
-        } else {
-          sel_index = (sel_index + 1) % num_files;
-        }
-        DispDrawText("=>", 8, sel_index * LINE_H, 0, 0, COL_BLUE, COL_WHITE);
-      } else if (key == KEY_A) {
-        snprintf(ines_path, sizeof(ines_path), "%s%s", INES_DIR,
-                 names[sel_index]);
-        ines_size = sizes[sel_index];
-        break;
-      } else if (key == KEY_Y) {
-        break;
-      }
-    };
-  } while (false);
-
-  // Free file list
-  for (int i = 0; i < num_files; i++) {
-    delete[] names[i];
-  }
-  delete[] names;
-  delete[] sizes;
-
-  // Load NES file
-  sFile ines_file;
-  if (!FileOpen(&ines_file, ines_path)) {
-    boot_error("FAILED TO OPEN FILE.");
-  }
-  if (ines_size < (128 + 1) * 1024) {
-    // Load to RAM
-    ines_rom = new uint8_t[ines_size];
-    int ret = FileRead(&ines_file, ines_rom, ines_size);
-    if (ret < ines_size) {
-      char ret_str[32];
-      snprintf(ret_str, sizeof(ret_str), "Code: %d", ret);
-      boot_error("FAILED TO LOAD FILE.", ret_str);
-    }
-  } else if (ines_size < (1024 + 1) * 1024) {
-    // Load to Flash
-    constexpr int CHUNK_SIZE = 4096;
-    FlashErase(ROM_OFFSET, ines_size);
-    uint8_t *buff = new uint8_t[CHUNK_SIZE];
-    int remaining = ines_size;
-    while (remaining > 0) {
-      int to_read = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
-      int ret = FileRead(&ines_file, buff, to_read);
-      if (ret <= 0) {
-        char ret_str[32];
-        snprintf(ret_str, sizeof(ret_str), "Code: %d", ret);
-        boot_error("FAILED TO LOAD FILE.", ret_str);
-      }
-      FlashProgram(ROM_OFFSET + (ines_size - remaining), buff, ret);
-      remaining -= ret;
-    }
-    delete[] buff;
-    ines_rom = (uint8_t *)ROM_OFFSET;
-  } else {
-    char ret_str[32];
-    snprintf(ret_str, sizeof(ret_str), "NES FILE TOO LARGE (%d KB)",
-             ines_size / 1024);
-    boot_error(ret_str);
-  }
-  FileClose(&ines_file);
-
-  // Map NES file to memory
-  nes::memory::map_ines(ines_rom);
-}
-
-static void boot_error(const char *line1, const char *line2) {
-  constexpr int CHAR_W = 8;
-  constexpr int LINE_H = 16;
-  disp_clear(COL_WHITE);
-  DispDrawText(line1, 64, HEIGHT / 2 - LINE_H, 0, 0, COL_RED, COL_WHITE);
-  DispDrawText(line2, 64, HEIGHT / 2, 0, 0, COL_RED, COL_WHITE);
-  DispDrawText("Puress Y to exit.", (WIDTH - (CHAR_W * 16)) / 2,
-               HEIGHT - LINE_H * 2, 0, 0, COL_BLACK, COL_WHITE);
-  while (KeyGet() != KEY_Y) {
-  }
-  ResetToBootLoader();
 }
 
 static void core0_main() {
@@ -220,6 +82,7 @@ static void core0_main() {
   auto cfg = nes::get_default_config();
   cfg.apu_sampling_rate = SOUND_FREQ;
   nes::init(cfg);
+  nes::menu::show();
 
   // Run PPU
   Core1Exec(core1_main);
@@ -241,11 +104,16 @@ static void core0_main() {
     if (KeyPressedFast(KEY_RIGHT)) is.right = 1;
     if (KeyPressedFast(KEY_UP)) is.up = 1;
     if (KeyPressedFast(KEY_DOWN)) is.down = 1;
-    if (KeyPressedFast(KEY_A)) is.B = 1;
-    if (KeyPressedFast(KEY_B)) is.A = 1;
-    if (KeyPressedFast(KEY_X)) is.select = 1;
-    if (KeyPressedFast(KEY_Y)) is.start = 1;
-    nes::input::set_raw(0, is);
+    if (KeyPressedFast(KEY_A)) is.A = 1;
+    if (KeyPressedFast(KEY_B)) is.start = 1;
+    if (KeyPressedFast(KEY_X)) is.B = 1;
+    if (KeyPressedFast(KEY_Y)) is.select = 1;
+    nes::input::set_status(0, is);
+
+    if (ines_path[0] != '\0') {
+      ines_load(ines_path);
+      ines_path[0] = '\0';
+    }
 
     nes::cpu::service();
 
@@ -260,15 +128,18 @@ static void core0_main() {
 static void core1_main() {
   bool skip_frame = false;
 
+  LockoutInit(1);
+
   while (true) {
-    int y;
-    uint32_t flags = nes::ppu::service(line_buff, skip_frame, &y);
+    nes::ppu::status_t s;
+    nes::ppu::service(line_buff, skip_frame, &s);
 
     // end of visible line
-    if ((flags & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
+    if (!!((s.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) &&
+        !skip_frame) {
       // Convert palette index to RGB444
       uint8_t *rd_ptr = line_buff;
-      uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
+      uint8_t *wr_ptr = frame_buff + (s.focus_y * FRAME_BUFF_STRIDE);
       for (int x = 0; x < nes::SCREEN_WIDTH; x += 2) {
         uint16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
         uint16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
@@ -277,13 +148,78 @@ static void core1_main() {
         *(wr_ptr++) = c1 & 0xff;
       }
     }
-    if (flags & nes::ppu::END_OF_VISIBLE_AREA) {
+    if (!!(s.timing & nes::ppu::timing_t::END_OF_VISIBLE_AREA)) {
       if (!skip_frame) {
         disp_flip();
       }
       skip_frame = disp_wait_vsync();
     }
   }
+}
+
+static nes::result_t ines_load(const char *path) {
+  nes::result_t res = nes::result_t::SUCCESS;
+
+  if (ines_allocated) {
+    delete[] ines_rom;
+  }
+  ines_rom = nullptr;
+  ines_allocated = false;
+
+  // Load NES file
+  sFile ines_file;
+  if (!FileOpen(&ines_file, ines_path)) {
+    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+  }
+  int ines_size = ines_file.size;
+  if (ines_size < (128 + 1) * 1024) {
+    // Load to RAM
+    ines_rom = new uint8_t[ines_size];
+    ines_allocated = true;
+    int ret = FileRead(&ines_file, ines_rom, ines_size);
+    if (ret < ines_size) {
+      res = nes::result_t::ERR_FAILED_TO_READ_FILE;
+    }
+  } else if (ines_size < (1024 + 1) * 1024) {
+    // Load to Flash
+    constexpr int CHUNK_SIZE = 4096;
+
+    uint8_t *buff = new uint8_t[CHUNK_SIZE];
+
+    LockoutStart();
+    FlashErase(ROM_OFFSET, ines_size);
+    int remaining = ines_size;
+    while (remaining > 0) {
+      int to_read = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
+      int ret = FileRead(&ines_file, buff, to_read);
+      if (ret <= 0) {
+        res = nes::result_t::ERR_FAILED_TO_READ_FILE;
+        break;
+      }
+      FlashProgram(ROM_OFFSET + (ines_size - remaining), buff, ret);
+      remaining -= ret;
+    }
+    LockoutStop();
+    delete[] buff;
+    if (res != nes::result_t::SUCCESS) {
+      return nes::result_t::ERR_FAILED_TO_READ_FILE;
+    }
+    ines_rom = (uint8_t *)ROM_OFFSET;
+    ines_allocated = false;
+  } else {
+    res = nes::result_t::ERR_INES_TOO_LARGE;
+  }
+  FileClose(&ines_file);
+
+  if (res != nes::result_t::SUCCESS) {
+    return res;
+  }
+
+  // Map NES file to memory
+  SHAPONES_TRY(nes::map_ines(ines_rom));
+  nes::menu::hide();
+
+  return nes::result_t::SUCCESS;
 }
 
 static void disp_clear(uint16_t color) {
@@ -390,7 +326,53 @@ static const uint8_t *sound_refill() {
   return ptr;
 }
 
-void nes::lock_init(int id) { SpinClaim(LOCK_ID_BASE + id); }
+nes::result_t nes::lock_init(int id) {
+  SpinClaim(LOCK_ID_BASE + id);
+  return nes::result_t::SUCCESS;
+}
 void nes::lock_deinit(int id) { SpinUnclaim(LOCK_ID_BASE + id); }
 void nes::lock_get(int id) { SpinLock(LOCK_ID_BASE + id); }
 void nes::lock_release(int id) { SpinUnlock(LOCK_ID_BASE + id); }
+
+nes::result_t nes::fs_mount() {
+  if (DiskMount()) {
+    return nes::result_t::SUCCESS;
+  } else {
+    WaitMs(500);
+    return nes::result_t::ERR_NO_DISK;
+  }
+}
+
+void nes::fs_unmount() { DiskUnmount(); }
+
+nes::result_t nes::fs_get_current_dir(char *out_path) {
+  strncpy(out_path, "/EMU/SHAPONES/", nes::MAX_PATH_LENGTH);
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::fs_enum_files(const char *path,
+                                 nes::fs_enum_files_cb_t callback) {
+  // List up NES files
+  sFile find;
+  if (!FindOpen(&find, path)) {
+    return nes::result_t::ERR_DIR_NOT_FOUND;
+  }
+  sFileInfo fi;
+  while (FindNext(&find, &fi, ATTR_ARCH | ATTR_DIR, "*")) {
+    if (strncmp(fi.name, ".", 1) == 0 || strncmp(fi.name, "..", 2) == 0) {
+      continue;
+    }
+    nes::file_info_t fi2;
+    fi2.name = fi.name;
+    fi2.is_dir = !!(fi.attr & ATTR_DIR);
+    if (!callback(fi2)) break;
+  }
+  FindClose(&find);
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::request_load_nes_file(const char *path) {
+  strncpy(ines_path, path, nes::MAX_PATH_LENGTH);
+  ines_path[nes::MAX_PATH_LENGTH - 1] = '\0';
+  return nes::result_t::SUCCESS;
+}

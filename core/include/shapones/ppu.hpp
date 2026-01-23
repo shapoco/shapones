@@ -43,10 +43,29 @@ static constexpr int SPRITE_Y_OFFSET = 1;
 static constexpr int LINE_CYCLES = 341;
 static constexpr int SCAN_LINES = 262;
 
-static constexpr uint32_t END_OF_VISIBLE_LINE = (1 << 0);
-static constexpr uint32_t END_OF_VISIBLE_AREA = (1 << 1);
-static constexpr uint32_t START_OF_VBLANK_LINE = (1 << 2);
-static constexpr uint32_t END_OF_FRAME = (1 << 3);
+enum class timing_t {
+  NONE = 0,
+  END_OF_VISIBLE_LINE = (1 << 0),
+  END_OF_VISIBLE_AREA = (1 << 1),
+  START_OF_VBLANK_LINE = (1 << 2),
+  END_OF_FRAME = (1 << 3),
+};
+
+static SHAPONES_INLINE timing_t operator|(timing_t a, timing_t b) {
+  return static_cast<timing_t>(static_cast<uint32_t>(a) |
+                               static_cast<uint32_t>(b));
+}
+static SHAPONES_INLINE timing_t operator&(timing_t a, timing_t b) {
+  return static_cast<timing_t>(static_cast<uint32_t>(a) &
+                               static_cast<uint32_t>(b));
+}
+static SHAPONES_INLINE timing_t &operator|=(timing_t &a, timing_t b) {
+  a = a | b;
+  return a;
+}
+static SHAPONES_INLINE bool operator!(timing_t a) {
+  return static_cast<uint32_t>(a) == 0;
+}
 
 static constexpr int NAME_LINE_STRIDE = SCREEN_WIDTH / 8;
 static constexpr int NAME_PAGE_STRIDE = 0x400;
@@ -137,11 +156,19 @@ static constexpr int FOCUS_HBLANK = 1;
 static constexpr int FOCUS_VBLANK = 2;
 static constexpr int FOCUS_1STLINE = 3;
 
+struct status_t {
+  int focus_y;
+  timing_t timing;
+};
+
 extern volatile cycle_t cycle_count;
 
 static SHAPONES_INLINE cycle_t cycle_following() { return cycle_count; }
 
-void reset();
+result_t init();
+void deinit();
+
+result_t reset();
 bool is_in_hblank();
 int current_focus_y();
 
@@ -150,8 +177,7 @@ void reg_write(addr_t addr, uint8_t data);
 
 void oam_dma_write(addr_t offset, uint8_t data);
 
-uint32_t service(uint8_t *line_buff, bool skip_render = false,
-                 int *y = nullptr);
+result_t service(uint8_t *line_buff,  bool skip_render = false, status_t* status = nullptr);
 
 cycle_t cycle_following();
 

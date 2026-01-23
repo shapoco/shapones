@@ -111,11 +111,16 @@ union Status {
   };
 };
 
-void reset();
+result_t init();
+void deinit();
+result_t set_sampling_rate(uint32_t rate_hz);
+
+result_t reset();
+
 uint8_t reg_read(addr_t addr);
 void reg_write(addr_t addr, uint8_t value);
-void set_sampling_rate(int rate_hz);
-void service(uint8_t *buff, int len);
+
+result_t service(uint8_t *buff, int len);
 
 }  // namespace nes::apu
 

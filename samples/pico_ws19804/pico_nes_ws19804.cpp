@@ -112,6 +112,11 @@ int main() {
   // setup WAVESHARE-19804
   ws19804::init(SYS_CLK_FREQ);
 
+  // reset
+  auto cfg = nes::get_default_config();
+  cfg.apu_sampling_rate = SPK_PWM_FREQ;
+  nes::init(cfg);
+
   // show boot menu
   if (!boot_menu()) {
     for (;;) sleep_ms(100);
@@ -124,11 +129,6 @@ int main() {
 }
 
 static void boot_nes() {
-  // reset
-  auto cfg = nes::get_default_config();
-  cfg.apu_sampling_rate = SPK_PWM_FREQ;
-  nes::init(cfg);
-
   // start APU loop
   apu_fill_buffer(speaker.get_buffer(0));
   apu_fill_buffer(speaker.get_buffer(1));
@@ -156,7 +156,7 @@ static void cpu_loop() {
         input_status.raw |= (1 << i);
       }
     }
-    nes::input::set_raw(0, input_status);
+    nes::input::set_status(0, input_status);
 
     // run CPU
     nes::cpu::service();
@@ -218,15 +218,14 @@ static void ppu_loop() {
   for (;;) {
 #if SHAPONES_DISP_DMA_CORE == 0
     int wptr = line_fifo_wptr;
-    int y;
-    uint32_t timing = nes::ppu::service(&line_buff[wptr * LINE_FIFO_STRIDE + 1],
-                                        skip_frame, &y);
-    if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
+    nes::ppu::status_t s;
+    nes::ppu::service(&line_buff[wptr * LINE_FIFO_STRIDE + 1], skip_frame, &s);
+    if (!!(s.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE) && !skip_frame) {
       // push new line
-      line_buff[wptr * LINE_FIFO_STRIDE] = y;
+      line_buff[wptr * LINE_FIFO_STRIDE] = s.focus_y;
       line_fifo_wptr = (wptr + 1) % LINE_FIFO_DEPTH;
     }
-    if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
+    if (!!(s.timing & nes::ppu::timing_t::END_OF_VISIBLE_AREA)) {
       skip_frame = wait_vsync();
     }
 #else
@@ -296,10 +295,24 @@ static void apu_fill_buffer(PwmAudio::sample_t *buff) {
   }
 }
 
-void nes::lock_init(int id) {
+nes::result_t nes::lock_init(int id) {
   lock_hws[id] = spin_lock_init(id);
   spin_lock_claim(id);
+  return nes::result_t::SUCCESS;
 }
 void nes::lock_deinit(int id) { spin_lock_unclaim(id); }
 void nes::lock_get(int id) { lock_irqs[id] = spin_lock_blocking(lock_hws[id]); }
 void nes::lock_release(int id) { spin_unlock(lock_hws[id], lock_irqs[id]); }
+
+nes::result_t nes::fs_mount() { return nes::result_t::SUCCESS; }
+void nes::fs_unmount() {}
+nes::result_t nes::fs_get_current_dir(char *out_path) {
+  return nes::result_t::SUCCESS;
+}
+nes::result_t nes::fs_enum_files(const char *path,
+                                 nes::fs_enum_files_cb_t callback) {
+  return nes::result_t::SUCCESS;
+}
+nes::result_t nes::request_load_nes_file(const char *path) {
+  return nes::result_t::SUCCESS;
+}

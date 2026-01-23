@@ -1,6 +1,7 @@
 #include <M5Unified.h>
 #include <driver/i2s_pdm.h>
 #include "SD.h"
+#include "FS.h"
 
 #include "shapones_core.h"
 
@@ -48,6 +49,8 @@ static constexpr int BUTTON_DOWN = 5;
 static constexpr int BUTTON_LEFT = 6;
 static constexpr int BUTTON_RIGHT = 7;
 static constexpr int BUTTON_DUMMY = 8;
+
+static constexpr int DISPLAY_BUTTON_PIN = 41;
 
 static constexpr uint32_t AUDIO_PDM_FREQ_HZ = 96000;
 static constexpr uint32_t AUDIO_SAMPLE_FREQ_HZ = AUDIO_PDM_FREQ_HZ / 6;
@@ -111,6 +114,11 @@ static uint32_t stat_ppu_delay_count = 0;
 static uint32_t stat_pdm_sent_bytes = 0;
 static uint32_t stat_pdm_sent_count = 0;
 
+static uint64_t disp_button_down_ms = 0;
+static bool disp_button_pressed = false;
+
+static char ines_path[nes::MAX_PATH_LENGTH] = "";
+
 static SHAPONES_INLINE void stat_start(stat_t &s) { s.start_us = micros(); }
 
 static SHAPONES_INLINE void stat_end(stat_t &s) {
@@ -151,6 +159,7 @@ static SHAPONES_INLINE uint16_t pack565(uint32_t r, uint32_t g, uint32_t b) {
 
 static void read_input();
 static void ppu_loop(void *arg);
+static void load_ines(const char* path);
 static bool wait_vsync();
 static bool dma_busy();
 static void dma_start();
@@ -158,6 +167,7 @@ static void dma_maintain();
 static void meas();
 static void audio_init();
 static void speaker_fill_buff(bool preload);
+static bool disp_button_down();
 
 void setup() {
   auto cfg = M5.config();
@@ -167,30 +177,12 @@ void setup() {
 
   Serial.printf("ESP-IDF Version: %s\n", esp_get_idf_version());
 
+  pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLUP);
+
 #ifdef ARDUINO_M5STACK_ATOMS3
   SPI.begin(TF_SCK_PIN, TF_MISO_PIN, TF_MOSI_PIN, TF_CS_PIN);
 #endif
 
-  while (false == SD.begin(TF_CS_PIN, SPI, 10000000)) {
-    Serial.println("SD Wait...");
-    delay(500);
-  }
-
-  const char *ines_path = "/super_mario_bros.nes";
-  File ines_file = SD.open(ines_path, FILE_READ);
-  if (!ines_file) {
-    Serial.printf("Failed to open INES file: %s\n", ines_path);
-    while (1) delay(1000);
-  }
-  size_t ines_size = ines_file.size();
-  Serial.printf("INES file size: %d bytes\n", (int)ines_size);
-  ines = new uint8_t[ines_size];
-  ines_file.read(ines, ines_size);
-  ines_file.close();
-
-  SD.end();
-
-  nes::memory::map_ines(ines);
   auto nes_cfg = nes::get_default_config();
   nes_cfg.apu_sampling_rate = AUDIO_SAMPLE_FREQ_HZ;
   nes::init(nes_cfg);
@@ -210,10 +202,26 @@ void setup() {
 #if SHAPONES_ENABLE_AUDIO
   audio_init();
 #endif
+
+  nes::menu::show();
 }
 
 void loop() {
   read_input();
+
+  if (disp_button_down()) {
+    if (nes::menu::is_shown()) {
+      nes::menu::hide();
+    }
+    else {
+      nes::menu::show();
+    }
+  }
+
+  if (ines_path[0] != '\0') {
+    load_ines(ines_path);
+    ines_path[0] = '\0';
+  }
 
   stat_start(stat_cpu_service);
   for (int i = 0; i < 100; i++) {
@@ -249,7 +257,7 @@ static void read_input() {
       code >>= 1;
     }
   }
-  nes::input::set_raw(0, input_state);
+  nes::input::set_status(0, input_state);
 }
 
 static void ppu_loop(void *arg) {
@@ -258,22 +266,22 @@ static void ppu_loop(void *arg) {
     stat_ppu_delay_clock +=
         nes::cpu::ppu_cycle_leading() - nes::ppu::cycle_following();
     stat_ppu_delay_count += 1;
-    int y;
+    nes::ppu::status_t status;
     stat_start(stat_ppu_service);
-    uint32_t timing = nes::ppu::service(line_buff, skip_frame, &y);
+    nes::ppu::service(line_buff, skip_frame, &status);
     if (!skip_frame) {
       stat_end(stat_ppu_service);
     }
-    if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
+    if ((!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) && !skip_frame) {
 #ifdef ARDUINO_M5STACK_ATOMS3
-      if (y % 2 == 0) {
+      if (status.focus_y % 2 == 0) {
         for (int x = 0; x < BUFF_W; x++) {
           uint32_t c0 = COLOR_TABLE[line_buff[x * 2 + 0] & 0x3f];
           uint32_t c1 = COLOR_TABLE[line_buff[x * 2 + 1] & 0x3f];
           resize_buff[x] = c0 + c1;
         }
       } else {
-        uint16_t *wptr = frame_buff + y / 2 * BUFF_W;
+        uint16_t *wptr = frame_buff + status.focus_y / 2 * BUFF_W;
         for (int x = 0; x < BUFF_W; x++) {
           uint32_t c01 = resize_buff[x];
           uint32_t c2 = COLOR_TABLE[line_buff[x * 2 + 0] & 0x3f];
@@ -291,7 +299,7 @@ static void ppu_loop(void *arg) {
 #endif
     }
 
-    if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
+    if (!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_AREA)) {
       if (!skip_frame) {
         dma_start();
         meas();
@@ -307,6 +315,32 @@ static void ppu_loop(void *arg) {
       vTaskDelay(1);
     }
   }
+}
+
+static void load_ines(const char* path) {
+  nes::result_t res;
+
+  if (ines) {
+    delete[] ines;
+    ines = nullptr;
+  }
+
+  File ines_file = SD.open(path, FILE_READ);
+  if (!ines_file) {
+    Serial.printf("Failed to open INES file: %s\n", path);
+    while (1) delay(1000);
+  }
+  size_t ines_size = ines_file.size();
+  Serial.printf("INES file size: %d bytes\n", (int)ines_size);
+  ines = new uint8_t[ines_size];
+  ines_file.read(ines, ines_size);
+  ines_file.close();
+
+  res = nes::map_ines(ines);
+  if (res != nes::result_t::SUCCESS) {
+    Serial.printf("INES Load Error: 0x%x\n", (int)res);
+  }
+  nes::menu::hide();
 }
 
 static bool wait_vsync() {
@@ -376,11 +410,6 @@ static void meas() {
     fps_frame_count = 0;
   }
 }
-
-void nes::lock_init(int id) { spinlock_initialize(&locks[id]); }
-void nes::lock_deinit(int id) {}
-void nes::lock_get(int id) { taskENTER_CRITICAL(&locks[id]); }
-void nes::lock_release(int id) { taskEXIT_CRITICAL(&locks[id]); }
 
 static void audio_init() {
   i2s_chan_config_t chan_cfg =
@@ -467,4 +496,71 @@ static void speaker_fill_buff(bool preload) {
 
   audio_wr_ptr = wr_ptr;
   audio_rd_ptr = rd_ptr;
+}
+
+static bool disp_button_down() {
+  uint64_t now_ms = millis();
+  bool ret = false;
+  if (digitalRead(DISPLAY_BUTTON_PIN) == LOW) {
+    if (!disp_button_pressed && now_ms > disp_button_down_ms) {
+      disp_button_pressed = true;
+      ret = true;
+    }
+  }
+  else {
+    disp_button_down_ms = now_ms + 100;
+    disp_button_pressed = false;
+  }
+  return ret;
+}
+
+nes::result_t nes::lock_init(int id) {
+  spinlock_initialize(&locks[id]);
+  return nes::result_t::SUCCESS;
+}
+void nes::lock_deinit(int id) {}
+void nes::lock_get(int id) { taskENTER_CRITICAL(&locks[id]); }
+void nes::lock_release(int id) { taskEXIT_CRITICAL(&locks[id]); }
+
+nes::result_t nes::fs_mount() { 
+  if (SD.begin(TF_CS_PIN, SPI, 10000000)) {
+    return nes::result_t::SUCCESS;
+  }
+  else {
+    Serial.printf("No Disk.\n");
+    vTaskDelay(1000);
+    return nes::result_t::ERR_NO_DISK;
+  }
+}
+
+void nes::fs_unmount() {
+  SD.end();
+}
+
+nes::result_t nes::fs_get_current_dir(char *out_path) {
+  strncpy(out_path, "/", nes::MAX_PATH_LENGTH);
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::fs_enum_files(const char *path,
+                                 nes::fs_enum_files_cb_t callback) {
+  bool is_dir;
+  File root = SD.open(path);
+  int n = 0;
+  while (1) {
+    nes::file_info_t fi;
+    String file_name = root.getNextFileName(&fi.is_dir);
+    if (file_name == "") break; 
+    fi.name = file_name.c_str();
+    if (!callback(fi)) break;
+    n++;
+  }
+  Serial.printf("%d files found in '%s'\n", n, path);
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::request_load_nes_file(const char *path) {
+  strncpy(ines_path, path, nes::MAX_PATH_LENGTH);
+  ines_path[nes::MAX_PATH_LENGTH - 1] = '\0';
+  return nes::result_t::SUCCESS;
 }
