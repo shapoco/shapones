@@ -538,7 +538,7 @@ nes::result_t nes::fs_enum_files(const char *path,
     nes::file_info_t fi;
     String file_name = root.getNextFileName(&fi.is_dir);
     if (file_name == "") break; 
-    fi.name = file_name.c_str();
+    fi.name = (char*)file_name.c_str();
     if (!callback(fi)) break;
     n++;
   }

@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #endif
 
 #ifndef SHAPONES_DEFINE_FAST_INT
@@ -40,6 +41,10 @@
 
 #ifndef SHAPONES_MENU_LARGE_FONT
 #define SHAPONES_MENU_LARGE_FONT (0)
+#endif
+
+#ifndef SHAPONES_MUTEX_FAST
+#define SHAPONES_MUTEX_FAST (0)
 #endif
 
 #if SHAPONES_DEFINE_FAST_INT
@@ -97,10 +102,6 @@ using int_fast32_t = int32_t;
 #define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
 
-#ifndef SHAPONES_MUTEX_FAST
-#define SHAPONES_MUTEX_FAST (0)
-#endif
-
 namespace nes {
 
 using addr_t = uint_fast16_t;
@@ -129,7 +130,9 @@ enum class result_t {
   ERR_NO_DISK,
   ERR_DIR_NOT_FOUND,
   ERR_PATH_TOO_LONG,
+  ERR_FAILED_TO_OPEN_FILE,
   ERR_FAILED_TO_READ_FILE,
+  ERR_INES_TOO_LARGE,
 };
 
 struct Config {
@@ -224,13 +227,15 @@ struct TriangleState {
 };
 
 struct NoiseState {
+  uint32_t timer;
+  uint32_t timer_period;
+  bool mode;
   uint16_t lfsr;
   int length;
   Envelope envelope;
 };
 
 struct DmcState {
-  bool silence;
   bool irq_enabled;
   bool loop;
   uint32_t timer_step;
@@ -238,7 +243,7 @@ struct DmcState {
   addr_t sample_addr;
   int sample_length;
   addr_t addr_counter;
-  int bytes_remaining;
+  uint32_t bytes_remaining;
   uint8_t shift_reg;
   int bits_remaining;
   uint8_t out_level;
@@ -379,10 +384,10 @@ namespace nes {
 
 struct file_info_t {
   bool is_dir = false;
-  const char *name = nullptr;
+  char *name = nullptr;
 };
 
-using fs_enum_files_cb_t = void (*)(const file_info_t &info);
+using fs_enum_files_cb_t = bool (*)(const file_info_t &info);
 
 result_t lock_init(int id);
 void lock_deinit(int id);
@@ -691,15 +696,6 @@ void oam_dma_write(addr_t offset, uint8_t data);
 
 result_t service(uint8_t *line_buff,  bool skip_render = false, status_t* status = nullptr);
 
-cycle_t cycle_following();
-
-// todo: delete
-#if 0
-void mmc3_irq_set_enable(bool enable);
-void mmc3_irq_set_reload();
-void mmc3_irq_set_latch(uint8_t data);
-#endif
-
 }  // namespace nes::ppu
 
 #endif
@@ -712,8 +708,9 @@ class Mapper {
   const char *name;
 
   Mapper(int number, const char *name) : number(number), name(name) {}
+  virtual ~Mapper() {}
 
-  virtual result_t init() {  return result_t::SUCCESS; }
+  virtual result_t init() { return result_t::SUCCESS; }
   virtual void reset() {}
   virtual bool vblank(const nes::ppu::Registers &reg) { return false; }
   virtual bool hblank(const nes::ppu::Registers &reg, int y) { return false; }
@@ -816,9 +813,10 @@ extern uint8_t vram[VRAM_SIZE];
 extern addr_t vram_addr_and;
 extern addr_t vram_addr_or;
 
+extern uint8_t *prgram;
+extern uint8_t *chrram;
 extern const uint8_t *prgrom;
 extern const uint8_t *chrrom;
-extern uint8_t *prgram;
 
 extern int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
 extern int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
@@ -885,6 +883,14 @@ static SHAPONES_INLINE uint8_t chrrom_read(addr_t addr) {
   uint32_t phys_addr =
       (phys_block << CHRROM_BLOCK_ADDR_BITS) + (addr & (CHRROM_BLOCK_SIZE - 1));
   return chrrom[phys_addr & chrrom_phys_addr_mask];
+}
+
+static SHAPONES_INLINE void chrram_write(addr_t addr, uint8_t value) {
+  uint32_t ppu_block = (addr & (CHRROM_RANGE - 1)) >> CHRROM_BLOCK_ADDR_BITS;
+  uint32_t phys_block = chrrom_remap_table[ppu_block];
+  uint32_t phys_addr =
+      (phys_block << CHRROM_BLOCK_ADDR_BITS) + (addr & (CHRROM_BLOCK_SIZE - 1));
+  chrram[phys_addr & chrrom_phys_addr_mask] = value;
 }
 
 static SHAPONES_INLINE uint_fast16_t chrrom_read_double(addr_t addr,
@@ -988,9 +994,6 @@ class Exclusive {
 #endif// #include "shapones/menu.hpp"
 
 
-// #pragma GCC optimize("Ofast")
-
-
 namespace nes::apu {
 
 static constexpr int QUARTER_FRAME_FREQUENCY = 240;
@@ -1001,6 +1004,7 @@ static constexpr uint32_t QUARTER_FRAME_PHASE_PERIOD =
 static uint32_t sampling_rate;
 static uint32_t pulse_timer_step;
 static uint32_t triangle_timer_step;
+static uint32_t noise_timer_step;
 static uint32_t dmc_step_coeff;
 static int qframe_phase_step;
 
@@ -1016,6 +1020,11 @@ static constexpr uint8_t LENGTH_TABLE[] = {
     12, 16,  24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
 };
 
+// see: https://www.nesdev.org/wiki/APU_Noise
+static constexpr uint16_t NOISE_PERIOD_TABLE[16] = {
+    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
+};
+
 // see: https://www.nesdev.org/wiki/APU_DMC
 static constexpr uint16_t DMC_RATE_TABLE[16] = {
     428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
@@ -1027,19 +1036,20 @@ static NoiseState noise;
 static DmcState dmc;
 static Status status;
 
-static void pulse_write_reg0(PulseState *s, uint8_t reg0);
-static void pulse_write_reg1(PulseState *s, uint8_t reg1);
-static void pulse_write_reg2(PulseState *s, uint8_t reg1);
-static void pulse_write_reg3(PulseState *s, uint8_t reg3);
-static void triangle_write_reg0(TriangleState *s, uint8_t reg0);
-static void triangle_write_reg2(TriangleState *s, uint8_t reg3);
-static void triangle_write_reg3(TriangleState *s, uint8_t reg3);
-static void noise_write_reg0(NoiseState *s, uint8_t reg0);
-static void noise_write_reg3(NoiseState *s, uint8_t reg3);
-static void dmc_write_reg0(DmcState *s, uint8_t reg0);
-static void dmc_write_reg1(DmcState *s, uint8_t reg1);
-static void dmc_write_reg2(DmcState *s, uint8_t reg2);
-static void dmc_write_reg3(DmcState *s, uint8_t reg3);
+static void pulse_write_reg0(PulseState *s, uint8_t value);
+static void pulse_write_reg1(PulseState *s, uint8_t value);
+static void pulse_write_reg2(PulseState *s, uint8_t value);
+static void pulse_write_reg3(PulseState *s, uint8_t value);
+static void triangle_write_reg0(TriangleState *s, uint8_t value);
+static void triangle_write_reg2(TriangleState *s, uint8_t value);
+static void triangle_write_reg3(TriangleState *s, uint8_t value);
+static void noise_write_reg0(NoiseState *s, uint8_t value);
+static void noise_write_reg2(NoiseState *s, uint8_t value);
+static void noise_write_reg3(NoiseState *s, uint8_t value);
+static void dmc_write_reg0(DmcState *s, uint8_t value);
+static void dmc_write_reg1(DmcState *s, uint8_t value);
+static void dmc_write_reg2(DmcState *s, uint8_t value);
+static void dmc_write_reg3(DmcState *s, uint8_t value);
 
 result_t init() { return result_t::SUCCESS; }
 void deinit() {}
@@ -1054,10 +1064,14 @@ result_t reset() {
   }
 
   triangle.length = 0;
-  noise.length = 0;
-  noise.lfsr = 1;
+  triangle.timer = 0;
 
-  dmc.silence = true;
+  noise.timer = 0;
+  noise.length = 0;
+  noise.lfsr = 0xFFFF;
+  noise.mode = false;
+  noise.timer_period = NOISE_PERIOD_TABLE[0] * (1u << TIMER_PREC);
+
   dmc.irq_enabled = false;
   dmc.loop = false;
   dmc.timer_step = 0;
@@ -1115,6 +1129,7 @@ void reg_write(addr_t addr, uint8_t value) {
     case REG_TRIANGLE_REG2: triangle_write_reg2(&triangle, value); break;
     case REG_TRIANGLE_REG3: triangle_write_reg3(&triangle, value); break;
     case REG_NOISE_REG0: noise_write_reg0(&noise, value); break;
+    case REG_NOISE_REG2: noise_write_reg2(&noise, value); break;
     case REG_NOISE_REG3: noise_write_reg3(&noise, value); break;
     case REG_DMC_REG0: dmc_write_reg0(&dmc, value); break;
     case REG_DMC_REG1: dmc_write_reg1(&dmc, value); break;
@@ -1130,11 +1145,9 @@ void reg_write(addr_t addr, uint8_t value) {
         if (dmc.bytes_remaining == 0) {
           dmc.addr_counter = dmc.sample_addr;
           dmc.bytes_remaining = dmc.sample_length;
-          dmc.silence = false;
         }
       } else {
         dmc.bytes_remaining = 0;
-        dmc.silence = true;
       }
       // see: https://www.nesdev.org/wiki/IRQ
       interrupt::deassert_irq(interrupt::Source::APU_DMC);
@@ -1162,16 +1175,17 @@ result_t set_sampling_rate(uint32_t rate_hz) {
       (1ULL << TIMER_PREC) * cpu::CLOCK_FREQ_NTSC / sampling_rate / 2;
   triangle_timer_step =
       (1ULL << TIMER_PREC) * cpu::CLOCK_FREQ_NTSC / sampling_rate;
+  noise_timer_step = cpu::CLOCK_FREQ_NTSC / sampling_rate;
   qframe_phase_step =
       (QUARTER_FRAME_FREQUENCY * QUARTER_FRAME_PHASE_PERIOD) / rate_hz;
   dmc_step_coeff = ((uint64_t)cpu::CLOCK_FREQ_NTSC << TIMER_PREC) / rate_hz;
   return result_t::SUCCESS;
 }
 
-static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
+static void pulse_write_reg0(PulseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   // duty pattern
-  switch ((reg0 >> 6) & 0x3) {
+  switch ((value >> 6) & 0x3) {
     case 0: s->waveform = 0b00000001; break;
     case 1: s->waveform = 0b00000011; break;
     case 2: s->waveform = 0b00001111; break;
@@ -1179,9 +1193,9 @@ static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
   }
 
   s->envelope.flags = 0;
-  if (reg0 & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
-  if (reg0 & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
-  s->envelope.volume = reg0 & 0xf;
+  if (value & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
+  if (value & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
+  s->envelope.volume = value & 0xf;
 
   if (!(s->envelope.flags & ENV_FLAG_CONSTANT)) {
     s->envelope.flags |= ENV_FLAG_START;
@@ -1189,63 +1203,63 @@ static void pulse_write_reg0(PulseState *s, uint8_t reg0) {
   }
 }
 
-static void pulse_write_reg1(PulseState *s, uint8_t reg1) {
+static void pulse_write_reg1(PulseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->sweep.period = (reg1 >> 4) & 0x7;
-  s->sweep.shift = reg1 & 0x7;
+  s->sweep.period = (value >> 4) & 0x7;
+  s->sweep.shift = value & 0x7;
   s->sweep.flags = 0;
-  if (reg1 & 0x80) s->sweep.flags |= SWP_FLAG_ENABLED;
-  if (reg1 & 0x08) s->sweep.flags |= SWP_FLAG_NEGATE;
+  if (value & 0x80) s->sweep.flags |= SWP_FLAG_ENABLED;
+  if (value & 0x08) s->sweep.flags |= SWP_FLAG_NEGATE;
   s->sweep.divider = 0;
 }
 
-static void pulse_write_reg2(PulseState *s, uint8_t reg2) {
+static void pulse_write_reg2(PulseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0xff << TIMER_PREC);
-  s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
+  s->timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
-static void pulse_write_reg3(PulseState *s, uint8_t reg3) {
+static void pulse_write_reg3(PulseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0x700 << TIMER_PREC);
-  s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
+  s->timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s->timer = 0;
-  s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
+  s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
   s->phase = 0;
 }
 
-static void triangle_write_reg0(TriangleState *s, uint8_t reg0) {
+static void triangle_write_reg0(TriangleState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->linear.reload_value = reg0 & 0x7f;
-  if (reg0 & 0x80) {
+  s->linear.reload_value = value & 0x7f;
+  if (value & 0x80) {
     s->linear.flags |= LIN_FLAG_CONTROL;
   } else {
     s->linear.flags &= ~LIN_FLAG_CONTROL;
   }
 }
 
-static void triangle_write_reg2(TriangleState *s, uint8_t reg2) {
+static void triangle_write_reg2(TriangleState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0xff << TIMER_PREC);
-  s->timer_period |= (uint32_t)reg2 << TIMER_PREC;
+  s->timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
-static void triangle_write_reg3(TriangleState *s, uint8_t reg3) {
+static void triangle_write_reg3(TriangleState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0x700 << TIMER_PREC);
-  s->timer_period |= (uint32_t)(reg3 & 0x7) << (TIMER_PREC + 8);
+  s->timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s->timer = 0;
-  s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
+  s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
   s->phase = 0;
   s->linear.flags |= LIN_FLAG_RELOAD;
 }
 
-static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
+static void noise_write_reg0(NoiseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->envelope.flags = 0;
-  if (reg0 & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
-  if (reg0 & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
-  s->envelope.volume = reg0 & 0xf;
+  if (value & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
+  if (value & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
+  s->envelope.volume = value & 0xf;
 
   if (!(s->envelope.flags & ENV_FLAG_CONSTANT)) {
     s->envelope.flags |= ENV_FLAG_START;
@@ -1253,36 +1267,44 @@ static void noise_write_reg0(NoiseState *s, uint8_t reg0) {
   }
 }
 
-static void noise_write_reg3(NoiseState *s, uint8_t reg3) {
+static void noise_write_reg2(NoiseState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->length = LENGTH_TABLE[(reg3 >> 3) & 0x1f];
+  s->mode = !!(value & 0x80);
+  s->timer_period = NOISE_PERIOD_TABLE[value & 0xF];
 }
 
-static void dmc_write_reg0(DmcState *s, uint8_t reg0) {
+static void noise_write_reg3(NoiseState *s, uint8_t value) {
+  Exclusive lock(LOCK_APU);
+  s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
+}
+
+static void dmc_write_reg0(DmcState *s, uint8_t value) {
   bool irq_ena_old = s->irq_enabled;
-  bool irq_ena_new = (reg0 & 0x80) != 0;
+  bool irq_ena_new = (value & 0x80) != 0;
   if (irq_ena_new && !irq_ena_old) {
     interrupt::deassert_irq(interrupt::Source::APU_DMC);
   }
-  Exclusive lock(LOCK_APU);
-  s->irq_enabled = irq_ena_new;
-  s->loop = (reg0 & 0x40) != 0;
-  s->timer_step = dmc_step_coeff / DMC_RATE_TABLE[reg0 & 0x0f];
+  {
+    Exclusive lock(LOCK_APU);
+    s->irq_enabled = irq_ena_new;
+    s->loop = (value & 0x40) != 0;
+    s->timer_step = dmc_step_coeff / DMC_RATE_TABLE[value & 0x0f];
+  }
 }
 
-static void dmc_write_reg1(DmcState *s, uint8_t reg0) {
+static void dmc_write_reg1(DmcState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->out_level = reg0 & 0x7f;
+  s->out_level = value & 0x7f;
 }
 
-static void dmc_write_reg2(DmcState *s, uint8_t reg0) {
+static void dmc_write_reg2(DmcState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->sample_addr = 0xc000 + ((addr_t)reg0 << 6);
+  s->sample_addr = 0xc000 + ((addr_t)value << 6);
 }
 
-static void dmc_write_reg3(DmcState *s, uint8_t reg0) {
+static void dmc_write_reg3(DmcState *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
-  s->sample_length = ((int)reg0 << 4) + 1;
+  s->sample_length = ((int)value << 4) + 1;
 }
 
 // see: https://www.nesdev.org/wiki/APU_Envelope
@@ -1469,12 +1491,25 @@ static SHAPONES_INLINE int sample_noise(NoiseState &s) {
   // mute
   if (s.length < 0) vol = 0;
 
-  // LFSR
-  int feedback = ((s.lfsr >> 1) ^ s.lfsr) & 1;
-  s.lfsr = ((s.lfsr >> 1) & 0x3fff) | (feedback << 14);
-  int amp = s.lfsr & 0xf;
+  // timer
+  s.timer += noise_timer_step;
+  int step = 0;
+  if (s.timer_period != 0) {
+    step = s.timer / s.timer_period;
+  }
+  s.timer -= step * s.timer_period;
 
-  return (amp * vol) >> 4;
+  // LFSR
+  for (int i = 0; i < step; i++) {
+    uint32_t fb;
+    if (s.mode) {
+      fb = ((s.lfsr >> 6) ^ (s.lfsr >> 0)) & 1;
+    } else {
+      fb = ((s.lfsr >> 1) ^ (s.lfsr >> 0)) & 1;
+    }
+    s.lfsr = (s.lfsr >> 1) | (fb << 14);
+  }
+  return ((s.lfsr & 1) == 0) ? (vol >> 1) : 0;
 }
 
 // see: https://www.nesdev.org/wiki/APU_DMC
@@ -1493,7 +1528,6 @@ static SHAPONES_INLINE int sample_dmc(DmcState &s) {
     if (s.bits_remaining == 0) {
 #if SHAPONES_MUTEX_FAST
       Exclusive lock(LOCK_APU);
-      ;
 #endif
       if (s.bytes_remaining > 0) {
         s.shift_reg = cpu::bus_read(s.addr_counter | 0x8000);
@@ -1503,15 +1537,18 @@ static SHAPONES_INLINE int sample_dmc(DmcState &s) {
           if (s.loop) {
             s.addr_counter = s.sample_addr;
             s.bytes_remaining = s.sample_length;
-          } else if (s.irq_enabled) {
-            interrupt::assert_irq(interrupt::Source::APU_DMC);
+          } else {
+            status.dmc_enable = 0;
+            if (s.irq_enabled) {
+              interrupt::assert_irq(interrupt::Source::APU_DMC);
+            }
           }
         }
       }
       s.bits_remaining = 8;
     }
     if (s.bits_remaining > 0) {
-      if (!s.silence) {
+      if (status.dmc_enable) {
         if (s.shift_reg & 1) {
 #if SHAPONES_MUTEX_FAST
           Exclusive lock(LOCK_APU);
@@ -1592,12 +1629,9 @@ result_t service(uint8_t *buff, int len) {
 
 // #include "shapones/memory.hpp"
 
-// #include "shapones/ppu.hpp"
-
 // #include "shapones/menu.hpp"
 
-
-// #pragma GCC optimize("Ofast")
+// #include "shapones/ppu.hpp"
 
 
 namespace nes::cpu {
@@ -1623,6 +1657,9 @@ uint8_t bus_read(addr_t addr) {
     retval = memory::prgram_read(addr - memory::PRGRAM_BASE);
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     retval = ppu::reg_read(addr);
+  } else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_DMC_REG3 ||
+             addr == apu::REG_STATUS) {
+    retval = apu::reg_read(addr);
   } else if (INPUT_REG_0 <= addr && addr <= INPUT_REG_1) {
     retval = input::read_latched(addr - INPUT_REG_0);
   } else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + WRAM_SIZE) {
@@ -1641,11 +1678,11 @@ void bus_write(addr_t addr, uint8_t data) {
     memory::prgram_write(addr - memory::PRGRAM_BASE, data);
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     ppu::reg_write(addr, data);
+  } else if (addr == OAM_DMA_REG) {
+    dma::start(data);
   } else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_DMC_REG3 ||
              addr == apu::REG_STATUS) {
     apu::reg_write(addr, data);
-  } else if (addr == OAM_DMA_REG) {
-    dma::start(data);
   } else if (addr == INPUT_REG_0) {
     input::write_control(data);
   } else if (WRAM_MIRROR_BASE <= addr && addr < WRAM_MIRROR_BASE + WRAM_SIZE) {
@@ -2579,10 +2616,11 @@ bool is_nmi_asserted() { return nmi; }
 
 // #include "shapones/interrupt.hpp"
 
+// #include "shapones/lock.hpp"
+
 // #include "shapones/memory.hpp"
 
 
-#define SHAPONES_MAPPER_IMPLEMENTATION
 // #include "shapones/mappers/map000.hpp"
 
 #ifndef SHAPONES_MAP000_HPP
@@ -2692,6 +2730,41 @@ class Map001 : public Mapper {
 }  // namespace nes::mapper
 
 #endif
+// #include "shapones/mappers/map002.hpp"
+
+#ifndef SHAPONES_MAP002_HPP
+#define SHAPONES_MAP002_HPP
+
+// #include "shapones/mapper.hpp"
+
+// #include "shapones/memory.hpp"
+
+
+namespace nes::mapper {
+
+using namespace nes::memory;
+
+// see: https://www.nesdev.org/wiki/UxROM
+class Map002 : public Mapper {
+ public:
+  Map002() : Mapper(2, "UxROM") {}
+
+  result_t init() override {
+    prgrom_remap(0xC000, prgrom_phys_size - 0x4000, 0x4000);
+    return result_t::SUCCESS;
+  }
+
+  void write(addr_t addr, uint8_t value) override {
+    if (0x8000 <= addr && addr <= 0xffff) {
+      uint32_t bank = value & 0x0F;
+      prgrom_remap(0x8000, bank * 0x4000, 0x4000);
+    }
+  }
+};
+
+}  // namespace nes::mapper
+
+#endif
 // #include "shapones/mappers/map003.hpp"
 
 #ifndef SHAPONES_MAP003_HPP
@@ -2712,7 +2785,8 @@ class Map003 : public Mapper {
 
   void write(addr_t addr, uint8_t value) override {
     if (0x8000 <= addr && addr <= 0xffff) {
-      chrrom_remap(0x0000, (value & 0x3) * 0x2000, 0x2000);
+      uint32_t bank = value & 0x3;
+      chrrom_remap(0x0000, bank * 0x2000, 0x2000);
     }
   }
 };
@@ -2844,9 +2918,6 @@ class Map004 : public Mapper {
 
 #endif
 
-// #pragma GCC optimize("Ofast")
-
-
 namespace nes::mapper {
 
 Mapper *instance = nullptr;
@@ -2870,12 +2941,11 @@ result_t map_ines(const uint8_t *ines) {
   int id = (flags7 & 0xf0) | ((flags6 >> 4) & 0xf);
   SHAPONES_PRINTF("Mapper No.%d\n", id);
 
-  if (instance) {
-    delete instance;
-  }
+  Mapper *old = instance;
   switch (id) {
     case 0: instance = new Map000(); break;
     case 1: instance = new Map001(); break;
+    case 2: instance = new Map002(); break;
     case 3: instance = new Map003(); break;
     case 4: instance = new Map004(); break;
     default:
@@ -2884,7 +2954,11 @@ result_t map_ines(const uint8_t *ines) {
       break;
   }
 
-   SHAPONES_TRY(instance->init());
+  SHAPONES_TRY(instance->init());
+
+  if (old) {
+    delete old;
+  }
 
   return result_t::SUCCESS;
 }
@@ -2897,9 +2971,6 @@ result_t map_ines(const uint8_t *ines) {
 // #include "shapones/ppu.hpp"
 
 
-// #pragma GCC optimize("Ofast")
-
-
 namespace nes::memory {
 
 uint8_t wram[WRAM_SIZE];
@@ -2910,6 +2981,7 @@ addr_t vram_addr_or = 0;
 uint8_t dummy_memory = 0;
 
 uint8_t *prgram = nullptr;
+uint8_t *chrram = nullptr;
 const uint8_t *prgrom = &dummy_memory;
 const uint8_t *chrrom = &dummy_memory;
 
@@ -2924,9 +2996,8 @@ uint32_t chrrom_phys_addr_mask = 0;
 addr_t prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
 
 result_t init() {
-  if (prgram) {
-    prgram = new uint8_t[1];
-  }
+  if (prgram) prgram = new uint8_t[1];
+  if (chrram == nullptr) chrram = new uint8_t[1];
   unmap();
   return result_t::SUCCESS;
 }
@@ -2936,6 +3007,10 @@ void deinit() {
   if (prgram) {
     delete[] prgram;
     prgram = nullptr;
+  }
+  if (chrram) {
+    delete[] chrram;
+    chrram = nullptr;
   }
 }
 
@@ -2965,10 +3040,16 @@ result_t map_ines(const uint8_t *ines) {
 
   // Size of CHR ROM in 8 KB units
   int num_chr_rom_pages = ines[5];
-  chrrom_phys_size = num_chr_rom_pages * CHRROM_PAGE_SIZE;
+  if (num_chr_rom_pages == 0) {
+    chrrom_phys_size = CHRROM_RANGE;
+    SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB CHRRAM)\n",
+                    num_chr_rom_pages, chrrom_phys_size / 1024);
+  } else {
+    chrrom_phys_size = num_chr_rom_pages * CHRROM_PAGE_SIZE;
+    SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB CHRROM)\n",
+                    num_chr_rom_pages, chrrom_phys_size / 1024);
+  }
   chrrom_phys_addr_mask = chrrom_phys_size - 1;
-  SHAPONES_PRINTF("Number of CHRROM pages = %d (%dkB)\n", num_chr_rom_pages,
-                  chrrom_phys_size / 1024);
 
   prgram_addr_mask = 0;
   for (int i = 0; i < PRGROM_REMAP_TABLE_SIZE; i++) {
@@ -3030,8 +3111,17 @@ result_t map_ines(const uint8_t *ines) {
   if (has_trainer) start_of_prg_rom += 0x200;
   prgrom = ines + start_of_prg_rom;
 
-  int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
-  chrrom = ines + start_of_chr_rom;
+  if (chrram) {
+    delete[] chrram;
+  }
+  if (num_chr_rom_pages == 0) {
+    chrram = new uint8_t[CHRROM_RANGE];
+    chrrom = chrram;
+  } else {
+    chrram = new uint8_t[1];
+    int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
+    chrrom = ines + start_of_chr_rom;
+  }
 
   SHAPONES_TRY(mapper::map_ines(ines));
 
@@ -4131,20 +4221,29 @@ static constexpr int MAX_NUM_FILES = 1024;
 #if SHAPONES_MENU_LARGE_FONT
 static constexpr int CHAR_WIDTH = 12;
 static constexpr int CHAR_HEIGHT = 24;
-static constexpr int CLIENT_X = 0;
-static constexpr int CLIENT_Y = 0;
-static constexpr int CLIENT_WIDTH = BUFF_WIDTH;
-static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT;
 #else
 static constexpr int CHAR_WIDTH = 8;
 static constexpr int CHAR_HEIGHT = 16;
-static constexpr int CLIENT_X = 3;
-static constexpr int CLIENT_Y = 2;
-static constexpr int CLIENT_WIDTH = BUFF_WIDTH - 6;
-static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT - 4;
 #endif
 static constexpr int BUFF_WIDTH = SCREEN_WIDTH / CHAR_WIDTH;
 static constexpr int BUFF_HEIGHT = SCREEN_HEIGHT / CHAR_HEIGHT;
+
+static constexpr int CLIENT_X = 2;
+static constexpr int CLIENT_Y = 2;
+static constexpr int CLIENT_WIDTH = BUFF_WIDTH - 4;
+static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT - 4;
+
+static constexpr int LIST_LINES = CLIENT_HEIGHT - 1;
+
+// Workaround for the issue where repeated use of strdup in PicoLibSDK causes a
+// panic:
+static char *strdup_safe(const char *src) {
+  if (src == nullptr) return nullptr;
+  size_t len = strlen(src);
+  char *dst = new char[len + 1];
+  strcpy(dst, src);
+  return dst;
+}
 
 bool shown = false;
 tab_t tab = tab_t::NES_LIST;
@@ -4229,15 +4328,9 @@ static result_t update_nes_list() {
 
   if (key_down.up) {
     selected_index = (selected_index + num_files - 1) % num_files;
-    if (selected_index < list_scroll_y) {
-      list_scroll_y--;
-    }
     scroll_to(selected_index);
   } else if (key_down.down) {
     selected_index = (selected_index + 1) % num_files;
-    if (selected_index >= list_scroll_y + CLIENT_HEIGHT) {
-      list_scroll_y++;
-    }
     scroll_to(selected_index);
   } else if (key_down.A) {
     if (0 <= selected_index && selected_index < num_files) {
@@ -4252,14 +4345,13 @@ static result_t update_nes_list() {
           // parent directory
           int sep_idx = find_parent_separator(current_dir);
           if (sep_idx >= 0) {
-            current_dir[sep_idx] = '\0';
-          } else {
-            current_dir[0] = '\0';
+            current_dir[sep_idx + 1] = '\0';
           }
         } else {
           // sub directory
           SHAPONES_TRY(append_path(current_dir, fi.name));
         }
+        SHAPONES_TRY(append_separator(current_dir));
         refresh_file_list();
       }
     }
@@ -4349,19 +4441,37 @@ static result_t refresh_file_list() {
   if (!is_root_dir(current_dir)) {
     // add parent directory entry
     file_list[0].is_dir = true;
-    file_list[0].name = strdup("..");
+    file_list[0].name = strdup_safe("..");
     num_files = 1;
   }
 
   result_t res = fs_enum_files(current_dir, [](const file_info_t &info) {
-    if (num_files < MAX_NUM_FILES) {
-      file_list[num_files] = info;
-      file_list[num_files].name = strdup(info.name);
-      num_files++;
-    }
+    file_list[num_files] = info;
+    file_list[num_files].name = strdup_safe(info.name);
+    num_files++;
+    return (num_files < MAX_NUM_FILES);
   });
   if (res != result_t::SUCCESS) {
     num_files = 0;
+  }
+
+  // sort by name
+  for (int i = 0; i < num_files - 1; i++) {
+    file_info_t &fi = file_list[i];
+    for (int j = i + 1; j < num_files; j++) {
+      file_info_t &fj = file_list[j];
+      bool swap = false;
+      if (fi.is_dir != fj.is_dir) {
+        swap = fj.is_dir;
+      } else {
+        swap = strcmp(fi.name, fj.name) > 0;
+      }
+      if (swap) {
+        file_info_t temp = file_list[i];
+        file_list[i] = file_list[j];
+        file_list[j] = temp;
+      }
+    }
   }
 
   list_scroll_y = 0;
@@ -4375,33 +4485,39 @@ static result_t refresh_file_list() {
 static void scroll_to(int index) {
   if (index < list_scroll_y) {
     list_scroll_y = index;
-  } else if (index >= list_scroll_y + CLIENT_HEIGHT) {
-    list_scroll_y = index - CLIENT_HEIGHT + 1;
+  } else if (index >= list_scroll_y + LIST_LINES) {
+    list_scroll_y = index - LIST_LINES + 1;
   }
   print_file_list();
 }
 
 static void print_file_list() {
+  // current directory
+  fill_text(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1);
+  print_text(CLIENT_X, CLIENT_Y, current_dir, CLIENT_WIDTH);
+  fill_palette(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1, 0);
+
   // file list area
   {
     const int TEXT_END_X = CLIENT_X + CLIENT_WIDTH - 1;
-    for (int iy = 0; iy < CLIENT_HEIGHT; iy++) {
-      int y = iy + CLIENT_Y;
-      int i = iy + list_scroll_y;
+    for (int iy = 0; iy < LIST_LINES; iy++) {
+      file_info_t &fi = file_list[list_scroll_y + iy];
+      int y = CLIENT_Y + 1 + iy;
+      int i = list_scroll_y + iy;
       fill_text(CLIENT_X, y, CLIENT_WIDTH - 1, 1);
       if (0 <= i && i < num_files) {
         int x = CLIENT_X;
-        if (!file_list[i].is_dir) {
+        if (!fi.is_dir) {
           x += print_text(x, y, "\xA8\xA9");  // file icon
-        } else if (strcmp(file_list[i].name, "..") == 0) {
+        } else if (strcmp(fi.name, "..") == 0) {
           x += print_text(x, y, "\xA4\xA5");  // parent folder icon
         } else {
           x += print_text(x, y, "\xA6\xA7");  // folder icon
         }
         x += 1;
-        x += print_text(x, y, file_list[i].name, TEXT_END_X - x);
+        x += print_text(x, y, fi.name, TEXT_END_X - x);
         if (x > TEXT_END_X - 1) x = TEXT_END_X - 1;
-        if (file_list[i].is_dir) {
+        if (fi.is_dir) {
           print_text(x, y, "/");
         }
       }
@@ -4415,16 +4531,16 @@ static void print_file_list() {
   // scroll bar
   {
     int x = CLIENT_X + CLIENT_WIDTH - 1;
-    int y = CLIENT_Y;
+    int y = CLIENT_Y + 1;
     int p = 0;
-    if (num_files > CLIENT_HEIGHT) {
-      int n = (num_files - CLIENT_HEIGHT);
-      p = (list_scroll_y * (CLIENT_HEIGHT - 3) + (n - 1)) / n;
+    if (num_files > LIST_LINES) {
+      int n = (num_files - LIST_LINES);
+      p = (list_scroll_y * (LIST_LINES - 3) + (n - 1)) / n;
     }
-    fill_palette(x, y, CLIENT_HEIGHT, 0);
-    print_char(x, y, 0xA0);                      // up arrow
-    print_char(x, y + CLIENT_HEIGHT - 1, 0xA1);  // down arrow
-    fill_text(x, y + 1, 1, CLIENT_HEIGHT - 2, 0xA2);
+    fill_palette(x, y, LIST_LINES, 0);
+    print_char(x, y, 0xA0);                   // up arrow
+    print_char(x, y + LIST_LINES - 1, 0xA1);  // down arrow
+    fill_text(x, y + 1, 1, LIST_LINES - 2, 0xA2);
     print_char(x, y + 1 + p, 0xA3);  // scroll bar
   }
 }
@@ -4480,7 +4596,7 @@ static void clip_rect(int *x, int *y, int *w, int *h) {
 }
 
 static bool is_root_dir(const char *path) {
-  return find_parent_separator(path) < 0;
+  return find_parent_separator(path) <= 0;
 }
 
 static int find_parent_separator(const char *path) {
@@ -4491,12 +4607,14 @@ static int find_parent_separator(const char *path) {
   if (path[n - 1] == '/') {
     n--;
   }
-  return find_last_separator(path, n - 1);
+  return find_last_separator(path, n);
 }
 
 static int find_last_separator(const char *path, int start_idx) {
   if (start_idx < 0) {
     start_idx = strnlen(path, nes::MAX_PATH_LENGTH);
+  } else if (start_idx == 0) {
+    return -1;
   }
   for (int i = start_idx - 1; i >= 0; i--) {
     if (path[i] == '/') {
@@ -4545,9 +4663,6 @@ static result_t append_path(char *path, const char *name) {
 // #include "shapones/memory.hpp"
 
 // #include "shapones/menu.hpp"
-
-
-// #pragma GCC optimize("Ofast")
 
 
 namespace nes::ppu {
@@ -4751,7 +4866,10 @@ static SHAPONES_INLINE uint8_t bus_read(addr_t addr) {
 }
 
 static SHAPONES_INLINE void bus_write(addr_t addr, uint8_t data) {
-  if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
+  if (memory::CHRROM_BASE <= addr &&
+      addr < memory::CHRROM_BASE + CHRROM_RANGE) {
+    memory::chrram_write(addr - memory::CHRROM_BASE, data);
+  } else if (VRAM_BASE <= addr && addr < VRAM_BASE + VRAM_SIZE) {
     memory::vram_write(addr - VRAM_BASE, data);
   } else if (PALETTE_FILE_BASE <= addr &&
              addr < PALETTE_FILE_BASE + PALETTE_FILE_SIZE_WITH_MIRROR) {
