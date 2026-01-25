@@ -219,6 +219,7 @@ static result_t service_state_list() {
         SHAPONES_TRY(load_state(state_path, selected_index));
       } else {
         SHAPONES_TRY(save_state(state_path, selected_index));
+        SHAPONES_TRY(load_state_list());
       }
     }
   } else {

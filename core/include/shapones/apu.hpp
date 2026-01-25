@@ -136,16 +136,16 @@ struct pulse_state_t {
   }
 
   void load(const uint8_t *buff) {
+    envelope.load(buff);
+    buff += envelope_t::STATE_SIZE;
+    sweep.load(buff);
+    buff += sweep_t::STATE_SIZE;
     BufferReader reader(buff);
     timer = reader.u32();
     timer_period = reader.u32();
     phase = reader.u32();
     length = reader.u8();
     waveform = reader.u8();
-    buff += 32;
-    envelope.load(buff);
-    buff += envelope_t::STATE_SIZE;
-    sweep.load(buff);
   }
 };
 
@@ -171,13 +171,13 @@ struct triangle_state_t {
   }
 
   void load(const uint8_t *buff) {
+    linear.load(buff);
+    buff += linear_counter_t::STATE_SIZE;
     BufferReader reader(buff);
     timer = reader.u32();
     timer_period = reader.u32();
     phase = reader.u32();
     length = reader.u8();
-    buff += 24;
-    linear.load(buff);
   }
 };
 
@@ -204,14 +204,14 @@ struct noise_state_t {
   }
 
   void load(const uint8_t *buff) {
+    envelope.load(buff);
+    buff += envelope_t::STATE_SIZE;
     BufferReader reader(buff);
     timer = reader.u32();
     timer_period = reader.u32();
     lfsr = reader.u16();
     flags = reader.u8();
     length = reader.u8();
-    buff += 24;
-    envelope.load(buff);
   }
 };
 
@@ -233,8 +233,8 @@ struct dmc_state_t {
     BufferWriter writer(buff);
     writer.u32(timer_step);
     writer.u32(timer);
-    writer.u32(sample_addr);
-    writer.u32(addr_counter);
+    writer.u16(sample_addr);
+    writer.u16(addr_counter);
     writer.u16(sample_length);
     writer.u16(bytes_remaining);
     writer.u8(flags);
@@ -247,8 +247,8 @@ struct dmc_state_t {
     BufferReader reader(buff);
     timer_step = reader.u32();
     timer = reader.u32();
-    sample_addr = reader.u32();
-    addr_counter = reader.u32();
+    sample_addr = reader.u16();
+    addr_counter = reader.u16();
     sample_length = reader.u16();
     bytes_remaining = reader.u16();
     flags = reader.u8();

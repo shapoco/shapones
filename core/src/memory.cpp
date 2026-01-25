@@ -5,8 +5,6 @@
 
 namespace nes::memory {
 
-static constexpr uint32_t STATE_HEADER_SIZE = 64;
-
 uint8_t wram[WRAM_SIZE];
 uint8_t vram[VRAM_SIZE];
 addr_t vram_addr_and = VRAM_SIZE - 1;
@@ -205,26 +203,10 @@ void set_nametable_arrangement(nametable_arrangement_t mode) {
 }
 
 uint32_t get_state_size() {
-  return STATE_HEADER_SIZE + WRAM_SIZE + VRAM_SIZE + prgram_size + chrram_size;
+  return WRAM_SIZE + VRAM_SIZE + prgram_size + chrram_size;
 }
 
 result_t save_state(void *file_handle) {
-  uint32_t wram_offset = STATE_HEADER_SIZE;
-  uint32_t vram_offset = wram_offset + WRAM_SIZE;
-  uint32_t prgram_offset = vram_offset + VRAM_SIZE;
-  uint32_t chrram_offset = prgram_offset + prgram_size;
-
-  uint8_t buff[STATE_HEADER_SIZE];
-  BufferWriter writer(buff);
-  writer.u32(wram_offset);
-  writer.u32(WRAM_SIZE);
-  writer.u32(vram_offset);
-  writer.u32(VRAM_SIZE);
-  writer.u32(prgram_offset);
-  writer.u32(prgram_size);
-  writer.u32(chrram_offset);
-  writer.u32(chrram_size);
-  SHAPONES_TRY(fs_write(file_handle, buff, STATE_HEADER_SIZE));
   SHAPONES_TRY(fs_write(file_handle, wram, WRAM_SIZE));
   SHAPONES_TRY(fs_write(file_handle, vram, VRAM_SIZE));
   if (prgram_size > 0) {
@@ -237,25 +219,6 @@ result_t save_state(void *file_handle) {
 }
 
 result_t load_state(void *file_handle) {
-  uint8_t buff[STATE_HEADER_SIZE];
-  SHAPONES_TRY(fs_read(file_handle, buff, STATE_HEADER_SIZE));
-  const uint8_t *p = buff;
-  BufferReader reader(p);
-  uint32_t wram_offset = reader.u32();
-  uint32_t wram_size = reader.u32();
-  uint32_t vram_offset = reader.u32();
-  uint32_t vram_size = reader.u32();
-  uint32_t prgram_offset = reader.u32();
-  uint32_t prgram_size_in_file = reader.u32();
-  uint32_t chrram_offset = reader.u32();
-  uint32_t chrram_size_in_file = reader.u32();
-
-  if (wram_size != WRAM_SIZE || vram_size != VRAM_SIZE ||
-      prgram_size_in_file != prgram_size ||
-      chrram_size_in_file != chrram_size) {
-    return result_t::ERR_STATE_SIZE_MISMATCH;
-  }
-
   SHAPONES_TRY(fs_read(file_handle, wram, WRAM_SIZE));
   SHAPONES_TRY(fs_read(file_handle, vram, VRAM_SIZE));
   if (prgram_size > 0) {

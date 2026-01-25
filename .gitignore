@@ -1,6 +1,7 @@
 build/
 bin/
 *.nes
+*.spn
 nes_rom.cpp
 settings.json
 tmp.*

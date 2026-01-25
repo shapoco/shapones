@@ -133,20 +133,20 @@ struct config_t {
 class BufferWriter {
  public:
   uint8_t* buffer;
-  SHAPONES_INLINE BufferWriter(uint8_t* buffer) : buffer(buffer) {}
+  BufferWriter(uint8_t* buffer) : buffer(buffer) {}
 
-  SHAPONES_INLINE void u8(uint8_t value) {
+  void u8(uint8_t value) {
     buffer[0] = value;
     buffer++;
   }
 
-  SHAPONES_INLINE void u16(uint16_t value) {
+  void u16(uint16_t value) {
     buffer[0] = value & 0xff;
     buffer[1] = (value >> 8) & 0xff;
     buffer += 2;
   }
 
-  SHAPONES_INLINE void u32(uint32_t value) {
+  void u32(uint32_t value) {
     buffer[0] = value & 0xff;
     buffer[1] = (value >> 8) & 0xff;
     buffer[2] = (value >> 16) & 0xff;
@@ -154,7 +154,7 @@ class BufferWriter {
     buffer += 4;
   }
 
-  SHAPONES_INLINE void u64(uint64_t value) {
+  void u64(uint64_t value) {
     buffer[0] = value & 0xff;
     buffer[1] = (value >> 8) & 0xff;
     buffer[2] = (value >> 16) & 0xff;
@@ -166,7 +166,7 @@ class BufferWriter {
     buffer += 8;
   }
 
-  SHAPONES_INLINE void b(bool value) {
+  void b(bool value) {
     buffer[0] = value ? 1 : 0;
     buffer++;
   }
@@ -175,28 +175,28 @@ class BufferWriter {
 class BufferReader {
  public:
   const uint8_t* buffer;
-  SHAPONES_INLINE BufferReader(const uint8_t* buffer) : buffer(buffer) {}
+  BufferReader(const uint8_t* buffer) : buffer(buffer) {}
 
-  SHAPONES_INLINE uint8_t u8() {
+  uint8_t u8() {
     uint8_t value = buffer[0];
     buffer++;
     return value;
   }
 
-  SHAPONES_INLINE uint16_t u16() {
+  uint16_t u16() {
     uint16_t value = buffer[0] | ((uint16_t)buffer[1] << 8);
     buffer += 2;
     return value;
   }
 
-  SHAPONES_INLINE uint32_t u32() {
+  uint32_t u32() {
     uint32_t value = buffer[0] | ((uint32_t)buffer[1] << 8) |
                      ((uint32_t)buffer[2] << 16) | ((uint32_t)buffer[3] << 24);
     buffer += 4;
     return value;
   }
 
-  SHAPONES_INLINE uint64_t u64() {
+  uint64_t u64() {
     uint64_t value = (uint64_t)buffer[0] | ((uint64_t)buffer[1] << 8) |
                      ((uint64_t)buffer[2] << 16) | ((uint64_t)buffer[3] << 24) |
                      ((uint64_t)buffer[4] << 32) | ((uint64_t)buffer[5] << 40) |
@@ -205,7 +205,7 @@ class BufferReader {
     return value;
   }
 
-  SHAPONES_INLINE bool b() {
+  bool b() {
     bool value = buffer[0] ? true : false;
     buffer++;
     return value;

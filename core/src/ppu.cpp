@@ -644,9 +644,9 @@ result_t save_state(void *file_handle) {
   uint8_t buff[STATE_HEADER_SIZE];
   memset(buff, 0, sizeof(buff));
   uint8_t *p = buff;
-  BufferWriter writer(p);
   reg.store(p);
   p += registers_t::STATE_SIZE;
+  BufferWriter writer(p);
   writer.u64(cycle_count);
   writer.u16(focus_x);
   writer.u16(focus_y);
@@ -666,9 +666,9 @@ result_t load_state(void *file_handle) {
   uint8_t buff[STATE_HEADER_SIZE];
   SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));
   const uint8_t *p = buff;
-  BufferReader reader(p);
   reg.load(p);
   p += registers_t::STATE_SIZE;
+  BufferReader reader(p);
   cycle_count = reader.u64();
   focus_x = reader.u16();
   focus_y = reader.u16();

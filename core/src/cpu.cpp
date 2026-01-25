@@ -118,8 +118,8 @@ result_t reset() {
   reg.PC = bus_read_w(VEC_RESET) | 0x8000;
   dma_cycle = DMA_TRANSFER_SIZE;
   dma_addr = 0;
-  stopped = false;
   ppu_cycle_count = 0;
+  stopped = false;
   SHAPONES_PRINTF("Entry point: 0x%x\n", (int)reg.PC);
   return result_t::SUCCESS;
 }
@@ -519,9 +519,9 @@ static SHAPONES_INLINE void opISB(addr_t addr) {
   bus_write(addr, data);
 }
 
-result_t service() { 
+result_t service() {
   menu::service();
-  return run(); 
+  return run();
 }
 
 static result_t run() {
@@ -907,10 +907,13 @@ result_t save_state(void *file_handle) {
   p += registers_t::STATE_SIZE;
   BufferWriter writer(p);
   writer.u64(ppu_cycle_count);
+  writer.u16(dma_addr);
+  writer.u16(dma_cycle);
   writer.b(stopped);
   writer.u8(irq_pending);
-  writer.u32(dma_addr);
-  writer.u16(dma_cycle);
+  SHAPONES_PRINTF("SAVE: %d %d %d %d %d %d %d %d %d\n", (int)reg.PC, (int)reg.A,
+                  (int)reg.X, (int)reg.Y, (int)reg.SP, (int)reg.status.raw,
+                  (int)dma_addr, (int)dma_cycle, (int)irq_pending);
   return fs_write(file_handle, buffer, sizeof(buffer));
 }
 
@@ -922,14 +925,17 @@ result_t load_state(void *file_handle) {
   p += registers_t::STATE_SIZE;
   BufferReader reader(p);
   ppu_cycle_count = reader.u64();
+  dma_addr = reader.u16();
+  dma_cycle = reader.u16();
   stopped = reader.b();
 #if SHAPONES_IRQ_PENDING_SUPPORT
   irq_pending = reader.u8();
 #else
   reader.u8();  // discard
 #endif
-  dma_addr = reader.u32();
-  dma_cycle = reader.u16();
+  SHAPONES_PRINTF("LOAD: %d %d %d %d %d %d %d %d %d\n", (int)reg.PC, (int)reg.A,
+                  (int)reg.X, (int)reg.Y, (int)reg.SP, (int)reg.status.raw,
+                  (int)dma_addr, (int)dma_cycle, (int)irq_pending);
   return result_t::SUCCESS;
 }
 
