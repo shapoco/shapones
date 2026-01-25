@@ -1,24 +1,48 @@
 #include "shapones/cpu.hpp"
 #include "shapones/apu.hpp"
 #include "shapones/common.hpp"
-#include "shapones/dma.hpp"
+#include "shapones/host_intf.hpp"
 #include "shapones/input.hpp"
 #include "shapones/interrupt.hpp"
+#include "shapones/lock.hpp"
 #include "shapones/mapper.hpp"
 #include "shapones/memory.hpp"
 #include "shapones/menu.hpp"
 #include "shapones/ppu.hpp"
+#include "shapones/state.hpp"
 
 namespace nes::cpu {
 
-static Registers reg;
+static constexpr int MAX_BATCH_SIZE = 32;
+
+static registers_t reg;
 static bool stopped = false;
 #if SHAPONES_IRQ_PENDING_SUPPORT
-static int irq_pending = 0;
+static uint8_t irq_pending = 0;
 #else
-static constexpr int irq_pending = 0;
+static constexpr uint8_t irq_pending = 0;
 #endif
 volatile cycle_t ppu_cycle_count;
+
+static addr_t dma_addr = 0;
+static uint16_t dma_cycle = DMA_TRANSFER_SIZE;
+
+static SHAPONES_INLINE bool dma_is_running() {
+  return dma_cycle < DMA_TRANSFER_SIZE;
+}
+
+static SHAPONES_INLINE void dma_start(uint8_t src_page) {
+  dma_cycle = 0;
+  dma_addr = (addr_t)src_page * 0x100;
+}
+
+static SHAPONES_INLINE uint_fast8_t dma_service() {
+  if (dma_cycle >= DMA_TRANSFER_SIZE) return 0;
+  ppu::oam_dma_write(dma_cycle++, cpu::bus_read(dma_addr++));
+  return 2;
+}
+
+static result_t run();
 
 uint8_t bus_read(addr_t addr) {
   uint8_t retval;
@@ -54,7 +78,7 @@ void bus_write(addr_t addr, uint8_t data) {
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     ppu::reg_write(addr, data);
   } else if (addr == OAM_DMA_REG) {
-    dma::start(data);
+    dma_start(data);
   } else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_DMC_REG3 ||
              addr == apu::REG_STATUS) {
     apu::reg_write(addr, data);
@@ -71,7 +95,10 @@ static SHAPONES_INLINE uint16_t bus_read_w(addr_t addr) {
   return (uint16_t)bus_read(addr) | ((uint16_t)bus_read(addr + 1) << 8);
 }
 
-result_t init() { return result_t::SUCCESS; }
+result_t init() {
+  deinit();
+  return result_t::SUCCESS;
+}
 
 void deinit() {}
 
@@ -89,6 +116,8 @@ result_t reset() {
   reg.status.carry = 0;
   reg.SP = 0xfd;
   reg.PC = bus_read_w(VEC_RESET) | 0x8000;
+  dma_cycle = DMA_TRANSFER_SIZE;
+  dma_addr = 0;
   stopped = false;
   ppu_cycle_count = 0;
   SHAPONES_PRINTF("Entry point: 0x%x\n", (int)reg.PC);
@@ -490,14 +519,15 @@ static SHAPONES_INLINE void opISB(addr_t addr) {
   bus_write(addr, data);
 }
 
-result_t service() {
-  constexpr int MAX_BATCH_SIZE = 32;
+result_t service() { 
+  menu::service();
+  return run(); 
+}
+
+static result_t run() {
+  Exclusive lock(LOCK_CPU);
 
   input::update();
-
-  if (menu::is_shown()) {
-    return result_t::SUCCESS;
-  }
 
   int n = MAX_BATCH_SIZE;
   while (n-- > 0) {
@@ -510,9 +540,9 @@ result_t service() {
 
     if (stopped) {
       cycle += 1;  // nop
-    } else if (dma::is_running()) {
+    } else if (dma_is_running()) {
       // DMA is running
-      cycle += dma::exec_next_cycle();
+      cycle += dma_service();
     } else if (irq_pending == 0 && interrupt::is_nmi_asserted()) {
       // NMI
       interrupt::deassert_nmi();
@@ -523,8 +553,6 @@ result_t service() {
       push(s.raw);
       reg.status.interrupt = true;
       reg.PC = bus_read_w(VEC_NMI);
-      // SHAPONES_PRINTF("NMI PC=0x%04x, SP=0x%02x, interrupt=%d\n", (unsigned
-      // int)reg.PC, (unsigned int)reg.SP, (int)reg.status.interrupt);
       cycle += 7;  // ?
     } else if (irq_pending == 0 && !!interrupt::get_irq() &&
                !reg.status.interrupt) {
@@ -537,8 +565,6 @@ result_t service() {
       push(s.raw);
       reg.status.interrupt = true;
       reg.PC = bus_read_w(VEC_IRQ);
-      // SHAPONES_PRINTF("IRQ 0x%02x, PC=0x%04x, SP=0x%02x\n", (unsigned
-      // int)interrupt::get_irq(), (unsigned int)reg.PC, (unsigned int)reg.SP);
       cycle += 7;  // ?
     } else {
       uint8_t op_code = fetch();
@@ -868,6 +894,42 @@ result_t service() {
 
   }  // while
 
+  return result_t::SUCCESS;
+}
+
+uint32_t get_state_size() { return STATE_SIZE; }
+
+result_t save_state(void *file_handle) {
+  uint8_t buffer[STATE_SIZE];
+  memset(buffer, 0, sizeof(buffer));
+  uint8_t *p = buffer;
+  reg.store(p);
+  p += registers_t::STATE_SIZE;
+  BufferWriter writer(p);
+  writer.u64(ppu_cycle_count);
+  writer.b(stopped);
+  writer.u8(irq_pending);
+  writer.u32(dma_addr);
+  writer.u16(dma_cycle);
+  return fs_write(file_handle, buffer, sizeof(buffer));
+}
+
+result_t load_state(void *file_handle) {
+  uint8_t buffer[STATE_SIZE];
+  SHAPONES_TRY(fs_read(file_handle, buffer, sizeof(buffer)));
+  const uint8_t *p = buffer;
+  reg.load(p);
+  p += registers_t::STATE_SIZE;
+  BufferReader reader(p);
+  ppu_cycle_count = reader.u64();
+  stopped = reader.b();
+#if SHAPONES_IRQ_PENDING_SUPPORT
+  irq_pending = reader.u8();
+#else
+  reader.u8();  // discard
+#endif
+  dma_addr = reader.u32();
+  dma_cycle = reader.u16();
   return result_t::SUCCESS;
 }
 

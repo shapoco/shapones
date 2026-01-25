@@ -1,5 +1,6 @@
 #include <string.h>
 #include <filesystem>
+#include <fstream>
 
 #include <wx/wx.h>
 
@@ -80,8 +81,7 @@ bool FcApp::OnInit() {
     if (res != nes::result_t::SUCCESS) {
       wxMessageBox("Failed to load NES file.", "Error", wxOK | wxICON_ERROR);
     }
-  }
-  else {
+  } else {
     nes::menu::show();
   }
 
@@ -105,8 +105,8 @@ void nes::fs_unmount() {}
 nes::result_t nes::fs_get_current_dir(char *out_path) {
   try {
     std::string path = fs::current_path().string();
-    strncpy(out_path, path.c_str(), nes::MAX_PATH_LENGTH - 1);
-    out_path[nes::MAX_PATH_LENGTH - 1] = '\0';
+    strncpy(out_path, path.c_str(), nes::MAX_PATH_LENGTH);
+    out_path[nes::MAX_PATH_LENGTH] = '\0';
   } catch (...) {
     return nes::result_t::ERR_DIR_NOT_FOUND;
   }
@@ -120,7 +120,7 @@ nes::result_t nes::fs_enum_files(const char *path,
       nes::file_info_t info;
       info.is_dir = entry.is_directory();
       std::string filename = entry.path().filename().string();
-      info.name = (char *)filename.c_str();
+      info.name = filename.c_str();
       if (!callback(info)) break;
     }
   } catch (...) {
@@ -129,8 +129,82 @@ nes::result_t nes::fs_enum_files(const char *path,
   return nes::result_t::SUCCESS;
 }
 
+bool nes::fs_exists(const char *path) { return fs::exists(path); }
+
+nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
+  bool create = !fs_exists(path);
+
+  std::fstream *fs = new std::fstream();
+  std::ios::openmode mode = std::ios::binary;
+  if (write) {
+    mode |= std::ios::in | std::ios::out;
+    if (create) mode |= std::ios::trunc;
+  } else {
+    mode |= std::ios::in;
+  }
+  fs->open(path, mode);
+  if (!fs->is_open()) {
+    delete fs;
+    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+  }
+  *handle = static_cast<void *>(fs);
+  return nes::result_t::SUCCESS;
+}
+
+void nes::fs_close(void *handle) {
+  std::fstream *fs = static_cast<std::fstream *>(handle);
+  if (fs) {
+    fs->close();
+    delete fs;
+  }
+}
+
+nes::result_t nes::fs_seek(void *handle, int offset) {
+  std::fstream *fs = static_cast<std::fstream *>(handle);
+  if (!fs || !fs->is_open()) {
+    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+  }
+  fs->seekg(offset, std::ios::beg);
+  fs->seekp(offset, std::ios::beg);
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::fs_size(void *handle, size_t *out_size) {
+  std::fstream *fs = static_cast<std::fstream *>(handle);
+  if (!fs || !fs->is_open()) {
+    return nes::result_t::ERR_FILE_NOT_OPEN;
+  }
+  std::streampos current_pos = fs->tellg();
+  fs->seekg(0, std::ios::end);
+  std::streampos end_pos = fs->tellg();
+  fs->seekg(current_pos, std::ios::beg);
+  *out_size = static_cast<size_t>(end_pos);
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::fs_read(void *handle, uint8_t *buff, int size) {
+  std::fstream *fs = static_cast<std::fstream *>(handle);
+  if (!fs || !fs->is_open()) {
+    return nes::result_t::ERR_FILE_NOT_OPEN;
+  }
+  fs->read(reinterpret_cast<char *>(buff), size);
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::fs_write(void *handle, const uint8_t *buff, int size) {
+  std::fstream *fs = static_cast<std::fstream *>(handle);
+  if (!fs || !fs->is_open()) {
+    return nes::result_t::ERR_FILE_NOT_OPEN;
+  }
+  fs->write(reinterpret_cast<const char *>(buff), size);
+  if (fs->bad()) {
+    return nes::result_t::ERR_FAILED_TO_WRITE_FILE;
+  }
+  return nes::result_t::SUCCESS;
+}
+
 nes::result_t nes::request_load_nes_file(const char *path) {
-  strncpy(nes_path, path, nes::MAX_PATH_LENGTH - 1);
-  nes_path[nes::MAX_PATH_LENGTH - 1] = '\0';
+  strncpy(nes_path, path, nes::MAX_PATH_LENGTH);
+  nes_path[nes::MAX_PATH_LENGTH] = '\0';
   return nes::result_t::SUCCESS;
 }

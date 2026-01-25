@@ -7,6 +7,7 @@ namespace nes::menu {
 
 enum class tab_t {
   NES_LIST,
+  SAVE_LIST,
   COUNT,
 };
 
@@ -20,8 +21,8 @@ void deinit();
 void show();
 void hide();
 
-result_t update();
-result_t render(int y, uint8_t *line_buff);
+result_t service();
+result_t overlay(int y, uint8_t *line_buff);
 
 }  // namespace nes::menu
 

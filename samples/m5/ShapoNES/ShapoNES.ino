@@ -1,13 +1,13 @@
 #include <M5Unified.h>
 #include <driver/i2s_pdm.h>
-#include "SD.h"
 #include "FS.h"
+#include "SD.h"
 
 #include "shapones_core.h"
 
 #include "AdcButton.hpp"
 
-#pragma GCC optimize("Ofast")
+#pragma GCC optimize("O2")
 
 #define SHAPONES_USE_CANVAS (0)
 #define SHAPONES_ENABLE_AUDIO (1)
@@ -70,7 +70,7 @@ static spinlock_t locks[nes::NUM_LOCKS];
 
 static adc_button::Pin button_pins[BUTTON_NUM_PINS];
 
-static nes::input::InputStatus input_state = {0};
+static nes::input::status_t input_state = {0};
 
 #ifdef ARDUINO_M5STACK_ATOMS3
 // clang-format off
@@ -117,7 +117,7 @@ static uint32_t stat_pdm_sent_count = 0;
 static uint64_t disp_button_down_ms = 0;
 static bool disp_button_pressed = false;
 
-static char ines_path[nes::MAX_PATH_LENGTH] = "";
+static char ines_path[nes::MAX_PATH_LENGTH + 1] = "";
 
 static SHAPONES_INLINE void stat_start(stat_t &s) { s.start_us = micros(); }
 
@@ -146,7 +146,7 @@ static volatile uint32_t audio_rd_ptr = 0;
 
 static void read_input();
 static void ppu_loop(void *arg);
-static void load_ines(const char* path);
+static void load_ines(const char *path);
 static bool wait_vsync();
 static bool dma_busy();
 static void dma_start();
@@ -199,8 +199,7 @@ void loop() {
   if (disp_button_down()) {
     if (nes::menu::is_shown()) {
       nes::menu::hide();
-    }
-    else {
+    } else {
       nes::menu::show();
     }
   }
@@ -259,7 +258,8 @@ static void ppu_loop(void *arg) {
     if (!skip_frame) {
       stat_end(stat_ppu_service);
     }
-    if ((!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) && !skip_frame) {
+    if ((!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) &&
+        !skip_frame) {
 #ifdef ARDUINO_M5STACK_ATOMS3
       if (status.focus_y % 2 == 0) {
         for (int x = 0; x < BUFF_W; x++) {
@@ -304,7 +304,7 @@ static void ppu_loop(void *arg) {
   }
 }
 
-static void load_ines(const char* path) {
+static void load_ines(const char *path) {
   nes::result_t res;
 
   if (ines) {
@@ -493,8 +493,7 @@ static bool disp_button_down() {
       disp_button_pressed = true;
       ret = true;
     }
-  }
-  else {
+  } else {
     disp_button_down_ms = now_ms + 100;
     disp_button_pressed = false;
   }
@@ -509,20 +508,17 @@ void nes::lock_deinit(int id) {}
 void nes::lock_get(int id) { taskENTER_CRITICAL(&locks[id]); }
 void nes::lock_release(int id) { taskEXIT_CRITICAL(&locks[id]); }
 
-nes::result_t nes::fs_mount() { 
+nes::result_t nes::fs_mount() {
   if (SD.begin(TF_CS_PIN, SPI, 10000000)) {
     return nes::result_t::SUCCESS;
-  }
-  else {
+  } else {
     Serial.printf("No Disk.\n");
     vTaskDelay(1000);
     return nes::result_t::ERR_NO_DISK;
   }
 }
 
-void nes::fs_unmount() {
-  SD.end();
-}
+void nes::fs_unmount() { SD.end(); }
 
 nes::result_t nes::fs_get_current_dir(char *out_path) {
   strncpy(out_path, "/", nes::MAX_PATH_LENGTH);
@@ -533,21 +529,22 @@ nes::result_t nes::fs_enum_files(const char *path,
                                  nes::fs_enum_files_cb_t callback) {
   bool is_dir;
   File root = SD.open(path);
-  int n = 0;
   while (1) {
     nes::file_info_t fi;
-    String file_name = root.getNextFileName(&fi.is_dir);
-    if (file_name == "") break; 
-    fi.name = (char*)file_name.c_str();
+    String filename = root.getNextFileName(&fi.is_dir);
+    int sep = filename.lastIndexOf('/');
+    if (sep >= 0) {
+      filename = filename.substring(sep + 1);
+    }
+    if (filename == "") break;
+    fi.name = (char *)filename.c_str();
     if (!callback(fi)) break;
-    n++;
   }
-  Serial.printf("%d files found in '%s'\n", n, path);
   return nes::result_t::SUCCESS;
 }
 
 nes::result_t nes::request_load_nes_file(const char *path) {
   strncpy(ines_path, path, nes::MAX_PATH_LENGTH);
-  ines_path[nes::MAX_PATH_LENGTH - 1] = '\0';
+  ines_path[nes::MAX_PATH_LENGTH] = '\0';
   return nes::result_t::SUCCESS;
 }

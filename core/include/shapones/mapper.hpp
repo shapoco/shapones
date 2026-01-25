@@ -15,11 +15,15 @@ class Mapper {
   virtual ~Mapper() {}
 
   virtual result_t init() { return result_t::SUCCESS; }
-  virtual void reset() {}
-  virtual bool vblank(const nes::ppu::Registers &reg) { return false; }
-  virtual bool hblank(const nes::ppu::Registers &reg, int y) { return false; }
+  virtual result_t reset() { return result_t::SUCCESS; }
+  virtual bool vblank(const nes::ppu::registers_t &reg) { return false; }
+  virtual bool hblank(const nes::ppu::registers_t &reg, int y) { return false; }
   virtual uint8_t read(addr_t addr) { return 0; }
   virtual void write(addr_t addr, uint8_t value) {}
+
+  virtual uint32_t get_state_size() { return 0; }
+  virtual result_t save_state(void *file_handle) { return result_t::SUCCESS; }
+  virtual result_t load_state(void *file_handle) { return result_t::SUCCESS; }
 };
 
 extern Mapper *instance;

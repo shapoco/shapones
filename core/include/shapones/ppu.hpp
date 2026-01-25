@@ -79,8 +79,10 @@ static constexpr uint16_t SCROLL_MASK_NAME_SEL = 0x0c00u;
 static constexpr uint16_t SCROLL_MASK_FINE_Y = 0x7000u;
 static constexpr uint16_t SCROLL_MASK_PPU_ADDR = 0x3fffu;
 
-struct Registers {
+struct registers_t {
  public:
+  static constexpr uint32_t STATE_SIZE = 16;
+
   // Control Register
   union {
     uint8_t raw;
@@ -128,6 +130,26 @@ struct Registers {
   // Scroll Registers
   uint8_t fine_x;
   uint16_t scroll;
+
+  void store(uint8_t *buff) const {
+    BufferWriter writer(buff);
+    writer.u8(control.raw);
+    writer.u8(mask.raw);
+    writer.u8(status.raw);
+    writer.u8(oam_addr);
+    writer.u8(fine_x);
+    writer.u16(scroll);
+  }
+
+  void load(const uint8_t *buff) {
+    BufferReader reader(buff);
+    control.raw = reader.u8();
+    mask.raw = reader.u8();
+    status.raw = reader.u8();
+    oam_addr = reader.u8();
+    fine_x = reader.u8();
+    scroll = reader.u16();
+  }
 };
 
 static constexpr uint8_t OAM_ATTR_PALETTE = 0x3;
@@ -135,17 +157,15 @@ static constexpr uint8_t OAM_ATTR_PRIORITY = 0x20;
 static constexpr uint8_t OAM_ATTR_INVERT_H = 0x40;
 static constexpr uint8_t OAM_ATTR_INVERT_V = 0x80;
 
-struct OamEntry {
-  uint8_t y;
-  uint8_t tile;
-  uint8_t attr;
-  uint8_t x;
-};
+static constexpr int OAM_ENTRY_OFFSET_Y = 0;
+static constexpr int OAM_ENTRY_OFFSET_TILE = 1;
+static constexpr int OAM_ENTRY_OFFSET_ATTR = 2;
+static constexpr int OAM_ENTRY_OFFSET_X = 3;
 
 static constexpr uint8_t SL_ATTR_BEHIND = 0x1;
 static constexpr uint8_t SL_ATTR_ZERO = 0x2;
 
-struct SpriteLine {
+struct sprite_line_t {
   uint8_t x;
   uint8_t attr;
   uint16_t chr;
@@ -178,6 +198,10 @@ void reg_write(addr_t addr, uint8_t data);
 void oam_dma_write(addr_t offset, uint8_t data);
 
 result_t service(uint8_t *line_buff,  bool skip_render = false, status_t* status = nullptr);
+
+uint32_t get_state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
 
 }  // namespace nes::ppu
 

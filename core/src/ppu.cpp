@@ -1,5 +1,6 @@
 #include "shapones/ppu.hpp"
 #include "shapones/cpu.hpp"
+#include "shapones/host_intf.hpp"
 #include "shapones/interrupt.hpp"
 #include "shapones/lock.hpp"
 #include "shapones/mapper.hpp"
@@ -8,15 +9,17 @@
 
 namespace nes::ppu {
 
-static Registers reg;
+static constexpr uint32_t STATE_HEADER_SIZE = registers_t::STATE_SIZE + 32;
+
+static registers_t reg;
 
 volatile cycle_t cycle_count;
 
-static int focus_x;
-static int focus_y;
+static uint16_t focus_x;
+static uint16_t focus_y;
 
-static volatile uint16_t scroll;
-static int fine_x;
+static volatile uint16_t scroll_counter;
+static uint8_t fine_x_counter;
 
 static uint8_t bus_read_data_latest = 0;
 static uint8_t bus_read_data_delayed = 0;
@@ -27,17 +30,9 @@ static bool nmi_level = false;
 
 static uint8_t palette_file[PALETTE_NUM_BANK * PALETTE_SIZE];
 
-static OamEntry oam[MAX_SPRITE_COUNT];
-static SpriteLine sprite_lines[MAX_VISIBLE_SPRITES];
+static uint8_t oam[OAM_SIZE];
+static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
-
-// todo: delete
-#if 0
-static volatile bool mmc3_irq_enable = false;
-static volatile bool mmc3_irq_reloading = false;
-static volatile uint8_t mmc3_irq_latch = 255;
-static volatile uint8_t mmc3_irq_counter = 0;
-#endif
 
 static uint8_t bus_read(addr_t addr);
 static void bus_write(addr_t addr, uint8_t data);
@@ -50,17 +45,16 @@ static void render_bg(uint8_t *line_buff, int x0, int x1, bool skip_render);
 static void enum_visible_sprites(bool skip_render);
 static void render_sprite(uint8_t *line_buff, int x0, int x1, bool skip_render);
 
-result_t init() { return result_t::SUCCESS; }
+result_t init() {
+  deinit();
+  return result_t::SUCCESS;
+}
 void deinit() {}
 
 result_t reset() {
   // https://www.nesdev.org/wiki/PPU_power_up_state
-  reg.control.raw = 0;
-  reg.mask.raw = 0;
-  reg.oam_addr = 0;
-  reg.scroll = 0;
-  reg.status.raw = 0;
-  reg.fine_x = 0;
+  memset(&reg, 0, sizeof(registers_t));
+  memset(oam, 0, sizeof(oam));
 
   bus_read_data_latest = 0;
   bus_read_data_delayed = 0;
@@ -97,12 +91,12 @@ uint8_t reg_read(addr_t addr) {
 
     case REG_PPUDATA: {
       Exclusive lock(LOCK_PPU);
-      addr_t addr = scroll & SCROLL_MASK_PPU_ADDR;
+      addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
       addr &= SCROLL_MASK_PPU_ADDR;
-      scroll &= ~SCROLL_MASK_PPU_ADDR;
-      scroll |= addr;
+      scroll_counter &= ~SCROLL_MASK_PPU_ADDR;
+      scroll_counter |= addr;
       retval = bus_read_data_delayed;
     } break;
 
@@ -156,21 +150,21 @@ void reg_write(addr_t addr, uint8_t data) {
       } else {
         reg.scroll &= 0xff00u;
         reg.scroll |= (uint16_t)data;
-        scroll = reg.scroll;
+        scroll_counter = reg.scroll;
         scroll_ppuaddr_high_stored = false;
       }
     } break;
 
     case REG_PPUDATA: {
       Exclusive lock(LOCK_PPU);
-      uint_fast16_t scr = scroll;
+      uint_fast16_t scr = scroll_counter;
       addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
       bus_write(addr, data);
       addr += reg.control.incr_stride ? 32 : 1;
       addr &= SCROLL_MASK_PPU_ADDR;
       scr &= ~SCROLL_MASK_PPU_ADDR;
       scr |= addr;
-      scroll = scr;
+      scroll_counter = scr;
     } break;
 
     default:
@@ -225,21 +219,11 @@ static SHAPONES_INLINE void bus_write(addr_t addr, uint8_t data) {
 }
 
 static SHAPONES_INLINE uint8_t oam_read(addr_t addr) {
-  switch (addr & 0x3) {
-    case 0: return oam[addr / 4].y;
-    case 1: return oam[addr / 4].tile;
-    case 2: return oam[addr / 4].attr;
-    default: return oam[addr / 4].x;
-  }
+  return oam[addr % OAM_SIZE];
 }
 
 static SHAPONES_INLINE void oam_write(addr_t addr, uint8_t data) {
-  switch (addr & 0x3) {
-    case 0: oam[addr / 4].y = data; break;
-    case 1: oam[addr / 4].tile = data; break;
-    case 2: oam[addr / 4].attr = data; break;
-    default: oam[addr / 4].x = data; break;
-  }
+  oam[addr % OAM_SIZE] = data;
 }
 
 static SHAPONES_INLINE uint8_t palette_read(addr_t addr) {
@@ -266,17 +250,13 @@ static SHAPONES_INLINE void palette_write(addr_t addr, uint8_t data) {
 }
 
 result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
-  bool menu_shown = nes::menu::is_shown();
   timing_t timing = timing_t::NONE;
   bool irq = false;
 
   while (true) {
-    cycle_t cycle_diff = SCREEN_WIDTH;
-    if (!menu_shown) {
-      cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
-      if (cycle_diff <= 0) {
-        break;
-      }
+    cycle_t cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
+    if (cycle_diff <= 0) {
+      break;
     }
 
     // events
@@ -302,8 +282,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     nmi_level = nmi_level_new;
 
     // determine step count
-    int step_count;
-    int dist_to_end;
+    uint_fast16_t step_count;
+    uint_fast16_t dist_to_end;
     if (focus_y < SCREEN_HEIGHT && focus_x < SCREEN_WIDTH) {
       // visible area
       dist_to_end = SCREEN_WIDTH - focus_x;
@@ -315,7 +295,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     step_count =
         step_count < MAX_DELAY_CYCLES / 2 ? step_count : MAX_DELAY_CYCLES / 2;
 
-    int next_focus_x = focus_x + step_count;
+    uint_fast16_t next_focus_x = focus_x + step_count;
 
     if (focus_x == 0 && focus_y < SCREEN_HEIGHT && reg.mask.sprite_enable) {
       // enumerate visible sprites in current line
@@ -331,7 +311,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
       render_sprite(line_buff, focus_x, next_focus_x, skip_render);
     }
 
-    if (focus_y < SCREEN_HEIGHT && !menu_shown) {
+    if (focus_y < SCREEN_HEIGHT) {
       if (focus_x <= SCREEN_WIDTH && SCREEN_WIDTH < next_focus_x) {
         mapper::instance->hblank(reg, focus_y);
       }
@@ -352,10 +332,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
       }
     }
 
-    if (!menu_shown) {
-      // step cycle counter
-      cycle_count += step_count;
-    }
+    // step cycle counter
+    cycle_count += step_count;
 
     if (focus_y < SCREEN_HEIGHT) {
       if (focus_x == SCREEN_WIDTH) {
@@ -375,13 +353,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     }
   }
 
-  if (menu_shown) {
-    if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
-      nes::menu::render(focus_y, line_buff);
-    }
-    if (!!(timing & timing_t::START_OF_VBLANK_LINE)) {
-      nes::menu::update();
-    }
+  if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
+    nes::menu::overlay(focus_y, line_buff);
   }
 
   if (status) {
@@ -416,13 +389,13 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
 #if SHAPONES_MUTEX_FAST
         Exclusive lock(LOCK_PPU);
 #endif
-        scr = scroll;
+        scr = scroll_counter;
       }
 
       // determine step count
       x0 = x0_block;
       if (visible_area && bg_enabled) {
-        x1 = x0 + (BLOCK_SIZE - ((scr & 0x1) * TILE_SIZE + fine_x));
+        x1 = x0 + (BLOCK_SIZE - ((scr & 0x1) * TILE_SIZE + fine_x_counter));
       } else {
         x1 = x0 + 64;
       }
@@ -453,7 +426,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
             chr = ((uint32_t)chr1 << 16) | (uint32_t)chr0;
 
             // adjust CHR bit pos
-            int chr_shift_size = ((scr << 4) & 0x10) | (fine_x << 1);
+            int chr_shift_size = ((scr << 4) & 0x10) | (fine_x_counter << 1);
             chr >>= chr_shift_size;
 
             // calc attr index
@@ -496,10 +469,9 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
 #if SHAPONES_MUTEX_FAST
       Exclusive lock(LOCK_PPU);
 #endif
-      uint_fast16_t scr = scroll;
-      int fy = focus_y;
-      int fx = fine_x;
-      if (fy < SCREEN_HEIGHT) {
+      uint_fast16_t scr = scroll_counter;
+      uint_fast8_t fx = fine_x_counter;
+      if (focus_y < SCREEN_HEIGHT) {
         if (x0 < SCREEN_WIDTH) {
           // step scroll counter for x-axis
           fx += (x1 - x0);
@@ -537,13 +509,13 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
           }
 
           // horizontal recovery
-          constexpr uint16_t copy_mask = 0x041fu;
-          scr &= ~copy_mask;
-          scr |= reg.scroll & copy_mask;
+          constexpr uint16_t MASK = 0x041fu;
+          scr &= ~MASK;
+          scr |= reg.scroll & MASK;
           fx = reg.fine_x;
         }
-        fine_x = fx;
-      } else if (fy == SCAN_LINES - 1) {
+        fine_x_counter = fx;
+      } else if (focus_y == SCAN_LINES - 1) {
         if (280 <= x1 && x0 <= 304) {
           // vertical recovery
           constexpr uint16_t copy_mask = 0x7be0u;
@@ -551,7 +523,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
           scr |= reg.scroll & copy_mask;
         }
       }
-      scroll = scr;
+      scroll_counter = scr;
     }  // if
 
     x0_block = x1;
@@ -568,16 +540,21 @@ static void enum_visible_sprites(bool skip_render) {
   num_visible_sprites = 0;
   uint8_t h = reg.control.sprite_size ? 16 : 8;
   for (int i = 0; i < n; i++) {
+    uint_fast8_t s_y = oam[i * 4 + OAM_ENTRY_OFFSET_Y];
+    uint_fast8_t s_tile = oam[i * 4 + OAM_ENTRY_OFFSET_TILE];
+    uint_fast8_t s_attr = oam[i * 4 + OAM_ENTRY_OFFSET_ATTR];
+    uint_fast8_t s_x = oam[i * 4 + OAM_ENTRY_OFFSET_X];
+
     const auto &s = oam[i];
 
     // vertical hit test
-    int src_y = focus_y - (s.y + SPRITE_Y_OFFSET);
+    int src_y = focus_y - (s_y + SPRITE_Y_OFFSET);
     if (0 <= src_y && src_y < h) {
       int tile_index = 0;
       uint_fast16_t chr = 0xFFFF;
 
       if (!skip_render) {
-        if (s.attr & OAM_ATTR_INVERT_V) {
+        if (s_attr & OAM_ATTR_INVERT_V) {
           // vertical inversion
           if (reg.control.sprite_size) {
             src_y ^= 0xf;
@@ -590,17 +567,17 @@ static void enum_visible_sprites(bool skip_render) {
         if (reg.control.sprite_size) {
           // 8x16 sprite
           if (src_y < 8) {
-            tile_index = s.tile & 0xfe;
+            tile_index = s_tile & 0xfe;
           } else {
-            tile_index = s.tile | 0x01;
+            tile_index = s_tile | 0x01;
           }
 
-          if (s.tile & 0x1) {
+          if (s_tile & 0x1) {
             tile_index += 0x1000 / 16;
           }
         } else {
           // 8x8 sprite
-          tile_index = s.tile;
+          tile_index = s_tile;
           if (reg.control.sprite_name_sel) {
             tile_index += 0x1000 / 16;
           }
@@ -608,16 +585,16 @@ static void enum_visible_sprites(bool skip_render) {
         // read CHRROM
         int chrrom_index = (tile_index << 4) + (src_y & 0x7);
         chr = memory::chrrom_read_double(chrrom_index,
-                                         s.attr & OAM_ATTR_INVERT_H);
+                                         s_attr & OAM_ATTR_INVERT_H);
       }
 
       // store sprite information
-      SpriteLine &sl = sprite_lines[num_visible_sprites++];
+      sprite_line_t &sl = sprite_lines[num_visible_sprites++];
       sl.chr = chr;
-      sl.x = s.x;
-      sl.palette_offset = (4 + (s.attr & OAM_ATTR_PALETTE)) * PALETTE_SIZE;
+      sl.x = s_x;
+      sl.palette_offset = (4 + (s_attr & OAM_ATTR_PALETTE)) * PALETTE_SIZE;
       sl.attr = 0;
-      if (s.attr & OAM_ATTR_PRIORITY) sl.attr |= SL_ATTR_BEHIND;
+      if (s_attr & OAM_ATTR_PRIORITY) sl.attr |= SL_ATTR_BEHIND;
       if (i == 0) sl.attr |= SL_ATTR_ZERO;
 
       if (num_visible_sprites >= MAX_VISIBLE_SPRITES) {
@@ -657,6 +634,53 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
       }
     }
   }
+}
+
+uint32_t get_state_size() {
+  return STATE_HEADER_SIZE + sizeof(palette_file) + sizeof(oam);
+}
+
+result_t save_state(void *file_handle) {
+  uint8_t buff[STATE_HEADER_SIZE];
+  memset(buff, 0, sizeof(buff));
+  uint8_t *p = buff;
+  BufferWriter writer(p);
+  reg.store(p);
+  p += registers_t::STATE_SIZE;
+  writer.u64(cycle_count);
+  writer.u16(focus_x);
+  writer.u16(focus_y);
+  writer.u16(scroll_counter);
+  writer.u8(fine_x_counter);
+  writer.u8(bus_read_data_latest);
+  writer.u8(bus_read_data_delayed);
+  writer.b(scroll_ppuaddr_high_stored);
+  writer.b(nmi_level);
+  SHAPONES_TRY(fs_write(file_handle, buff, sizeof(buff)));
+  SHAPONES_TRY(fs_write(file_handle, palette_file, sizeof(palette_file)));
+  SHAPONES_TRY(fs_write(file_handle, oam, sizeof(oam)));
+  return result_t::SUCCESS;
+}
+
+result_t load_state(void *file_handle) {
+  uint8_t buff[STATE_HEADER_SIZE];
+  SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));
+  const uint8_t *p = buff;
+  BufferReader reader(p);
+  reg.load(p);
+  p += registers_t::STATE_SIZE;
+  cycle_count = reader.u64();
+  focus_x = reader.u16();
+  focus_y = reader.u16();
+  scroll_counter = reader.u16();
+  fine_x_counter = reader.u8();
+  bus_read_data_latest = reader.u8();
+  bus_read_data_delayed = reader.u8();
+  scroll_ppuaddr_high_stored = reader.b();
+  nmi_level = reader.b();
+  SHAPONES_TRY(fs_read(file_handle, palette_file, sizeof(palette_file)));
+  SHAPONES_TRY(fs_read(file_handle, oam, sizeof(oam)));
+  return result_t::SUCCESS;
 }
 
 }  // namespace nes::ppu

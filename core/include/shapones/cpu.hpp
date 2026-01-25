@@ -26,7 +26,11 @@ static constexpr uint8_t STATUS_BREAKMODE = 0x10;
 static constexpr uint8_t STATUS_OVERFLOW = 0x40;
 static constexpr uint8_t STATUS_NEGATIVE = 0x80;
 
-struct Registers {
+static constexpr uint16_t DMA_TRANSFER_SIZE = 256;
+
+struct registers_t {
+  static constexpr uint32_t STATE_SIZE = 16;
+
   uint8_t A;   // accumulator
   uint8_t X;   // index
   uint8_t Y;   // index
@@ -45,11 +49,32 @@ struct Registers {
     };
   } status;
   addr_t PC;  // program counter
+
+  void store(uint8_t *buff) const {
+    BufferWriter writer(buff);
+    writer.u8(A);
+    writer.u8(X);
+    writer.u8(Y);
+    writer.u8(SP);
+    writer.u8(status.raw);
+    writer.u16(PC);
+  }
+
+  void load(const uint8_t *buff) {
+    BufferReader reader(buff);
+    A = reader.u8();
+    X = reader.u8();
+    Y = reader.u8();
+    SP = reader.u8();
+    status.raw = reader.u8();
+    PC = reader.u16();
+  }
 };
 
-enum RegSel { A, X, Y };
+constexpr uint32_t STATE_SIZE = registers_t::STATE_SIZE + 16;
 
 extern volatile cycle_t ppu_cycle_count;
+static SHAPONES_INLINE cycle_t ppu_cycle_leading() { return ppu_cycle_count; }
 
 result_t init();
 void deinit();
@@ -64,7 +89,9 @@ result_t service();
 uint8_t bus_read(addr_t addr);
 void bus_write(addr_t addr, uint8_t data);
 
-static SHAPONES_INLINE cycle_t ppu_cycle_leading() { return ppu_cycle_count; }
+uint32_t get_state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
 
 }  // namespace nes::cpu
 

@@ -40,6 +40,8 @@ with open(OUTPUT_HPP, "w") as out_f:
     
     out_f.write("#define SHAPONES_MENU_LARGE_FONT (1)\n\n")
     
+    out_f.write("#pragma GCC optimize (\"O2\")\n\n")
+    
     include_file("shapones/shapones.hpp")
 
     out_f.write("#ifdef SHAPONES_IMPLEMENTATION\n")

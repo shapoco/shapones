@@ -5,7 +5,7 @@
 
 #include "nes_load.hpp"
 
-char nes_path[nes::MAX_PATH_LENGTH] = "";
+char nes_path[nes::MAX_PATH_LENGTH + 1] = "";
 std::vector<uint8_t> ines_image;
 
 nes::result_t load_nes_file(const char *path) {
@@ -20,7 +20,7 @@ nes::result_t load_nes_file(const char *path) {
     ifs.read((char *)&vec[0], size);
     ines_image = std::move(vec);
 
-    nes::map_ines(&ines_image[0]);
+    nes::map_ines(&ines_image[0], path);
     nes::menu::hide();
   } catch (...) {
     return nes::result_t::ERR_FAILED_TO_READ_FILE;

@@ -3,15 +3,19 @@
         {
             "name": "Linux",
             "includePath": [
+                "/usr/include/wx-3.2",
+                "/usr/lib/x86_64-linux-gnu/wx/include/gtk3-unicode-3.2",
                 "${workspaceFolder}/core/include",
                 "${workspaceFolder}/samples/wxapp"
             ],
             "defines": [
+                "WXUSINGDLL",
+                "__WXGTK__",
                 "SHAPONES_ENABLE_LOG=1"
             ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c11",
-            "cppStandard": "gnu++14",
+            "cppStandard": "c++17",
             "intelliSenseMode": "linux-gcc-x64"
         },
         {

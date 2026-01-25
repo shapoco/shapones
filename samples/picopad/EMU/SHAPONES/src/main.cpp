@@ -98,7 +98,7 @@ static void core0_main() {
   while (true) {
     uint64_t now_ms = Time64() / 1000;
 
-    nes::input::InputStatus is;
+    nes::input::status_t is;
     is.raw = 0;
     if (KeyPressedFast(KEY_LEFT)) is.left = 1;
     if (KeyPressedFast(KEY_RIGHT)) is.right = 1;

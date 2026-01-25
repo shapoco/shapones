@@ -149,7 +149,7 @@ static void cpu_loop() {
 #endif
   for (;;) {
     // update input status
-    nes::input::InputStatus input_status;
+    nes::input::status_t input_status;
     input_status.raw = 0;
     for (int i = 0; i < 8; i++) {
       if (!gpio_get(input_pins[i])) {

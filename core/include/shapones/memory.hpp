@@ -86,12 +86,14 @@ extern uint8_t *chrram;
 extern const uint8_t *prgrom;
 extern const uint8_t *chrrom;
 
-extern int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
-extern int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
+extern uint16_t prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
+extern uint16_t chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
 
-extern addr_t prgram_addr_mask;
 extern uint32_t prgrom_phys_size;
 extern uint32_t prgrom_phys_addr_mask;
+extern uint32_t prgram_size;
+extern addr_t prgram_addr_mask;
+
 extern uint32_t chrrom_phys_size;
 extern uint32_t chrrom_phys_addr_mask;
 
@@ -177,7 +179,11 @@ static SHAPONES_INLINE uint_fast16_t chrrom_read_double(addr_t addr,
   }
 }
 
-void set_nametable_arrangement(NametableArrangement mode);
+void set_nametable_arrangement(nametable_arrangement_t mode);
+
+uint32_t get_state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
 
 }  // namespace nes::memory
 

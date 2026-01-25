@@ -14,7 +14,7 @@ static constexpr int BTN_DOWN = 5;
 static constexpr int BTN_LEFT = 6;
 static constexpr int BTN_RIGHT = 7;
 
-union InputStatus {
+union status_t {
   uint8_t raw;
   struct {
     uint8_t A : 1;
@@ -28,7 +28,7 @@ union InputStatus {
   };
 };
 
-union InputControl {
+union control_t {
   uint8_t raw;
   struct {
     uint8_t strobe : 1;
@@ -36,11 +36,21 @@ union InputControl {
   };
 };
 
-InputStatus get_status(int player);
-void set_status(int player, InputStatus data);
+result_t init();
+void deinit();
+
+result_t reset();
+
+status_t get_status(int player);
+void set_status(int player, status_t data);
+
 void update();
 uint8_t read_latched(int player);
 void write_control(uint8_t data);
+
+uint32_t state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
 
 }  // namespace nes::input
 

@@ -3,6 +3,8 @@
 
 #define SHAPONES_MENU_LARGE_FONT (1)
 
+#pragma GCC optimize ("O2")
+
 #ifndef SHAPONES_HPP
 #define SHAPONES_HPP
 
@@ -135,11 +137,11 @@ enum class result_t {
   ERR_INES_TOO_LARGE,
 };
 
-struct Config {
+struct config_t {
   uint32_t apu_sampling_rate;
 };
 
-enum class NametableArrangement : uint8_t {
+enum class nametable_arrangement_t : uint8_t {
   HORIZONTAL = 0,
   VERTICAL = 1,
   SINGLE_LOWER = 2,
@@ -188,54 +190,54 @@ static constexpr int SWP_FLAG_NEGATE = 0x2;
 static constexpr int LIN_FLAG_RELOAD = 0x1;
 static constexpr int LIN_FLAG_CONTROL = 0x2;
 
-struct Envelope {
+struct envelope_t {
   int flags;
   int volume;
   int divider;
   int decay;
 };
 
-struct Sweep {
+struct sweep_t {
   int flags;
   int period;
   int divider;
   int shift;
 };
 
-struct LinearCounter {
+struct linear_counter_t {
   int flags;
   int counter;
   int reload_value;
 };
 
-struct PulseState {
+struct pulse_state_t {
   uint8_t waveform;
   uint32_t timer;
   uint32_t timer_period;
   uint32_t phase;
   int length;
-  Envelope envelope;
-  Sweep sweep;
+  envelope_t envelope;
+  sweep_t sweep;
 };
 
-struct TriangleState {
+struct triangle_state_t {
   uint32_t timer;
   uint32_t timer_period;
   uint32_t phase;
   int length;
-  LinearCounter linear;
+  linear_counter_t linear;
 };
 
-struct NoiseState {
+struct noise_state_t {
   uint32_t timer;
   uint32_t timer_period;
   bool mode;
   uint16_t lfsr;
   int length;
-  Envelope envelope;
+  envelope_t envelope;
 };
 
-struct DmcState {
+struct dmc_state_t {
   bool irq_enabled;
   bool loop;
   uint32_t timer_step;
@@ -249,7 +251,7 @@ struct DmcState {
   uint8_t out_level;
 };
 
-union Status {
+union status_t {
   uint8_t raw;
   struct {
     uint8_t pulse0_enable : 1;
@@ -310,7 +312,7 @@ static constexpr uint8_t STATUS_BREAKMODE = 0x10;
 static constexpr uint8_t STATUS_OVERFLOW = 0x40;
 static constexpr uint8_t STATUS_NEGATIVE = 0x80;
 
-struct Registers {
+struct registers_t {
   uint8_t A;   // accumulator
   uint8_t X;   // index
   uint8_t Y;   // index
@@ -365,7 +367,7 @@ namespace nes::dma {
 
 static constexpr int TRANSFER_SIZE = 256;
 
-bool is_running();
+bool dma_is_running();
 void start(int src_page);
 int exec_next_cycle();
 
@@ -424,7 +426,7 @@ static constexpr int BTN_DOWN = 5;
 static constexpr int BTN_LEFT = 6;
 static constexpr int BTN_RIGHT = 7;
 
-union InputStatus {
+union status_t {
   uint8_t raw;
   struct {
     uint8_t A : 1;
@@ -438,7 +440,7 @@ union InputStatus {
   };
 };
 
-union InputControl {
+union control_t {
   uint8_t raw;
   struct {
     uint8_t strobe : 1;
@@ -446,8 +448,8 @@ union InputControl {
   };
 };
 
-InputStatus get_status(int player);
-void set_status(int player, InputStatus data);
+status_t get_status(int player);
+void set_status(int player, status_t data);
 void update();
 uint8_t read_latched(int player);
 void write_control(uint8_t data);
@@ -465,38 +467,38 @@ void write_control(uint8_t data);
 
 namespace nes::interrupt {
 
-enum class Source : uint32_t {
+enum class source_t : uint32_t {
   APU_FRAME_COUNTER = (1 << 0),
   APU_DMC = (1 << 1),
-  MMC3 = (1 << 2),
+  MAPPER = (1 << 2),
 };
 
-static SHAPONES_INLINE Source operator|(Source a, Source b) {
-  return static_cast<Source>(static_cast<uint32_t>(a) |
+static SHAPONES_INLINE source_t operator|(source_t a, source_t b) {
+  return static_cast<source_t>(static_cast<uint32_t>(a) |
                              static_cast<uint32_t>(b));
 }
-static SHAPONES_INLINE Source operator&(Source a, Source b) {
-  return static_cast<Source>(static_cast<uint32_t>(a) &
+static SHAPONES_INLINE source_t operator&(source_t a, source_t b) {
+  return static_cast<source_t>(static_cast<uint32_t>(a) &
                              static_cast<uint32_t>(b));
 }
-static SHAPONES_INLINE bool operator!(Source a) {
+static SHAPONES_INLINE bool operator!(source_t a) {
   return !static_cast<uint32_t>(a);
 }
-static SHAPONES_INLINE Source operator~(Source a) {
-  return static_cast<Source>(~static_cast<uint32_t>(a));
+static SHAPONES_INLINE source_t operator~(source_t a) {
+  return static_cast<source_t>(~static_cast<uint32_t>(a));
 }
-static SHAPONES_INLINE Source& operator|=(Source& a, Source b) {
+static SHAPONES_INLINE source_t& operator|=(source_t& a, source_t b) {
   a = a | b;
   return a;
 }
-static SHAPONES_INLINE Source& operator&=(Source& a, Source b) {
+static SHAPONES_INLINE source_t& operator&=(source_t& a, source_t b) {
   a = a & b;
   return a;
 }
 
-void assert_irq(Source src);
-void deassert_irq(Source src);
-Source get_irq();
+void assert_irq(source_t src);
+void deassert_irq(source_t src);
+source_t get_irq();
 
 void assert_nmi();
 void deassert_nmi();
@@ -652,7 +654,7 @@ static constexpr uint8_t OAM_ATTR_PRIORITY = 0x20;
 static constexpr uint8_t OAM_ATTR_INVERT_H = 0x40;
 static constexpr uint8_t OAM_ATTR_INVERT_V = 0x80;
 
-struct OamEntry {
+struct oam_entry_t {
   uint8_t y;
   uint8_t tile;
   uint8_t attr;
@@ -662,7 +664,7 @@ struct OamEntry {
 static constexpr uint8_t SL_ATTR_BEHIND = 0x1;
 static constexpr uint8_t SL_ATTR_ZERO = 0x2;
 
-struct SpriteLine {
+struct sprite_line_t {
   uint8_t x;
   uint8_t attr;
   uint16_t chr;
@@ -909,7 +911,7 @@ static SHAPONES_INLINE uint_fast16_t chrrom_read_double(addr_t addr,
   }
 }
 
-void set_nametable_arrangement(NametableArrangement mode);
+void set_nametable_arrangement(nametable_arrangement_t mode);
 
 }  // namespace nes::memory
 
@@ -939,8 +941,8 @@ void deinit();
 void show();
 void hide();
 
-result_t update();
-result_t render(int y, uint8_t *line_buff);
+result_t service();
+result_t overlay(int y, uint8_t *line_buff);
 
 }  // namespace nes::menu
 
@@ -950,9 +952,9 @@ result_t render(int y, uint8_t *line_buff);
 
 namespace nes {
 
-Config get_default_config();
+config_t get_default_config();
 
-result_t init(const Config &cfg);
+result_t init(const config_t &cfg);
 void deinit();
 
 result_t map_ines(const uint8_t *ines);
@@ -1030,26 +1032,26 @@ static constexpr uint16_t DMC_RATE_TABLE[16] = {
     428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
 };
 
-static PulseState pulse[2];
-static TriangleState triangle;
-static NoiseState noise;
-static DmcState dmc;
-static Status status;
+static pulse_state_t pulse[2];
+static triangle_state_t triangle;
+static noise_state_t noise;
+static dmc_state_t dmc;
+static status_t status;
 
-static void pulse_write_reg0(PulseState *s, uint8_t value);
-static void pulse_write_reg1(PulseState *s, uint8_t value);
-static void pulse_write_reg2(PulseState *s, uint8_t value);
-static void pulse_write_reg3(PulseState *s, uint8_t value);
-static void triangle_write_reg0(TriangleState *s, uint8_t value);
-static void triangle_write_reg2(TriangleState *s, uint8_t value);
-static void triangle_write_reg3(TriangleState *s, uint8_t value);
-static void noise_write_reg0(NoiseState *s, uint8_t value);
-static void noise_write_reg2(NoiseState *s, uint8_t value);
-static void noise_write_reg3(NoiseState *s, uint8_t value);
-static void dmc_write_reg0(DmcState *s, uint8_t value);
-static void dmc_write_reg1(DmcState *s, uint8_t value);
-static void dmc_write_reg2(DmcState *s, uint8_t value);
-static void dmc_write_reg3(DmcState *s, uint8_t value);
+static void pulse_write_reg0(pulse_state_t *s, uint8_t value);
+static void pulse_write_reg1(pulse_state_t *s, uint8_t value);
+static void pulse_write_reg2(pulse_state_t *s, uint8_t value);
+static void pulse_write_reg3(pulse_state_t *s, uint8_t value);
+static void triangle_write_reg0(triangle_state_t *s, uint8_t value);
+static void triangle_write_reg2(triangle_state_t *s, uint8_t value);
+static void triangle_write_reg3(triangle_state_t *s, uint8_t value);
+static void noise_write_reg0(noise_state_t *s, uint8_t value);
+static void noise_write_reg2(noise_state_t *s, uint8_t value);
+static void noise_write_reg3(noise_state_t *s, uint8_t value);
+static void dmc_write_reg0(dmc_state_t *s, uint8_t value);
+static void dmc_write_reg1(dmc_state_t *s, uint8_t value);
+static void dmc_write_reg2(dmc_state_t *s, uint8_t value);
+static void dmc_write_reg3(dmc_state_t *s, uint8_t value);
 
 result_t init() { return result_t::SUCCESS; }
 void deinit() {}
@@ -1100,13 +1102,13 @@ uint8_t reg_read(addr_t addr) {
       // see: https://www.nesdev.org/wiki/IRQ
       uint8_t ret = status.raw;
       auto irqs = interrupt::get_irq();
-      if (!!(irqs & interrupt::Source::APU_DMC)) {
+      if (!!(irqs & interrupt::source_t::APU_DMC)) {
         ret |= 0x80;
       }
-      if (!!(irqs & interrupt::Source::APU_FRAME_COUNTER)) {
+      if (!!(irqs & interrupt::source_t::APU_FRAME_COUNTER)) {
         ret |= 0x40;
       }
-      interrupt::deassert_irq(interrupt::Source::APU_FRAME_COUNTER);
+      interrupt::deassert_irq(interrupt::source_t::APU_FRAME_COUNTER);
       return ret;
     } break;
 
@@ -1150,7 +1152,7 @@ void reg_write(addr_t addr, uint8_t value) {
         dmc.bytes_remaining = 0;
       }
       // see: https://www.nesdev.org/wiki/IRQ
-      interrupt::deassert_irq(interrupt::Source::APU_DMC);
+      interrupt::deassert_irq(interrupt::source_t::APU_DMC);
       break;
     case REG_FRAME_COUNTER:
       if (value & 0x80) {
@@ -1182,7 +1184,7 @@ result_t set_sampling_rate(uint32_t rate_hz) {
   return result_t::SUCCESS;
 }
 
-static void pulse_write_reg0(PulseState *s, uint8_t value) {
+static void pulse_write_reg0(pulse_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   // duty pattern
   switch ((value >> 6) & 0x3) {
@@ -1203,7 +1205,7 @@ static void pulse_write_reg0(PulseState *s, uint8_t value) {
   }
 }
 
-static void pulse_write_reg1(PulseState *s, uint8_t value) {
+static void pulse_write_reg1(pulse_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->sweep.period = (value >> 4) & 0x7;
   s->sweep.shift = value & 0x7;
@@ -1213,13 +1215,13 @@ static void pulse_write_reg1(PulseState *s, uint8_t value) {
   s->sweep.divider = 0;
 }
 
-static void pulse_write_reg2(PulseState *s, uint8_t value) {
+static void pulse_write_reg2(pulse_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0xff << TIMER_PREC);
   s->timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
-static void pulse_write_reg3(PulseState *s, uint8_t value) {
+static void pulse_write_reg3(pulse_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0x700 << TIMER_PREC);
   s->timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
@@ -1228,7 +1230,7 @@ static void pulse_write_reg3(PulseState *s, uint8_t value) {
   s->phase = 0;
 }
 
-static void triangle_write_reg0(TriangleState *s, uint8_t value) {
+static void triangle_write_reg0(triangle_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->linear.reload_value = value & 0x7f;
   if (value & 0x80) {
@@ -1238,13 +1240,13 @@ static void triangle_write_reg0(TriangleState *s, uint8_t value) {
   }
 }
 
-static void triangle_write_reg2(TriangleState *s, uint8_t value) {
+static void triangle_write_reg2(triangle_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0xff << TIMER_PREC);
   s->timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
-static void triangle_write_reg3(TriangleState *s, uint8_t value) {
+static void triangle_write_reg3(triangle_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->timer_period &= ~(0x700 << TIMER_PREC);
   s->timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
@@ -1254,7 +1256,7 @@ static void triangle_write_reg3(TriangleState *s, uint8_t value) {
   s->linear.flags |= LIN_FLAG_RELOAD;
 }
 
-static void noise_write_reg0(NoiseState *s, uint8_t value) {
+static void noise_write_reg0(noise_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->envelope.flags = 0;
   if (value & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
@@ -1267,22 +1269,22 @@ static void noise_write_reg0(NoiseState *s, uint8_t value) {
   }
 }
 
-static void noise_write_reg2(NoiseState *s, uint8_t value) {
+static void noise_write_reg2(noise_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->mode = !!(value & 0x80);
   s->timer_period = NOISE_PERIOD_TABLE[value & 0xF];
 }
 
-static void noise_write_reg3(NoiseState *s, uint8_t value) {
+static void noise_write_reg3(noise_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
 }
 
-static void dmc_write_reg0(DmcState *s, uint8_t value) {
+static void dmc_write_reg0(dmc_state_t *s, uint8_t value) {
   bool irq_ena_old = s->irq_enabled;
   bool irq_ena_new = (value & 0x80) != 0;
   if (irq_ena_new && !irq_ena_old) {
-    interrupt::deassert_irq(interrupt::Source::APU_DMC);
+    interrupt::deassert_irq(interrupt::source_t::APU_DMC);
   }
   {
     Exclusive lock(LOCK_APU);
@@ -1292,23 +1294,23 @@ static void dmc_write_reg0(DmcState *s, uint8_t value) {
   }
 }
 
-static void dmc_write_reg1(DmcState *s, uint8_t value) {
+static void dmc_write_reg1(dmc_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->out_level = value & 0x7f;
 }
 
-static void dmc_write_reg2(DmcState *s, uint8_t value) {
+static void dmc_write_reg2(dmc_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->sample_addr = 0xc000 + ((addr_t)value << 6);
 }
 
-static void dmc_write_reg3(DmcState *s, uint8_t value) {
+static void dmc_write_reg3(dmc_state_t *s, uint8_t value) {
   Exclusive lock(LOCK_APU);
   s->sample_length = ((int)value << 4) + 1;
 }
 
 // see: https://www.nesdev.org/wiki/APU_Envelope
-static SHAPONES_INLINE int step_envelope(Envelope *e) {
+static SHAPONES_INLINE int step_envelope(envelope_t *e) {
   if (quarter_frame_step) {
     if (e->flags & ENV_FLAG_START) {
       e->flags &= ~ENV_FLAG_START;  // clear start flag
@@ -1334,7 +1336,7 @@ static SHAPONES_INLINE int step_envelope(Envelope *e) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_Sweep
-static SHAPONES_INLINE int step_sweep(PulseState &s) {
+static SHAPONES_INLINE int step_sweep(pulse_state_t &s) {
   int gate = 1;
   if (s.sweep.flags & SWP_FLAG_ENABLED) {
     if (half_frame_step) {
@@ -1367,7 +1369,7 @@ static SHAPONES_INLINE int step_sweep(PulseState &s) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_Triangle
-static SHAPONES_INLINE int step_linear_counter(LinearCounter &c) {
+static SHAPONES_INLINE int step_linear_counter(linear_counter_t &c) {
   // linear counter
   if (quarter_frame_step) {
     if (c.flags & LIN_FLAG_RELOAD) {
@@ -1387,7 +1389,7 @@ static SHAPONES_INLINE int step_linear_counter(LinearCounter &c) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_Pulse
-static SHAPONES_INLINE int sample_pulse(PulseState &s) {
+static SHAPONES_INLINE int sample_pulse(pulse_state_t &s) {
   // envelope unit
   int vol = step_envelope(&(s.envelope));
 
@@ -1429,7 +1431,7 @@ static SHAPONES_INLINE int sample_pulse(PulseState &s) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_Triangle
-static SHAPONES_INLINE int sample_triangle(TriangleState &s) {
+static SHAPONES_INLINE int sample_triangle(triangle_state_t &s) {
   int vol = 1;
 
   // length counter
@@ -1474,7 +1476,7 @@ static SHAPONES_INLINE int sample_triangle(TriangleState &s) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_Noise
-static SHAPONES_INLINE int sample_noise(NoiseState &s) {
+static SHAPONES_INLINE int sample_noise(noise_state_t &s) {
   // envelope unit
   int vol = step_envelope(&(s.envelope));
 
@@ -1513,7 +1515,7 @@ static SHAPONES_INLINE int sample_noise(NoiseState &s) {
 }
 
 // see: https://www.nesdev.org/wiki/APU_DMC
-static SHAPONES_INLINE int sample_dmc(DmcState &s) {
+static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
   int step;
   {
 #if SHAPONES_MUTEX_FAST
@@ -1540,7 +1542,7 @@ static SHAPONES_INLINE int sample_dmc(DmcState &s) {
           } else {
             status.dmc_enable = 0;
             if (s.irq_enabled) {
-              interrupt::assert_irq(interrupt::Source::APU_DMC);
+              interrupt::assert_irq(interrupt::source_t::APU_DMC);
             }
           }
         }
@@ -1636,7 +1638,7 @@ result_t service(uint8_t *buff, int len) {
 
 namespace nes::cpu {
 
-static Registers reg;
+static registers_t reg;
 static bool stopped = false;
 #if SHAPONES_IRQ_PENDING_SUPPORT
 static int irq_pending = 0;
@@ -2135,7 +2137,7 @@ result_t service() {
 
     if (stopped) {
       cycle += 1;  // nop
-    } else if (dma::is_running()) {
+    } else if (dma::dma_is_running()) {
       // DMA is running
       cycle += dma::exec_next_cycle();
     } else if (irq_pending == 0 && interrupt::is_nmi_asserted()) {
@@ -2507,23 +2509,23 @@ result_t service() {
 namespace nes::dma {
 
 static bool running = false;
-static int next_cycle = 0;
-static addr_t next_src_addr = 0;
+static int cycle = 0;
+static addr_t dma_addr = 0;
 
-bool is_running() { return running; }
+bool dma_is_running() { return running; }
 
 void start(int src_page) {
   running = true;
-  next_cycle = 0;
-  next_src_addr = (addr_t)src_page * 0x100;
+  cycle = 0;
+  dma_addr = (addr_t)src_page * 0x100;
 }
 
 int exec_next_cycle() {
   if (!running) return 0;
 
-  ppu::oam_dma_write(next_cycle++, cpu::bus_read(next_src_addr++));
+  ppu::oam_dma_write(cycle++, cpu::bus_read(dma_addr++));
 
-  if (next_cycle >= TRANSFER_SIZE) {
+  if (cycle >= TRANSFER_SIZE) {
     running = false;
   }
   return 2;
@@ -2536,7 +2538,7 @@ int exec_next_cycle() {
 
 namespace nes::input {
 
-static InputControl reg;
+static control_t reg;
 static InputStatus raw[2];
 static uint8_t shift_reg[2];
 
@@ -2594,18 +2596,18 @@ void write_control(uint8_t data) {
 
 namespace nes::interrupt {
 
-static volatile Source irq;
+static volatile source_t irq;
 static volatile bool nmi;
 
-void assert_irq(Source src) {
+void assert_irq(source_t src) {
   Exclusive lock(LOCK_INTERRUPTS);
   irq = irq | src;
 }
-void deassert_irq(Source src) {
+void deassert_irq(source_t src) {
   Exclusive lock(LOCK_INTERRUPTS);
   irq = irq & ~src;
 }
-Source get_irq() { return irq; }
+source_t get_irq() { return irq; }
 
 void assert_nmi() { nmi = true; }
 void deassert_nmi() { nmi = false; }
@@ -2692,15 +2694,15 @@ class Map001 : public Mapper {
       switch (ctrl_reg & 0x03) {
         default:
         case 0:
-          set_nametable_arrangement(NametableArrangement::SINGLE_LOWER);
+          set_nametable_arrangement(nametable_arrangement_t::SINGLE_LOWER);
           break;
         case 1:
-          set_nametable_arrangement(NametableArrangement::SINGLE_UPPER);
+          set_nametable_arrangement(nametable_arrangement_t::SINGLE_UPPER);
           break;
         case 2:
-          set_nametable_arrangement(NametableArrangement::HORIZONTAL);
+          set_nametable_arrangement(nametable_arrangement_t::HORIZONTAL);
           break;
-        case 3: set_nametable_arrangement(NametableArrangement::VERTICAL); break;
+        case 3: set_nametable_arrangement(nametable_arrangement_t::VERTICAL); break;
       }
 
       switch (ctrl_reg & 0x0C) {
@@ -2869,9 +2871,9 @@ class Map004 : public Mapper {
     } else if (0xA000 <= addr && addr <= 0xBFFF) {
       if ((addr & 0x0001) == 0) {
         if ((value & 0x01) == 0) {
-          set_nametable_arrangement(NametableArrangement::HORIZONTAL);
+          set_nametable_arrangement(nametable_arrangement_t::HORIZONTAL);
         } else {
-          set_nametable_arrangement(NametableArrangement::VERTICAL);
+          set_nametable_arrangement(nametable_arrangement_t::VERTICAL);
         }
       } else {
         // PRG RAM protect
@@ -2889,7 +2891,7 @@ class Map004 : public Mapper {
       bool enable_old = irq_enable;
       bool enable_new = !!(addr & 0x0001);
       if (!enable_new && enable_old) {
-        interrupt::deassert_irq(interrupt::Source::MMC3);
+        interrupt::deassert_irq(interrupt::source_t::MAPPER);
       }
       irq_enable = enable_new;
     }
@@ -2906,7 +2908,7 @@ class Map004 : public Mapper {
         irq_counter--;
       }
       if (irq_enable && irq_counter == 0) {
-        interrupt::assert_irq(interrupt::Source::MMC3);
+        interrupt::assert_irq(interrupt::source_t::MAPPER);
         irq = true;
       }
     }
@@ -3062,28 +3064,28 @@ result_t map_ines(const uint8_t *ines) {
   uint8_t flags6 = ines[6];
   SHAPONES_PRINTF("Flags6 = 0x%02x\n", (int)flags6);
 
-  NametableArrangement mode;
+  nametable_arrangement_t mode;
   if ((flags6 & 0x8) != 0) {
-    mode = NametableArrangement::FOUR_SCREEN;
+    mode = nametable_arrangement_t::FOUR_SCREEN;
   } else if ((flags6 & 0x1) == 0) {
-    mode = NametableArrangement::VERTICAL;
+    mode = nametable_arrangement_t::VERTICAL;
   } else {
-    mode = NametableArrangement::HORIZONTAL;
+    mode = nametable_arrangement_t::HORIZONTAL;
   }
   switch (mode) {
-    case NametableArrangement::FOUR_SCREEN:
+    case nametable_arrangement_t::FOUR_SCREEN:
       SHAPONES_PRINTF("Nametable arrange: Four-screen\n");
       break;
-    case NametableArrangement::VERTICAL:
+    case nametable_arrangement_t::VERTICAL:
       SHAPONES_PRINTF("Nametable arrange: Vertical\n");
       break;
-    case NametableArrangement::HORIZONTAL:
+    case nametable_arrangement_t::HORIZONTAL:
       SHAPONES_PRINTF("Nametable arrange: Horizontal\n");
       break;
-    case NametableArrangement::SINGLE_LOWER:
+    case nametable_arrangement_t::SINGLE_LOWER:
       SHAPONES_PRINTF("Nametable arrange: One-screen lower\n");
       break;
-    case NametableArrangement::SINGLE_UPPER:
+    case nametable_arrangement_t::SINGLE_UPPER:
       SHAPONES_PRINTF("Nametable arrange: One-screen upper\n");
       break;
     default:
@@ -3136,25 +3138,25 @@ void unmap() {
   chrrom_phys_addr_mask = 0;
 }
 
-void set_nametable_arrangement(NametableArrangement mode) {
+void set_nametable_arrangement(nametable_arrangement_t mode) {
   switch (mode) {
-    case NametableArrangement::FOUR_SCREEN:
+    case nametable_arrangement_t::FOUR_SCREEN:
       vram_addr_and = VRAM_SIZE - 1;
       vram_addr_or = 0;
       break;
-    case NametableArrangement::HORIZONTAL:
+    case nametable_arrangement_t::HORIZONTAL:
       vram_addr_and = (VRAM_SIZE - 1) - (VRAM_SIZE / 2);
       vram_addr_or = 0;
       break;
-    case NametableArrangement::VERTICAL:
+    case nametable_arrangement_t::VERTICAL:
       vram_addr_and = (VRAM_SIZE - 1) - (VRAM_SIZE / 4);
       vram_addr_or = 0;
       break;
-    case NametableArrangement::SINGLE_LOWER:
+    case nametable_arrangement_t::SINGLE_LOWER:
       vram_addr_and = (VRAM_SIZE - 1) - (VRAM_SIZE / 2);
       vram_addr_or = 0;
       break;
-    case NametableArrangement::SINGLE_UPPER:
+    case nametable_arrangement_t::SINGLE_UPPER:
       vram_addr_and = (VRAM_SIZE - 1) - (VRAM_SIZE / 2);
       vram_addr_or = VRAM_SIZE / 2;
       break;
@@ -4217,21 +4219,25 @@ const uint16_t FONT8X16_DATA[] = {
 
 namespace nes::menu {
 
-static constexpr int MAX_NUM_FILES = 1024;
+static constexpr int MAX_MENU_ITEMS = 1024;
 #if SHAPONES_MENU_LARGE_FONT
 static constexpr int CHAR_WIDTH = 12;
 static constexpr int CHAR_HEIGHT = 24;
+static constexpr int MARGIN_X = 0;
+static constexpr int MARGIN_Y = 0;
 #else
 static constexpr int CHAR_WIDTH = 8;
 static constexpr int CHAR_HEIGHT = 16;
+static constexpr int MARGIN_X = 2;
+static constexpr int MARGIN_Y = 2;
 #endif
 static constexpr int BUFF_WIDTH = SCREEN_WIDTH / CHAR_WIDTH;
 static constexpr int BUFF_HEIGHT = SCREEN_HEIGHT / CHAR_HEIGHT;
 
-static constexpr int CLIENT_X = 2;
-static constexpr int CLIENT_Y = 2;
-static constexpr int CLIENT_WIDTH = BUFF_WIDTH - 4;
-static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT - 4;
+static constexpr int CLIENT_X = MARGIN_X;
+static constexpr int CLIENT_Y = MARGIN_Y + 1;
+static constexpr int CLIENT_WIDTH = BUFF_WIDTH - MARGIN_X * 2;
+static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT - MARGIN_Y * 2 - 2;
 
 static constexpr int LIST_LINES = CLIENT_HEIGHT - 1;
 
@@ -4259,25 +4265,25 @@ input::InputStatus key_down;
 
 bool disk_mounted = false;
 char current_dir[nes::MAX_PATH_LENGTH] = "";
-file_info_t file_list[MAX_NUM_FILES];
+file_info_t file_list[MAX_MENU_ITEMS];
 int list_scroll_y = 0;
 int selected_index = 0;
-int num_files = 0;
+int num_menu_items = 0;
 
 static result_t change_tab(tab_t tab, bool force = false);
-static result_t update_nes_list();
-static void clear_file_list();
-static result_t refresh_file_list();
-static void print_file_list();
+static result_t service_nes_list();
+static void clear_menu_list();
+static result_t load_file_list();
+static void draw_list();
 static void scroll_to(int index);
 static int print_text(int x, int y, const char *str, int max_len = 999999);
 static void print_char(int x, int y, char c);
-static void fill_text(int x, int y, int w, int h, char c = ' ');
+static void fill_char(int x, int y, int w, int h, char c = ' ');
 static void fill_palette(int x, int y, int w, int h, uint8_t p = 0x00);
 static void clip_rect(int *x, int *y, int *w, int *h);
 static bool is_root_dir(const char *path);
 static int find_parent_separator(const char *path);
-static int find_last_separator(const char *path, int start_idx = -1);
+static int find_char_rev(const char *path, int start_idx = -1);
 static result_t append_separator(char *path);
 static result_t append_path(char *path, const char *name);
 
@@ -4287,14 +4293,14 @@ result_t init() {
 
   shown = false;
   tab = tab_t::NES_LIST;
-  clear_file_list();
+  clear_menu_list();
   for (int i = 0; i < BUFF_WIDTH * BUFF_HEIGHT; i++) {
     text_buff[i] = '\0';
     palette_buff[i] = 0x00;
   }
   return result_t::SUCCESS;
 }
-void deinit() { clear_file_list(); }
+void deinit() { clear_menu_list(); }
 
 void show() {
   if (shown) return;
@@ -4307,7 +4313,7 @@ void hide() {
   shown = false;
 }
 
-result_t update() {
+result_t service() {
   if (!shown) return result_t::SUCCESS;
 
   input::InputStatus prev_pressed = key_pressed;
@@ -4316,24 +4322,24 @@ result_t update() {
 
   switch (tab) {
     default:
-    case tab_t::NES_LIST: SHAPONES_TRY(update_nes_list()); break;
+    case tab_t::NES_LIST: SHAPONES_TRY(service_nes_list()); break;
   }
   return result_t::SUCCESS;
 }
 
-static result_t update_nes_list() {
-  if (!disk_mounted) refresh_file_list();
+static result_t service_nes_list() {
+  if (!disk_mounted) load_file_list();
 
-  if (num_files == 0) return result_t::SUCCESS;
+  if (num_menu_items == 0) return result_t::SUCCESS;
 
   if (key_down.up) {
-    selected_index = (selected_index + num_files - 1) % num_files;
+    selected_index = (selected_index + num_menu_items - 1) % num_menu_items;
     scroll_to(selected_index);
   } else if (key_down.down) {
-    selected_index = (selected_index + 1) % num_files;
+    selected_index = (selected_index + 1) % num_menu_items;
     scroll_to(selected_index);
   } else if (key_down.A) {
-    if (0 <= selected_index && selected_index < num_files) {
+    if (0 <= selected_index && selected_index < num_menu_items) {
       file_info_t &fi = file_list[selected_index];
       if (!fi.is_dir) {
         char path[nes::MAX_PATH_LENGTH];
@@ -4352,7 +4358,7 @@ static result_t update_nes_list() {
           SHAPONES_TRY(append_path(current_dir, fi.name));
         }
         SHAPONES_TRY(append_separator(current_dir));
-        refresh_file_list();
+        load_file_list();
       }
     }
   }
@@ -4360,7 +4366,7 @@ static result_t update_nes_list() {
   return result_t::SUCCESS;
 }
 
-result_t render(int y, uint8_t *line_buff) {
+result_t overlay(int y, uint8_t *line_buff) {
   if (!shown) return result_t::SUCCESS;
 
   int iy = y / CHAR_HEIGHT;
@@ -4406,24 +4412,24 @@ static result_t change_tab(tab_t t, bool force) {
   tab = t;
 
   switch (tab) {
-    case tab_t::NES_LIST: SHAPONES_TRY(refresh_file_list()); break;
+    case tab_t::NES_LIST: SHAPONES_TRY(load_file_list()); break;
   }
 
   return result_t::SUCCESS;
 }
 
-static void clear_file_list() {
-  for (int i = 0; i < num_files; i++) {
+static void clear_menu_list() {
+  for (int i = 0; i < num_menu_items; i++) {
     if (file_list[i].name) {
       delete[] file_list[i].name;
       file_list[i].name = nullptr;
     }
   }
-  num_files = 0;
+  num_menu_items = 0;
 }
 
-static result_t refresh_file_list() {
-  clear_file_list();
+static result_t load_file_list() {
+  clear_menu_list();
 
   if (!disk_mounted) {
     if (fs_mount() == result_t::SUCCESS) {
@@ -4442,23 +4448,23 @@ static result_t refresh_file_list() {
     // add parent directory entry
     file_list[0].is_dir = true;
     file_list[0].name = strdup_safe("..");
-    num_files = 1;
+    num_menu_items = 1;
   }
 
   result_t res = fs_enum_files(current_dir, [](const file_info_t &info) {
-    file_list[num_files] = info;
-    file_list[num_files].name = strdup_safe(info.name);
-    num_files++;
-    return (num_files < MAX_NUM_FILES);
+    file_list[num_menu_items] = info;
+    file_list[num_menu_items].name = strdup_safe(info.name);
+    num_menu_items++;
+    return (num_menu_items < MAX_MENU_ITEMS);
   });
   if (res != result_t::SUCCESS) {
-    num_files = 0;
+    num_menu_items = 0;
   }
 
   // sort by name
-  for (int i = 0; i < num_files - 1; i++) {
+  for (int i = 0; i < num_menu_items - 1; i++) {
     file_info_t &fi = file_list[i];
-    for (int j = i + 1; j < num_files; j++) {
+    for (int j = i + 1; j < num_menu_items; j++) {
       file_info_t &fj = file_list[j];
       bool swap = false;
       if (fi.is_dir != fj.is_dir) {
@@ -4477,7 +4483,7 @@ static result_t refresh_file_list() {
   list_scroll_y = 0;
   selected_index = 0;
 
-  print_file_list();
+  draw_list();
 
   return res;
 }
@@ -4488,12 +4494,12 @@ static void scroll_to(int index) {
   } else if (index >= list_scroll_y + LIST_LINES) {
     list_scroll_y = index - LIST_LINES + 1;
   }
-  print_file_list();
+  draw_list();
 }
 
-static void print_file_list() {
+static void draw_list() {
   // current directory
-  fill_text(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1);
+  fill_char(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1);
   print_text(CLIENT_X, CLIENT_Y, current_dir, CLIENT_WIDTH);
   fill_palette(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1, 0);
 
@@ -4504,8 +4510,8 @@ static void print_file_list() {
       file_info_t &fi = file_list[list_scroll_y + iy];
       int y = CLIENT_Y + 1 + iy;
       int i = list_scroll_y + iy;
-      fill_text(CLIENT_X, y, CLIENT_WIDTH - 1, 1);
-      if (0 <= i && i < num_files) {
+      fill_char(CLIENT_X, y, CLIENT_WIDTH - 1, 1);
+      if (0 <= i && i < num_menu_items) {
         int x = CLIENT_X;
         if (!fi.is_dir) {
           x += print_text(x, y, "\xA8\xA9");  // file icon
@@ -4533,14 +4539,14 @@ static void print_file_list() {
     int x = CLIENT_X + CLIENT_WIDTH - 1;
     int y = CLIENT_Y + 1;
     int p = 0;
-    if (num_files > LIST_LINES) {
-      int n = (num_files - LIST_LINES);
+    if (num_menu_items > LIST_LINES) {
+      int n = (num_menu_items - LIST_LINES);
       p = (list_scroll_y * (LIST_LINES - 3) + (n - 1)) / n;
     }
     fill_palette(x, y, LIST_LINES, 0);
     print_char(x, y, 0xA0);                   // up arrow
     print_char(x, y + LIST_LINES - 1, 0xA1);  // down arrow
-    fill_text(x, y + 1, 1, LIST_LINES - 2, 0xA2);
+    fill_char(x, y + 1, 1, LIST_LINES - 2, 0xA2);
     print_char(x, y + 1 + p, 0xA3);  // scroll bar
   }
 }
@@ -4560,7 +4566,7 @@ static void print_char(int x, int y, char c) {
   }
 }
 
-static void fill_text(int x, int y, int w, int h, char c) {
+static void fill_char(int x, int y, int w, int h, char c) {
   clip_rect(&x, &y, &w, &h);
   for (int iy = 0; iy < h; iy++) {
     for (int ix = 0; ix < w; ix++) {
@@ -4596,7 +4602,7 @@ static void clip_rect(int *x, int *y, int *w, int *h) {
 }
 
 static bool is_root_dir(const char *path) {
-  return find_parent_separator(path) <= 0;
+  return find_parent_separator(path) < 0;
 }
 
 static int find_parent_separator(const char *path) {
@@ -4607,10 +4613,10 @@ static int find_parent_separator(const char *path) {
   if (path[n - 1] == '/') {
     n--;
   }
-  return find_last_separator(path, n);
+  return find_char_rev(path, n);
 }
 
-static int find_last_separator(const char *path, int start_idx) {
+static int find_char_rev(const char *path, int start_idx) {
   if (start_idx < 0) {
     start_idx = strnlen(path, nes::MAX_PATH_LENGTH);
   } else if (start_idx == 0) {
@@ -4674,7 +4680,7 @@ volatile cycle_t cycle_count;
 static int focus_x;
 static int focus_y;
 
-static volatile uint16_t scroll;
+static volatile uint16_t scroll_counter;
 static int fine_x;
 
 static uint8_t bus_read_data_latest = 0;
@@ -4686,8 +4692,8 @@ static bool nmi_level = false;
 
 static uint8_t palette_file[PALETTE_NUM_BANK * PALETTE_SIZE];
 
-static OamEntry oam[MAX_SPRITE_COUNT];
-static SpriteLine sprite_lines[MAX_VISIBLE_SPRITES];
+static oam_entry_t oam[MAX_SPRITE_COUNT];
+static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
 // todo: delete
@@ -4756,12 +4762,12 @@ uint8_t reg_read(addr_t addr) {
 
     case REG_PPUDATA: {
       Exclusive lock(LOCK_PPU);
-      addr_t addr = scroll & SCROLL_MASK_PPU_ADDR;
+      addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
       addr &= SCROLL_MASK_PPU_ADDR;
-      scroll &= ~SCROLL_MASK_PPU_ADDR;
-      scroll |= addr;
+      scroll_counter &= ~SCROLL_MASK_PPU_ADDR;
+      scroll_counter |= addr;
       retval = bus_read_data_delayed;
     } break;
 
@@ -4815,21 +4821,21 @@ void reg_write(addr_t addr, uint8_t data) {
       } else {
         reg.scroll &= 0xff00u;
         reg.scroll |= (uint16_t)data;
-        scroll = reg.scroll;
+        scroll_counter = reg.scroll;
         scroll_ppuaddr_high_stored = false;
       }
     } break;
 
     case REG_PPUDATA: {
       Exclusive lock(LOCK_PPU);
-      uint_fast16_t scr = scroll;
+      uint_fast16_t scr = scroll_counter;
       addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
       bus_write(addr, data);
       addr += reg.control.incr_stride ? 32 : 1;
       addr &= SCROLL_MASK_PPU_ADDR;
       scr &= ~SCROLL_MASK_PPU_ADDR;
       scr |= addr;
-      scroll = scr;
+      scroll_counter = scr;
     } break;
 
     default:
@@ -5036,10 +5042,10 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
 
   if (menu_shown) {
     if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
-      nes::menu::render(focus_y, line_buff);
+      nes::menu::overlay(focus_y, line_buff);
     }
     if (!!(timing & timing_t::START_OF_VBLANK_LINE)) {
-      nes::menu::update();
+      nes::menu::service();
     }
   }
 
@@ -5075,7 +5081,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
 #if SHAPONES_MUTEX_FAST
         Exclusive lock(LOCK_PPU);
 #endif
-        scr = scroll;
+        scr = scroll_counter;
       }
 
       // determine step count
@@ -5155,7 +5161,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
 #if SHAPONES_MUTEX_FAST
       Exclusive lock(LOCK_PPU);
 #endif
-      uint_fast16_t scr = scroll;
+      uint_fast16_t scr = scroll_counter;
       int fy = focus_y;
       int fx = fine_x;
       if (fy < SCREEN_HEIGHT) {
@@ -5210,7 +5216,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
           scr |= reg.scroll & copy_mask;
         }
       }
-      scroll = scr;
+      scroll_counter = scr;
     }  // if
 
     x0_block = x1;
@@ -5271,7 +5277,7 @@ static void enum_visible_sprites(bool skip_render) {
       }
 
       // store sprite information
-      SpriteLine &sl = sprite_lines[num_visible_sprites++];
+      sprite_line_t &sl = sprite_lines[num_visible_sprites++];
       sl.chr = chr;
       sl.x = s.x;
       sl.palette_offset = (4 + (s.attr & OAM_ATTR_PALETTE)) * PALETTE_SIZE;
@@ -5324,13 +5330,13 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
 
 namespace nes {
 
-Config get_default_config() {
-  Config cfg;
+config_t get_default_config() {
+  config_t cfg;
   cfg.apu_sampling_rate = 44100;
   return cfg;
 }
 
-result_t init(const Config &cfg) {
+result_t init(const config_t &cfg) {
   for (int i = 0; i < NUM_LOCKS; i++) {
     SHAPONES_TRY(nes::lock_init(i));
   }

@@ -1,8 +1,11 @@
 #include "shapones/memory.hpp"
+#include "shapones/host_intf.hpp"
 #include "shapones/mapper.hpp"
 #include "shapones/ppu.hpp"
 
 namespace nes::memory {
+
+static constexpr uint32_t STATE_HEADER_SIZE = 64;
 
 uint8_t wram[WRAM_SIZE];
 uint8_t vram[VRAM_SIZE];
@@ -16,25 +19,28 @@ uint8_t *chrram = nullptr;
 const uint8_t *prgrom = &dummy_memory;
 const uint8_t *chrrom = &dummy_memory;
 
-int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
-int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
+uint16_t prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
+uint16_t chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
 
-addr_t prgram_addr_mask = 0;
 uint32_t prgrom_phys_size = PRGROM_RANGE;
 uint32_t prgrom_phys_addr_mask = 0;
+uint32_t prgram_size = 0;
+addr_t prgram_addr_mask = 0;
+
 uint32_t chrrom_phys_size = CHRROM_RANGE;
 uint32_t chrrom_phys_addr_mask = 0;
 addr_t prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
+uint32_t chrram_size = 0;
 
 result_t init() {
+  deinit();
+  unmap();
   if (prgram) prgram = new uint8_t[1];
   if (chrram == nullptr) chrram = new uint8_t[1];
-  unmap();
   return result_t::SUCCESS;
 }
 
 void deinit() {
-  unmap();
   if (prgram) {
     delete[] prgram;
     prgram = nullptr;
@@ -93,28 +99,28 @@ result_t map_ines(const uint8_t *ines) {
   uint8_t flags6 = ines[6];
   SHAPONES_PRINTF("Flags6 = 0x%02x\n", (int)flags6);
 
-  NametableArrangement mode;
+  nametable_arrangement_t mode;
   if ((flags6 & 0x8) != 0) {
-    mode = NametableArrangement::FOUR_SCREEN;
+    mode = nametable_arrangement_t::FOUR_SCREEN;
   } else if ((flags6 & 0x1) == 0) {
-    mode = NametableArrangement::VERTICAL;
+    mode = nametable_arrangement_t::VERTICAL;
   } else {
-    mode = NametableArrangement::HORIZONTAL;
+    mode = nametable_arrangement_t::HORIZONTAL;
   }
   switch (mode) {
-    case NametableArrangement::FOUR_SCREEN:
+    case nametable_arrangement_t::FOUR_SCREEN:
       SHAPONES_PRINTF("Nametable arrange: Four-screen\n");
       break;
-    case NametableArrangement::VERTICAL:
+    case nametable_arrangement_t::VERTICAL:
       SHAPONES_PRINTF("Nametable arrange: Vertical\n");
       break;
-    case NametableArrangement::HORIZONTAL:
+    case nametable_arrangement_t::HORIZONTAL:
       SHAPONES_PRINTF("Nametable arrange: Horizontal\n");
       break;
-    case NametableArrangement::SINGLE_LOWER:
+    case nametable_arrangement_t::SINGLE_LOWER:
       SHAPONES_PRINTF("Nametable arrange: One-screen lower\n");
       break;
-    case NametableArrangement::SINGLE_UPPER:
+    case nametable_arrangement_t::SINGLE_UPPER:
       SHAPONES_PRINTF("Nametable arrange: One-screen upper\n");
       break;
     default:
@@ -124,7 +130,7 @@ result_t map_ines(const uint8_t *ines) {
   }
   set_nametable_arrangement(mode);
 
-  int prgram_size = ines[8] * 8192;
+  prgram_size = ines[8] * 8192;
   if (prgram_size == 0) {
     prgram_size = 8192;  // 8KB PRG RAM if not specified
   }
@@ -146,9 +152,11 @@ result_t map_ines(const uint8_t *ines) {
     delete[] chrram;
   }
   if (num_chr_rom_pages == 0) {
+    chrram_size = CHRROM_RANGE;
     chrram = new uint8_t[CHRROM_RANGE];
     chrrom = chrram;
   } else {
+    chrram_size = 0;
     chrram = new uint8_t[1];
     int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
     chrrom = ines + start_of_chr_rom;
@@ -167,25 +175,25 @@ void unmap() {
   chrrom_phys_addr_mask = 0;
 }
 
-void set_nametable_arrangement(NametableArrangement mode) {
+void set_nametable_arrangement(nametable_arrangement_t mode) {
   switch (mode) {
-    case NametableArrangement::FOUR_SCREEN:
+    case nametable_arrangement_t::FOUR_SCREEN:
       vram_addr_and = VRAM_SIZE - 1;
       vram_addr_or = 0;
       break;
-    case NametableArrangement::HORIZONTAL:
+    case nametable_arrangement_t::HORIZONTAL:
       vram_addr_and = (VRAM_SIZE - 1) - (VRAM_SIZE / 2);
       vram_addr_or = 0;
       break;
-    case NametableArrangement::VERTICAL:
+    case nametable_arrangement_t::VERTICAL:
       vram_addr_and = (VRAM_SIZE - 1) - (VRAM_SIZE / 4);
       vram_addr_or = 0;
       break;
-    case NametableArrangement::SINGLE_LOWER:
+    case nametable_arrangement_t::SINGLE_LOWER:
       vram_addr_and = (VRAM_SIZE - 1) - (VRAM_SIZE / 2);
       vram_addr_or = 0;
       break;
-    case NametableArrangement::SINGLE_UPPER:
+    case nametable_arrangement_t::SINGLE_UPPER:
       vram_addr_and = (VRAM_SIZE - 1) - (VRAM_SIZE / 2);
       vram_addr_or = VRAM_SIZE / 2;
       break;
@@ -194,6 +202,69 @@ void set_nametable_arrangement(NametableArrangement mode) {
                       static_cast<int>(mode));
       break;
   }
+}
+
+uint32_t get_state_size() {
+  return STATE_HEADER_SIZE + WRAM_SIZE + VRAM_SIZE + prgram_size + chrram_size;
+}
+
+result_t save_state(void *file_handle) {
+  uint32_t wram_offset = STATE_HEADER_SIZE;
+  uint32_t vram_offset = wram_offset + WRAM_SIZE;
+  uint32_t prgram_offset = vram_offset + VRAM_SIZE;
+  uint32_t chrram_offset = prgram_offset + prgram_size;
+
+  uint8_t buff[STATE_HEADER_SIZE];
+  BufferWriter writer(buff);
+  writer.u32(wram_offset);
+  writer.u32(WRAM_SIZE);
+  writer.u32(vram_offset);
+  writer.u32(VRAM_SIZE);
+  writer.u32(prgram_offset);
+  writer.u32(prgram_size);
+  writer.u32(chrram_offset);
+  writer.u32(chrram_size);
+  SHAPONES_TRY(fs_write(file_handle, buff, STATE_HEADER_SIZE));
+  SHAPONES_TRY(fs_write(file_handle, wram, WRAM_SIZE));
+  SHAPONES_TRY(fs_write(file_handle, vram, VRAM_SIZE));
+  if (prgram_size > 0) {
+    SHAPONES_TRY(fs_write(file_handle, prgram, prgram_size));
+  }
+  if (chrram_size > 0) {
+    SHAPONES_TRY(fs_write(file_handle, chrram, chrram_size));
+  }
+  return result_t::SUCCESS;
+}
+
+result_t load_state(void *file_handle) {
+  uint8_t buff[STATE_HEADER_SIZE];
+  SHAPONES_TRY(fs_read(file_handle, buff, STATE_HEADER_SIZE));
+  const uint8_t *p = buff;
+  BufferReader reader(p);
+  uint32_t wram_offset = reader.u32();
+  uint32_t wram_size = reader.u32();
+  uint32_t vram_offset = reader.u32();
+  uint32_t vram_size = reader.u32();
+  uint32_t prgram_offset = reader.u32();
+  uint32_t prgram_size_in_file = reader.u32();
+  uint32_t chrram_offset = reader.u32();
+  uint32_t chrram_size_in_file = reader.u32();
+
+  if (wram_size != WRAM_SIZE || vram_size != VRAM_SIZE ||
+      prgram_size_in_file != prgram_size ||
+      chrram_size_in_file != chrram_size) {
+    return result_t::ERR_STATE_SIZE_MISMATCH;
+  }
+
+  SHAPONES_TRY(fs_read(file_handle, wram, WRAM_SIZE));
+  SHAPONES_TRY(fs_read(file_handle, vram, VRAM_SIZE));
+  if (prgram_size > 0) {
+    SHAPONES_TRY(fs_read(file_handle, prgram, prgram_size));
+  }
+  if (chrram_size > 0) {
+    SHAPONES_TRY(fs_read(file_handle, chrram, chrram_size));
+  }
+  return result_t::SUCCESS;
 }
 
 }  // namespace nes::memory

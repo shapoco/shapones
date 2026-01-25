@@ -14,6 +14,7 @@ namespace nes::mapper {
 Mapper *instance = nullptr;
 
 result_t init() {
+  deinit();
   instance = new Map000();
   return result_t::SUCCESS;
 }
