@@ -6,6 +6,7 @@
 #include "shapones/mapper.hpp"
 #include "shapones/memory.hpp"
 #include "shapones/menu.hpp"
+#include "shapones/state.hpp"
 
 namespace nes::ppu {
 
@@ -353,7 +354,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     }
   }
 
-  if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
+  if (!!(timing & timing_t::END_OF_VISIBLE_LINE) && !skip_render) {
+    nes::state::auto_screenshot(focus_y, line_buff);
     nes::menu::overlay(focus_y, line_buff);
   }
 

@@ -4270,14 +4270,14 @@ int list_scroll_y = 0;
 int selected_index = 0;
 int num_menu_items = 0;
 
-static result_t change_tab(tab_t tab, bool force = false);
+static result_t load_tab(tab_t tab, bool force = false);
 static result_t service_nes_list();
-static void clear_menu_list();
-static result_t load_file_list();
-static void draw_list();
-static void scroll_to(int index);
-static int print_text(int x, int y, const char *str, int max_len = 999999);
-static void print_char(int x, int y, char c);
+static void menu_clear();
+static result_t load_file_list_tab();
+static void draw_menu_list();
+static void menu_scroll_to(int index);
+static int draw_text(int x, int y, const char *str, int max_len = 999999);
+static void draw_char(int x, int y, char c);
 static void fill_char(int x, int y, int w, int h, char c = ' ');
 static void fill_palette(int x, int y, int w, int h, uint8_t p = 0x00);
 static void clip_rect(int *x, int *y, int *w, int *h);
@@ -4293,19 +4293,19 @@ result_t init() {
 
   shown = false;
   tab = tab_t::NES_LIST;
-  clear_menu_list();
+  menu_clear();
   for (int i = 0; i < BUFF_WIDTH * BUFF_HEIGHT; i++) {
     text_buff[i] = '\0';
     palette_buff[i] = 0x00;
   }
   return result_t::SUCCESS;
 }
-void deinit() { clear_menu_list(); }
+void deinit() { menu_clear(); }
 
 void show() {
   if (shown) return;
   shown = true;
-  change_tab(tab, true);
+  load_tab(tab, true);
 }
 
 void hide() {
@@ -4328,16 +4328,16 @@ result_t service() {
 }
 
 static result_t service_nes_list() {
-  if (!disk_mounted) load_file_list();
+  if (!disk_mounted) load_file_list_tab();
 
   if (num_menu_items == 0) return result_t::SUCCESS;
 
   if (key_down.up) {
     selected_index = (selected_index + num_menu_items - 1) % num_menu_items;
-    scroll_to(selected_index);
+    menu_scroll_to(selected_index);
   } else if (key_down.down) {
     selected_index = (selected_index + 1) % num_menu_items;
-    scroll_to(selected_index);
+    menu_scroll_to(selected_index);
   } else if (key_down.A) {
     if (0 <= selected_index && selected_index < num_menu_items) {
       file_info_t &fi = file_list[selected_index];
@@ -4358,7 +4358,7 @@ static result_t service_nes_list() {
           SHAPONES_TRY(append_path(current_dir, fi.name));
         }
         SHAPONES_TRY(append_separator(current_dir));
-        load_file_list();
+        load_file_list_tab();
       }
     }
   }
@@ -4406,19 +4406,19 @@ result_t overlay(int y, uint8_t *line_buff) {
   return result_t::SUCCESS;
 }
 
-static result_t change_tab(tab_t t, bool force) {
+static result_t load_tab(tab_t t, bool force) {
   if (tab == t && !force) return result_t::SUCCESS;
 
   tab = t;
 
   switch (tab) {
-    case tab_t::NES_LIST: SHAPONES_TRY(load_file_list()); break;
+    case tab_t::NES_LIST: SHAPONES_TRY(load_file_list_tab()); break;
   }
 
   return result_t::SUCCESS;
 }
 
-static void clear_menu_list() {
+static void menu_clear() {
   for (int i = 0; i < num_menu_items; i++) {
     if (file_list[i].name) {
       delete[] file_list[i].name;
@@ -4428,8 +4428,8 @@ static void clear_menu_list() {
   num_menu_items = 0;
 }
 
-static result_t load_file_list() {
-  clear_menu_list();
+static result_t load_file_list_tab() {
+  menu_clear();
 
   if (!disk_mounted) {
     if (fs_mount() == result_t::SUCCESS) {
@@ -4483,24 +4483,24 @@ static result_t load_file_list() {
   list_scroll_y = 0;
   selected_index = 0;
 
-  draw_list();
+  draw_menu_list();
 
   return res;
 }
 
-static void scroll_to(int index) {
+static void menu_scroll_to(int index) {
   if (index < list_scroll_y) {
     list_scroll_y = index;
   } else if (index >= list_scroll_y + LIST_LINES) {
     list_scroll_y = index - LIST_LINES + 1;
   }
-  draw_list();
+  draw_menu_list();
 }
 
-static void draw_list() {
+static void draw_menu_list() {
   // current directory
   fill_char(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1);
-  print_text(CLIENT_X, CLIENT_Y, current_dir, CLIENT_WIDTH);
+  draw_text(CLIENT_X, CLIENT_Y, current_dir, CLIENT_WIDTH);
   fill_palette(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1, 0);
 
   // file list area
@@ -4514,17 +4514,17 @@ static void draw_list() {
       if (0 <= i && i < num_menu_items) {
         int x = CLIENT_X;
         if (!fi.is_dir) {
-          x += print_text(x, y, "\xA8\xA9");  // file icon
+          x += draw_text(x, y, "\xA8\xA9");  // file icon
         } else if (strcmp(fi.name, "..") == 0) {
-          x += print_text(x, y, "\xA4\xA5");  // parent folder icon
+          x += draw_text(x, y, "\xA4\xA5");  // parent folder icon
         } else {
-          x += print_text(x, y, "\xA6\xA7");  // folder icon
+          x += draw_text(x, y, "\xA6\xA7");  // folder icon
         }
         x += 1;
-        x += print_text(x, y, fi.name, TEXT_END_X - x);
+        x += draw_text(x, y, fi.name, TEXT_END_X - x);
         if (x > TEXT_END_X - 1) x = TEXT_END_X - 1;
         if (fi.is_dir) {
-          print_text(x, y, "/");
+          draw_text(x, y, "/");
         }
       }
       if (i == selected_index) {
@@ -4544,23 +4544,23 @@ static void draw_list() {
       p = (list_scroll_y * (LIST_LINES - 3) + (n - 1)) / n;
     }
     fill_palette(x, y, LIST_LINES, 0);
-    print_char(x, y, 0xA0);                   // up arrow
-    print_char(x, y + LIST_LINES - 1, 0xA1);  // down arrow
+    draw_char(x, y, 0xA0);                   // up arrow
+    draw_char(x, y + LIST_LINES - 1, 0xA1);  // down arrow
     fill_char(x, y + 1, 1, LIST_LINES - 2, 0xA2);
-    print_char(x, y + 1 + p, 0xA3);  // scroll bar
+    draw_char(x, y + 1 + p, 0xA3);  // scroll bar
   }
 }
 
-static int print_text(int x, int y, const char *str, int max_len) {
+static int draw_text(int x, int y, const char *str, int max_len) {
   int n = 0;
   char c;
   while (n < max_len && (c = str[n++]) != '\0') {
-    print_char(x++, y, c);
+    draw_char(x++, y, c);
   }
   return n - 1;
 }
 
-static void print_char(int x, int y, char c) {
+static void draw_char(int x, int y, char c) {
   if (0 <= y && y < BUFF_HEIGHT && 0 <= x && x < BUFF_WIDTH) {
     text_buff[y * BUFF_WIDTH + x] = c;
   }

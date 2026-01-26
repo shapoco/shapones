@@ -102,11 +102,10 @@ static constexpr addr_t PRGROM_RANGE = 32 * 1024;
 static constexpr addr_t PRGRAM_RANGE = 8 * 1024;
 static constexpr addr_t CHRROM_RANGE = 8 * 1024;
 
-static constexpr int NUM_LOCKS = 4;
-static constexpr int LOCK_CPU = 0;
-static constexpr int LOCK_PPU = 1;
-static constexpr int LOCK_APU = 2;
-static constexpr int LOCK_INTERRUPTS = 3;
+static constexpr int NUM_LOCKS = 3;
+static constexpr int LOCK_PPU = 0;
+static constexpr int LOCK_APU = 1;
+static constexpr int LOCK_INTERRUPTS = 2;
 
 static constexpr int MAX_FILENAME_LENGTH = SHAPONES_MAX_FILENAME_LEN;
 static constexpr int MAX_PATH_LENGTH = SHAPONES_MAX_PATH_LEN;
@@ -220,8 +219,17 @@ enum class nametable_arrangement_t : uint8_t {
   FOUR_SCREEN = 4,
 };
 
+extern const uint32_t NES_PALETTE_24BPP[64];
+
+extern uint8_t blend_table[64 * 64];
+
 void stop();
 const char* get_ines_path();
+
+uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b);
+static SHAPONES_INLINE uint8_t blend_colors(uint8_t a, uint8_t b) {
+  return blend_table[(a << 6) | b];
+}
 
 }  // namespace nes
 

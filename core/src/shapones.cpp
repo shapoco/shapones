@@ -5,8 +5,7 @@ namespace nes {
 
 char ines_path[MAX_PATH_LENGTH + 1] = "";
 
-static result_t write_state(void *file_handle);
-static result_t read_state(void *file_handle);
+static void build_blend_table();
 
 config_t get_default_config() {
   config_t cfg;
@@ -14,11 +13,11 @@ config_t get_default_config() {
   return cfg;
 }
 
-const char* get_ines_path() {
-  return ines_path;
-}
+const char *get_ines_path() { return ines_path; }
 
 result_t init(const config_t &cfg) {
+  build_blend_table();
+
   for (int i = 0; i < NUM_LOCKS; i++) {
     SHAPONES_TRY(nes::lock_init(i));
   }
@@ -57,6 +56,7 @@ result_t map_ines(const uint8_t *ines, const char *path) {
 }
 
 result_t reset() {
+  nes::state::reset();
   SHAPONES_TRY(interrupt::reset());
   SHAPONES_TRY(cpu::reset());
   SHAPONES_TRY(ppu::reset());
@@ -86,6 +86,28 @@ result_t vsync(uint8_t *line_buff, bool skip_render) {
     SHAPONES_TRY(ppu::service(line_buff, skip_render, &status));
   } while (!(status.timing & ppu::timing_t::END_OF_FRAME));
   return result_t::SUCCESS;
+}
+
+static void build_blend_table() {
+  for (int i = 0; i < 64; i++) {
+    uint32_t ci = NES_PALETTE_24BPP[i];
+    uint8_t ri = (ci >> 16) & 0xff;
+    uint8_t gi = (ci >> 8) & 0xff;
+    uint8_t bi = ci & 0xff;
+    printf("/* %02X */ ", i);
+    for (int j = 0; j < 64; j++) {
+      uint32_t cj = NES_PALETTE_24BPP[j];
+      uint8_t rj = (cj >> 16) & 0xff;
+      uint8_t gj = (cj >> 8) & 0xff;
+      uint8_t bj = cj & 0xff;
+      uint8_t r = (ri + rj) / 2;
+      uint8_t g = (gi + gj) / 2;
+      uint8_t b = (bi + bj) / 2;
+      blend_table[(i << 6) | j] = nearest_rgb888(r, g, b);
+      printf("%02x ", blend_table[(i << 6) | j]);
+    }
+    printf("\n");
+  }
 }
 
 }  // namespace nes

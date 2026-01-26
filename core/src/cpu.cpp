@@ -42,8 +42,6 @@ static SHAPONES_INLINE uint_fast8_t dma_service() {
   return 2;
 }
 
-static result_t run();
-
 uint8_t bus_read(addr_t addr) {
   uint8_t retval;
   if (memory::PRGROM_BASE <= addr &&
@@ -521,12 +519,6 @@ static SHAPONES_INLINE void opISB(addr_t addr) {
 
 result_t service() {
   menu::service();
-  return run();
-}
-
-static result_t run() {
-  Exclusive lock(LOCK_CPU);
-
   input::update();
 
   int n = MAX_BATCH_SIZE;

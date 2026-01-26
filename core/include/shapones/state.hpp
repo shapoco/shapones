@@ -3,15 +3,19 @@
 
 #include "shapones/common.hpp"
 
-namespace nes {
+namespace nes::state {
 
 static const char *STATE_FILE_EXT = "spn";
 
-static constexpr uint32_t STATE_MAX_SLOTS = 16;
-static constexpr uint64_t STATE_MARKER = 0x74617453736E7053ULL;  // "SpnsStat"
-static constexpr uint64_t STATE_VERSION = 1;
+static constexpr uint32_t MAX_SLOTS = 16;
+static constexpr uint64_t MARKER = 0x74617453736E7053ULL;  // "SpnsStat"
+static constexpr uint64_t VERSION = 1;
 
-static constexpr uint32_t STATE_SLOT_FLAG_USED = 0x00000001;
+static constexpr uint32_t SLOT_FLAG_USED = 0x00000001;
+
+static constexpr int SS_WIDTH = 60;
+static constexpr int SS_HEIGHT = 56;
+static constexpr int SS_SIZE_BYTES = state::SS_WIDTH * state::SS_HEIGHT;
 
 struct state_file_header_t {
   static constexpr uint32_t SIZE = 32;
@@ -44,7 +48,7 @@ struct state_slot_entry_t {
   uint32_t play_time_sec;
   char name[NAME_LENGTH];
 
-  bool is_used() const { return (flags & STATE_SLOT_FLAG_USED) != 0; }
+  bool is_used() const { return (flags & SLOT_FLAG_USED) != 0; }
 
   void store(uint8_t *buff) const {
     BufferWriter writer(buff);
@@ -65,14 +69,20 @@ struct state_slot_entry_t {
   }
 };
 
-using enum_state_slot_cb_t = bool (*)(const state_slot_entry_t &entry);
+using enum_slot_cb_t = bool (*)(const state_slot_entry_t &entry);
 
-uint32_t get_state_slot_size();
-result_t enum_state_slots(const char *path, enum_state_slot_cb_t callback);
+void reset();
+void auto_screenshot(int focus_y, const uint8_t *line_buff);
 
-result_t save_state(const char *path, int slot);
-result_t load_state(const char *path, int slot);
+uint32_t get_slot_size();
 
-}  // namespace nes
+result_t enum_slots(const char *path, enum_slot_cb_t callback);
+
+result_t save(const char *path, int slot);
+result_t load(const char *path, int slot);
+
+result_t read_screenshot(const char *path, int slot, uint8_t *out_buff);
+
+}  // namespace nes::state
 
 #endif
