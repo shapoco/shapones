@@ -94,7 +94,6 @@ static void build_blend_table() {
     uint8_t ri = (ci >> 16) & 0xff;
     uint8_t gi = (ci >> 8) & 0xff;
     uint8_t bi = ci & 0xff;
-    printf("/* %02X */ ", i);
     for (int j = 0; j < 64; j++) {
       uint32_t cj = NES_PALETTE_24BPP[j];
       uint8_t rj = (cj >> 16) & 0xff;
@@ -104,9 +103,7 @@ static void build_blend_table() {
       uint8_t g = (gi + gj) / 2;
       uint8_t b = (bi + bj) / 2;
       blend_table[(i << 6) | j] = nearest_rgb888(r, g, b);
-      printf("%02x ", blend_table[(i << 6) | j]);
     }
-    printf("\n");
   }
 }
 

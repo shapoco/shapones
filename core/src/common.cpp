@@ -17,6 +17,26 @@ const uint32_t NES_PALETTE_24BPP[64] = {
 
 uint8_t blend_table[64 * 64];
 
+const char* result_to_string(result_t res) {
+  switch (res) {
+    case result_t::SUCCESS: return "Ok";
+    case result_t::ERR_INVALID_NES_FORMAT: return "Bad iNES";
+    case result_t::ERR_NO_DISK: return "No Disk";
+    case result_t::ERR_DIR_NOT_FOUND: return "Dir Not Found";
+    case result_t::ERR_PATH_TOO_LONG: return "Path Too Long";
+    case result_t::ERR_FAILED_TO_OPEN_FILE: return "Open Failed";
+    case result_t::ERR_FILE_NOT_OPEN: return "File Not Open";
+    case result_t::ERR_FAILED_TO_READ_FILE: return "Read Failed";
+    case result_t::ERR_FAILED_TO_WRITE_FILE: return "Write Failed";
+    case result_t::ERR_INES_TOO_LARGE: return "iNES Too Large";
+    case result_t::ERR_INVALID_STATE_FORMAT: return "Bad State Format";
+    case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
+    case result_t::ERR_INES_NOT_LOADED: return "iNES Not Loaded";
+    case result_t::ERR_STATE_SLOT_FULL: return "State Slot Full";
+    default: return "Unknown Error";
+  }
+}
+
 uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b) {
   int best_dist = 99999;
   uint_fast8_t best_index = 0;

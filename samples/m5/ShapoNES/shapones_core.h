@@ -4219,7 +4219,7 @@ const uint16_t FONT8X16_DATA[] = {
 
 namespace nes::menu {
 
-static constexpr int MAX_MENU_ITEMS = 1024;
+static constexpr int MENU_MAX_ITEMS = 1024;
 #if SHAPONES_MENU_LARGE_FONT
 static constexpr int CHAR_WIDTH = 12;
 static constexpr int CHAR_HEIGHT = 24;
@@ -4265,16 +4265,16 @@ input::InputStatus key_down;
 
 bool disk_mounted = false;
 char current_dir[nes::MAX_PATH_LENGTH] = "";
-file_info_t file_list[MAX_MENU_ITEMS];
-int list_scroll_y = 0;
-int selected_index = 0;
-int num_menu_items = 0;
+file_info_t file_list[MENU_MAX_ITEMS];
+int menu_scroll_y = 0;
+int menu_sel_index = 0;
+int menu_num_items = 0;
 
 static result_t load_tab(tab_t tab, bool force = false);
 static result_t service_nes_list();
 static void menu_clear();
 static result_t load_file_list_tab();
-static void draw_menu_list();
+static void perform_redraw();
 static void menu_scroll_to(int index);
 static int draw_text(int x, int y, const char *str, int max_len = 999999);
 static void draw_char(int x, int y, char c);
@@ -4330,17 +4330,17 @@ result_t service() {
 static result_t service_nes_list() {
   if (!disk_mounted) load_file_list_tab();
 
-  if (num_menu_items == 0) return result_t::SUCCESS;
+  if (menu_num_items == 0) return result_t::SUCCESS;
 
   if (key_down.up) {
-    selected_index = (selected_index + num_menu_items - 1) % num_menu_items;
-    menu_scroll_to(selected_index);
+    menu_sel_index = (menu_sel_index + menu_num_items - 1) % menu_num_items;
+    menu_scroll_to(menu_sel_index);
   } else if (key_down.down) {
-    selected_index = (selected_index + 1) % num_menu_items;
-    menu_scroll_to(selected_index);
+    menu_sel_index = (menu_sel_index + 1) % menu_num_items;
+    menu_scroll_to(menu_sel_index);
   } else if (key_down.A) {
-    if (0 <= selected_index && selected_index < num_menu_items) {
-      file_info_t &fi = file_list[selected_index];
+    if (0 <= menu_sel_index && menu_sel_index < menu_num_items) {
+      file_info_t &fi = file_list[menu_sel_index];
       if (!fi.is_dir) {
         char path[nes::MAX_PATH_LENGTH];
         strncpy(path, current_dir, nes::MAX_PATH_LENGTH);
@@ -4419,13 +4419,13 @@ static result_t load_tab(tab_t t, bool force) {
 }
 
 static void menu_clear() {
-  for (int i = 0; i < num_menu_items; i++) {
+  for (int i = 0; i < menu_num_items; i++) {
     if (file_list[i].name) {
       delete[] file_list[i].name;
       file_list[i].name = nullptr;
     }
   }
-  num_menu_items = 0;
+  menu_num_items = 0;
 }
 
 static result_t load_file_list_tab() {
@@ -4448,23 +4448,23 @@ static result_t load_file_list_tab() {
     // add parent directory entry
     file_list[0].is_dir = true;
     file_list[0].name = strdup_safe("..");
-    num_menu_items = 1;
+    menu_num_items = 1;
   }
 
   result_t res = fs_enum_files(current_dir, [](const file_info_t &info) {
-    file_list[num_menu_items] = info;
-    file_list[num_menu_items].name = strdup_safe(info.name);
-    num_menu_items++;
-    return (num_menu_items < MAX_MENU_ITEMS);
+    file_list[menu_num_items] = info;
+    file_list[menu_num_items].name = strdup_safe(info.name);
+    menu_num_items++;
+    return (menu_num_items < MENU_MAX_ITEMS);
   });
   if (res != result_t::SUCCESS) {
-    num_menu_items = 0;
+    menu_num_items = 0;
   }
 
   // sort by name
-  for (int i = 0; i < num_menu_items - 1; i++) {
+  for (int i = 0; i < menu_num_items - 1; i++) {
     file_info_t &fi = file_list[i];
-    for (int j = i + 1; j < num_menu_items; j++) {
+    for (int j = i + 1; j < menu_num_items; j++) {
       file_info_t &fj = file_list[j];
       bool swap = false;
       if (fi.is_dir != fj.is_dir) {
@@ -4480,24 +4480,24 @@ static result_t load_file_list_tab() {
     }
   }
 
-  list_scroll_y = 0;
-  selected_index = 0;
+  menu_scroll_y = 0;
+  menu_sel_index = 0;
 
-  draw_menu_list();
+  perform_redraw();
 
   return res;
 }
 
 static void menu_scroll_to(int index) {
-  if (index < list_scroll_y) {
-    list_scroll_y = index;
-  } else if (index >= list_scroll_y + LIST_LINES) {
-    list_scroll_y = index - LIST_LINES + 1;
+  if (index < menu_scroll_y) {
+    menu_scroll_y = index;
+  } else if (index >= menu_scroll_y + LIST_LINES) {
+    menu_scroll_y = index - LIST_LINES + 1;
   }
-  draw_menu_list();
+  perform_redraw();
 }
 
-static void draw_menu_list() {
+static void perform_redraw() {
   // current directory
   fill_char(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1);
   draw_text(CLIENT_X, CLIENT_Y, current_dir, CLIENT_WIDTH);
@@ -4507,11 +4507,11 @@ static void draw_menu_list() {
   {
     const int TEXT_END_X = CLIENT_X + CLIENT_WIDTH - 1;
     for (int iy = 0; iy < LIST_LINES; iy++) {
-      file_info_t &fi = file_list[list_scroll_y + iy];
+      file_info_t &fi = file_list[menu_scroll_y + iy];
       int y = CLIENT_Y + 1 + iy;
-      int i = list_scroll_y + iy;
+      int i = menu_scroll_y + iy;
       fill_char(CLIENT_X, y, CLIENT_WIDTH - 1, 1);
-      if (0 <= i && i < num_menu_items) {
+      if (0 <= i && i < menu_num_items) {
         int x = CLIENT_X;
         if (!fi.is_dir) {
           x += draw_text(x, y, "\xA8\xA9");  // file icon
@@ -4527,7 +4527,7 @@ static void draw_menu_list() {
           draw_text(x, y, "/");
         }
       }
-      if (i == selected_index) {
+      if (i == menu_sel_index) {
         fill_palette(CLIENT_X, y, CLIENT_WIDTH - 1, 1, 1);  // highlight color
       } else {
         fill_palette(CLIENT_X, y, CLIENT_WIDTH - 1, 1, 0);  // normal color
@@ -4539,9 +4539,9 @@ static void draw_menu_list() {
     int x = CLIENT_X + CLIENT_WIDTH - 1;
     int y = CLIENT_Y + 1;
     int p = 0;
-    if (num_menu_items > LIST_LINES) {
-      int n = (num_menu_items - LIST_LINES);
-      p = (list_scroll_y * (LIST_LINES - 3) + (n - 1)) / n;
+    if (menu_num_items > LIST_LINES) {
+      int n = (menu_num_items - LIST_LINES);
+      p = (menu_scroll_y * (LIST_LINES - 3) + (n - 1)) / n;
     }
     fill_palette(x, y, LIST_LINES, 0);
     draw_char(x, y, 0xA0);                   // up arrow

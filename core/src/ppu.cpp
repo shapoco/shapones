@@ -354,9 +354,11 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     }
   }
 
-  if (!!(timing & timing_t::END_OF_VISIBLE_LINE) && !skip_render) {
-    nes::state::auto_screenshot(focus_y, line_buff);
-    nes::menu::overlay(focus_y, line_buff);
+  if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
+    nes::state::auto_screenshot(focus_y, line_buff, skip_render);
+    if (!skip_render) {
+      nes::menu::overlay(focus_y, line_buff);
+    }
   }
 
   if (status) {

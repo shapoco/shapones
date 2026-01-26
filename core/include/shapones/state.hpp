@@ -72,7 +72,9 @@ struct state_slot_entry_t {
 using enum_slot_cb_t = bool (*)(const state_slot_entry_t &entry);
 
 void reset();
-void auto_screenshot(int focus_y, const uint8_t *line_buff);
+void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render);
+
+result_t get_state_path(char *out_path, size_t max_len);
 
 uint32_t get_slot_size();
 

@@ -123,6 +123,8 @@ enum class result_t {
   ERR_INES_TOO_LARGE,
   ERR_INVALID_STATE_FORMAT,
   ERR_STATE_SIZE_MISMATCH,
+  ERR_INES_NOT_LOADED,
+  ERR_STATE_SLOT_FULL,
 };
 
 struct config_t {
@@ -223,10 +225,13 @@ extern const uint32_t NES_PALETTE_24BPP[64];
 
 extern uint8_t blend_table[64 * 64];
 
+const char* result_to_string(result_t res);
+
 void stop();
 const char* get_ines_path();
 
 uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b);
+
 static SHAPONES_INLINE uint8_t blend_colors(uint8_t a, uint8_t b) {
   return blend_table[(a << 6) | b];
 }

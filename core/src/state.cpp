@@ -9,6 +9,7 @@
 #include "shapones/memory.hpp"
 #include "shapones/menu.hpp"
 #include "shapones/ppu.hpp"
+#include "shapones/fs.hpp"
 
 namespace nes::state {
 
@@ -22,7 +23,7 @@ static constexpr int SS_CLIP_TOP =
 uint8_t ss_buff[SS_SIZE_BYTES * SS_BUFF_DEPTH];
 volatile int ss_wr_index = 0;
 volatile int ss_num_stored = 0;
-uint32_t ss_capture_counter = 0;
+int ss_capture_counter = 0;
 
 static uint32_t get_slot_offset(int slot, uint32_t slot_size) {
   return state_file_header_t::SIZE + state_slot_entry_t::SIZE * MAX_SLOTS +
@@ -36,16 +37,16 @@ void reset() {
   Exclusive lock(LOCK_PPU);
   ss_wr_index = 0;
   ss_num_stored = 0;
-  ss_capture_counter = 5 * 60;  // wait 5 seconds before first shot
+  ss_capture_counter = 3 * 60;  // wait 3 seconds before first shot
   memset(ss_buff, 0, sizeof(ss_buff));
 }
 
-void auto_screenshot(int focus_y, const uint8_t *line_buff) {
+void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render) {
   if (menu::is_shown()) return;
-  if (ss_capture_counter > 0) {
-    if (focus_y == SCREEN_HEIGHT - 1) {
-      ss_capture_counter--;
-    }
+  if (focus_y == SCREEN_HEIGHT - 1) {
+    ss_capture_counter--;
+  }
+  if (ss_capture_counter > 0 || skip_render) {
     return;
   }
 
@@ -69,9 +70,19 @@ void auto_screenshot(int focus_y, const uint8_t *line_buff) {
       if (ss_num_stored > SS_BUFF_DEPTH) {
         ss_num_stored = SS_BUFF_DEPTH;
       }
-      ss_capture_counter = 5 * 60;  // wait 5 seconds before next shot
+      ss_capture_counter = 3 * 60;  // wait 3 seconds before next shot
     }
   }
+}
+
+ result_t get_state_path(char *out_path, size_t max_len) {
+  const char *ines_path = get_ines_path();
+  if (ines_path[0] == '\0') {
+    return result_t::ERR_INES_NOT_LOADED;
+  }
+  strncpy(out_path, ines_path, max_len);
+  SHAPONES_TRY(fs::replace_ext(out_path, STATE_FILE_EXT));
+  return result_t::SUCCESS;
 }
 
 uint32_t get_slot_size() {
@@ -216,7 +227,7 @@ result_t load(const char *path, int slot) {
       if (res != result_t::SUCCESS) break;
       ss_wr_index = 1;
       ss_num_stored = 1;
-      ss_capture_counter = 5 * 60;  // wait 5 seconds before next shot
+      ss_capture_counter = 0;
 
       res = read_slot_data(f);
       if (res != result_t::SUCCESS) break;
