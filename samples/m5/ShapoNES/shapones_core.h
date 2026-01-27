@@ -3,6 +3,8 @@
 
 #define SHAPONES_MENU_LARGE_FONT (1)
 
+#define SHAPONES_ENABLE_LOG (1)
+
 #pragma GCC optimize ("O2")
 
 #ifndef SHAPONES_HPP
@@ -21,8 +23,8 @@
 #if !(SHAPONES_NO_STDLIB)
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #endif
 
 #ifndef SHAPONES_DEFINE_FAST_INT
@@ -58,15 +60,27 @@ using int_fast16_t = int16_t;
 using int_fast32_t = int32_t;
 #endif
 
-#define SHAPONES_TRY(expr)               \
-  do {                                   \
-    ::nes::result_t res = (expr);        \
-    if (res != nes::result_t::SUCCESS) { \
-      return res;                        \
-    }                                    \
-  } while (false)
-
 #if SHAPONES_ENABLE_LOG
+
+#ifdef ARDUINO
+
+#include <Arduino.h>
+
+#define SHAPONES_PRINTF(fmt, ...)                       \
+  do {                                                  \
+    Serial.printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
+    Serial.printf((fmt), ##__VA_ARGS__);                \
+  } while (0)
+
+#define SHAPONES_ERRORF(fmt, ...)                       \
+  do {                                                  \
+    Serial.printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
+    Serial.printf("*ERROR: ");                          \
+    Serial.printf(fmt, ##__VA_ARGS__);                  \
+    nes::stop();                                        \
+  } while (0)
+
+#else
 
 #if !(SHAPONES_NO_STDLIB)
 #include <stdlib.h>
@@ -88,6 +102,8 @@ using int_fast32_t = int32_t;
     nes::stop();                                 \
   } while (0)
 
+#endif
+
 #else
 
 #define SHAPONES_PRINTF(fmt, ...) \
@@ -100,6 +116,16 @@ using int_fast32_t = int32_t;
   } while (0)
 
 #endif
+
+#define SHAPONES_TRY(expr)                               \
+  do {                                                   \
+    ::nes::result_t res = (expr);                        \
+    if (res != ::nes::result_t::SUCCESS) {               \
+      SHAPONES_PRINTF("Error Code: %d (%s)\n", (int)res, \
+                      ::nes::result_to_string(res));     \
+      return res;                                        \
+    }                                                    \
+  } while (false)
 
 #define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
@@ -119,9 +145,13 @@ static constexpr addr_t PRGRAM_RANGE = 8 * 1024;
 static constexpr addr_t CHRROM_RANGE = 8 * 1024;
 
 static constexpr int NUM_LOCKS = 3;
-static constexpr int LOCK_INTERRUPTS = 0;
-static constexpr int LOCK_PPU = 1;
-static constexpr int LOCK_APU = 2;
+static constexpr int LOCK_PPU = 0;
+static constexpr int LOCK_APU = 1;
+static constexpr int LOCK_INTERRUPTS = 2;
+
+static constexpr int NUM_SEMAPHORES = 2;
+static constexpr int SEM_PPU = 0;
+static constexpr int SEM_APU = 1;
 
 static constexpr int MAX_FILENAME_LENGTH = SHAPONES_MAX_FILENAME_LEN;
 static constexpr int MAX_PATH_LENGTH = SHAPONES_MAX_PATH_LEN;
@@ -133,12 +163,102 @@ enum class result_t {
   ERR_DIR_NOT_FOUND,
   ERR_PATH_TOO_LONG,
   ERR_FAILED_TO_OPEN_FILE,
+  ERR_FILE_NOT_OPEN,
+  ERR_FAILED_TO_SEEK_FILE,
   ERR_FAILED_TO_READ_FILE,
+  ERR_FAILED_TO_WRITE_FILE,
+  ERR_FAILED_TO_DELETE_FILE,
   ERR_INES_TOO_LARGE,
+  ERR_INVALID_STATE_FORMAT,
+  ERR_STATE_SIZE_MISMATCH,
+  ERR_INES_NOT_LOADED,
+  ERR_STATE_SLOT_FULL,
 };
 
 struct config_t {
   uint32_t apu_sampling_rate;
+};
+
+class BufferWriter {
+ public:
+  uint8_t* buffer;
+  BufferWriter(uint8_t* buffer) : buffer(buffer) {}
+
+  void u8(uint8_t value) {
+    buffer[0] = value;
+    buffer++;
+  }
+
+  void u16(uint16_t value) {
+    buffer[0] = value & 0xff;
+    buffer[1] = (value >> 8) & 0xff;
+    buffer += 2;
+  }
+
+  void u32(uint32_t value) {
+    buffer[0] = value & 0xff;
+    buffer[1] = (value >> 8) & 0xff;
+    buffer[2] = (value >> 16) & 0xff;
+    buffer[3] = (value >> 24) & 0xff;
+    buffer += 4;
+  }
+
+  void u64(uint64_t value) {
+    buffer[0] = value & 0xff;
+    buffer[1] = (value >> 8) & 0xff;
+    buffer[2] = (value >> 16) & 0xff;
+    buffer[3] = (value >> 24) & 0xff;
+    buffer[4] = (value >> 32) & 0xff;
+    buffer[5] = (value >> 40) & 0xff;
+    buffer[6] = (value >> 48) & 0xff;
+    buffer[7] = (value >> 56) & 0xff;
+    buffer += 8;
+  }
+
+  void b(bool value) {
+    buffer[0] = value ? 1 : 0;
+    buffer++;
+  }
+};
+
+class BufferReader {
+ public:
+  const uint8_t* buffer;
+  BufferReader(const uint8_t* buffer) : buffer(buffer) {}
+
+  uint8_t u8() {
+    uint8_t value = buffer[0];
+    buffer++;
+    return value;
+  }
+
+  uint16_t u16() {
+    uint16_t value = buffer[0] | ((uint16_t)buffer[1] << 8);
+    buffer += 2;
+    return value;
+  }
+
+  uint32_t u32() {
+    uint32_t value = buffer[0] | ((uint32_t)buffer[1] << 8) |
+                     ((uint32_t)buffer[2] << 16) | ((uint32_t)buffer[3] << 24);
+    buffer += 4;
+    return value;
+  }
+
+  uint64_t u64() {
+    uint64_t value = (uint64_t)buffer[0] | ((uint64_t)buffer[1] << 8) |
+                     ((uint64_t)buffer[2] << 16) | ((uint64_t)buffer[3] << 24) |
+                     ((uint64_t)buffer[4] << 32) | ((uint64_t)buffer[5] << 40) |
+                     ((uint64_t)buffer[6] << 48) | ((uint64_t)buffer[7] << 56);
+    buffer += 8;
+    return value;
+  }
+
+  bool b() {
+    bool value = buffer[0] ? true : false;
+    buffer++;
+    return value;
+  }
 };
 
 enum class nametable_arrangement_t : uint8_t {
@@ -149,7 +269,23 @@ enum class nametable_arrangement_t : uint8_t {
   FOUR_SCREEN = 4,
 };
 
+extern const uint32_t NES_PALETTE_24BPP[64];
+
+extern uint8_t blend_table[64 * 64];
+
+const char* result_to_string(result_t res);
+
+result_t map_ines(const uint8_t* ines, const char* path);
+void unmap_ines();
+
+const char* get_ines_path();
 void stop();
+
+uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b);
+
+static SHAPONES_INLINE uint8_t blend_colors(uint8_t a, uint8_t b) {
+  return blend_table[(a << 6) | b];
+}
 
 }  // namespace nes
 
@@ -180,75 +316,234 @@ static constexpr addr_t REG_DMC_REG3 = 0x4013;
 static constexpr addr_t REG_STATUS = 0x4015;
 static constexpr addr_t REG_FRAME_COUNTER = 0x4017;
 
-static constexpr int ENV_FLAG_START = 0x1;
-static constexpr int ENV_FLAG_CONSTANT = 0x2;
-static constexpr int ENV_FLAG_HALT_LOOP = 0x4;
+static constexpr uint8_t ENV_FLAG_START = 0x1;
+static constexpr uint8_t ENV_FLAG_CONSTANT = 0x2;
+static constexpr uint8_t ENV_FLAG_HALT_LOOP = 0x4;
 
-static constexpr int SWP_FLAG_ENABLED = 0x1;
-static constexpr int SWP_FLAG_NEGATE = 0x2;
+static constexpr uint8_t SWP_FLAG_ENABLE = 0x1;
+static constexpr uint8_t SWP_FLAG_NEGATE = 0x2;
 
-static constexpr int LIN_FLAG_RELOAD = 0x1;
-static constexpr int LIN_FLAG_CONTROL = 0x2;
+static constexpr uint8_t LIN_FLAG_RELOAD = 0x1;
+static constexpr uint8_t LIN_FLAG_CONTROL = 0x2;
+
+static constexpr uint8_t NOISE_FLAG_FB_MODE = 0x1;
+
+static constexpr uint8_t DMC_FLAG_LOOP = 0x1;
+static constexpr uint8_t DMC_FLAG_IRQ_ENABLE = 0x2;
 
 struct envelope_t {
-  int flags;
-  int volume;
-  int divider;
-  int decay;
+  static constexpr uint32_t STATE_SIZE = 8;
+
+  uint8_t flags;
+  uint8_t volume;
+  uint8_t divider;
+  uint8_t decay;
+
+  void store(uint8_t *buff) const {
+    *(buff++) = flags;
+    *(buff++) = volume;
+    *(buff++) = divider;
+    *(buff++) = decay;
+  }
+
+  void load(const uint8_t *buff) {
+    flags = *(buff++);
+    volume = *(buff++);
+    divider = *(buff++);
+    decay = *(buff++);
+  }
 };
 
 struct sweep_t {
-  int flags;
-  int period;
-  int divider;
-  int shift;
+  static constexpr uint32_t STATE_SIZE = 8;
+
+  uint8_t flags;
+  uint8_t period;
+  uint8_t divider;
+  uint8_t shift;
+
+  void store(uint8_t *buff) const {
+    *(buff++) = flags;
+    *(buff++) = period;
+    *(buff++) = divider;
+    *(buff++) = shift;
+  }
+
+  void load(const uint8_t *buff) {
+    flags = *(buff++);
+    period = *(buff++);
+    divider = *(buff++);
+    shift = *(buff++);
+  }
 };
 
 struct linear_counter_t {
-  int flags;
-  int counter;
-  int reload_value;
+  static constexpr uint32_t STATE_SIZE = 8;
+
+  uint8_t flags;
+  uint8_t counter;
+  uint8_t reload_value;
+
+  void store(uint8_t *buff) const {
+    *(buff++) = flags;
+    *(buff++) = counter;
+    *(buff++) = reload_value;
+  }
+
+  void load(const uint8_t *buff) {
+    flags = *(buff++);
+    counter = *(buff++);
+    reload_value = *(buff++);
+  }
 };
 
 struct pulse_state_t {
-  uint8_t waveform;
+  static constexpr uint32_t STATE_SIZE =
+       envelope_t::STATE_SIZE + sweep_t::STATE_SIZE + 24;
+
+  envelope_t envelope;
+  sweep_t sweep;
+
   uint32_t timer;
   uint32_t timer_period;
   uint32_t phase;
-  int length;
-  envelope_t envelope;
-  sweep_t sweep;
+  uint8_t length;
+  uint8_t waveform;
+
+  void store(uint8_t *buff) const {
+    envelope.store(buff);
+    buff += envelope_t::STATE_SIZE;
+    sweep.store(buff);
+    buff += sweep_t::STATE_SIZE;
+    BufferWriter writer(buff);
+    writer.u32(timer);
+    writer.u32(timer_period);
+    writer.u32(phase);
+    writer.u8(length);
+    writer.u8(waveform);
+  }
+
+  void load(const uint8_t *buff) {
+    envelope.load(buff);
+    buff += envelope_t::STATE_SIZE;
+    sweep.load(buff);
+    buff += sweep_t::STATE_SIZE;
+    BufferReader reader(buff);
+    timer = reader.u32();
+    timer_period = reader.u32();
+    phase = reader.u32();
+    length = reader.u8();
+    waveform = reader.u8();
+  }
 };
 
 struct triangle_state_t {
+  static constexpr uint32_t STATE_SIZE =
+       linear_counter_t::STATE_SIZE + 24;
+
+  linear_counter_t linear;
+
   uint32_t timer;
   uint32_t timer_period;
   uint32_t phase;
-  int length;
-  linear_counter_t linear;
+  uint8_t length;
+
+  void store(uint8_t *buff) const {
+    linear.store(buff);
+    buff += linear_counter_t::STATE_SIZE;
+    BufferWriter writer(buff);
+    writer.u32(timer);
+    writer.u32(timer_period);
+    writer.u32(phase);
+    writer.u8(length);
+  }
+
+  void load(const uint8_t *buff) {
+    linear.load(buff);
+    buff += linear_counter_t::STATE_SIZE;
+    BufferReader reader(buff);
+    timer = reader.u32();
+    timer_period = reader.u32();
+    phase = reader.u32();
+    length = reader.u8();
+  }
 };
 
 struct noise_state_t {
+  static constexpr uint32_t STATE_SIZE = envelope_t::STATE_SIZE + 16;
+
+  envelope_t envelope;
+
   uint32_t timer;
   uint32_t timer_period;
-  bool mode;
   uint16_t lfsr;
-  int length;
-  envelope_t envelope;
+  uint8_t flags;
+  uint8_t length;
+
+  void store(uint8_t *buff) const {
+    envelope.store(buff);
+    buff += envelope_t::STATE_SIZE;
+    BufferWriter writer(buff);
+    writer.u32(timer);
+    writer.u32(timer_period);
+    writer.u16(lfsr);
+    writer.u8(flags);
+    writer.u8(length);
+  }
+
+  void load(const uint8_t *buff) {
+    envelope.load(buff);
+    buff += envelope_t::STATE_SIZE;
+    BufferReader reader(buff);
+    timer = reader.u32();
+    timer_period = reader.u32();
+    lfsr = reader.u16();
+    flags = reader.u8();
+    length = reader.u8();
+  }
 };
 
 struct dmc_state_t {
-  bool irq_enabled;
-  bool loop;
+  static constexpr uint32_t STATE_SIZE = 32;
+
   uint32_t timer_step;
   uint32_t timer;
   addr_t sample_addr;
-  int sample_length;
   addr_t addr_counter;
-  uint32_t bytes_remaining;
+  uint16_t sample_length;
+  uint16_t bytes_remaining;
+  uint8_t flags;
   uint8_t shift_reg;
-  int bits_remaining;
+  uint8_t bits_remaining;
   uint8_t out_level;
+
+  void store(uint8_t *buff) const {
+    BufferWriter writer(buff);
+    writer.u32(timer_step);
+    writer.u32(timer);
+    writer.u16(sample_addr);
+    writer.u16(addr_counter);
+    writer.u16(sample_length);
+    writer.u16(bytes_remaining);
+    writer.u8(flags);
+    writer.u8(shift_reg);
+    writer.u8(bits_remaining);
+    writer.u8(out_level);
+  }
+
+  void load(const uint8_t *buff) {
+    BufferReader reader(buff);
+    timer_step = reader.u32();
+    timer = reader.u32();
+    sample_addr = reader.u16();
+    addr_counter = reader.u16();
+    sample_length = reader.u16();
+    bytes_remaining = reader.u16();
+    flags = reader.u8();
+    shift_reg = reader.u8();
+    bits_remaining = reader.u8();
+    out_level = reader.u8();
+  }
 };
 
 union status_t {
@@ -275,6 +570,10 @@ uint8_t reg_read(addr_t addr);
 void reg_write(addr_t addr, uint8_t value);
 
 result_t service(uint8_t *buff, int len);
+
+uint32_t get_state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
 
 }  // namespace nes::apu
 
@@ -312,7 +611,11 @@ static constexpr uint8_t STATUS_BREAKMODE = 0x10;
 static constexpr uint8_t STATUS_OVERFLOW = 0x40;
 static constexpr uint8_t STATUS_NEGATIVE = 0x80;
 
+static constexpr uint16_t DMA_TRANSFER_SIZE = 256;
+
 struct registers_t {
+  static constexpr uint32_t STATE_SIZE = 16;
+
   uint8_t A;   // accumulator
   uint8_t X;   // index
   uint8_t Y;   // index
@@ -331,11 +634,32 @@ struct registers_t {
     };
   } status;
   addr_t PC;  // program counter
+
+  void store(uint8_t *buff) const {
+    BufferWriter writer(buff);
+    writer.u8(A);
+    writer.u8(X);
+    writer.u8(Y);
+    writer.u8(SP);
+    writer.u8(status.raw);
+    writer.u16(PC);
+  }
+
+  void load(const uint8_t *buff) {
+    BufferReader reader(buff);
+    A = reader.u8();
+    X = reader.u8();
+    Y = reader.u8();
+    SP = reader.u8();
+    status.raw = reader.u8();
+    PC = reader.u16();
+  }
 };
 
-enum RegSel { A, X, Y };
+constexpr uint32_t STATE_SIZE = registers_t::STATE_SIZE + 16;
 
 extern volatile cycle_t ppu_cycle_count;
+static SHAPONES_INLINE cycle_t ppu_cycle_leading() { return ppu_cycle_count; }
 
 result_t init();
 void deinit();
@@ -350,28 +674,11 @@ result_t service();
 uint8_t bus_read(addr_t addr);
 void bus_write(addr_t addr, uint8_t data);
 
-static SHAPONES_INLINE cycle_t ppu_cycle_leading() { return ppu_cycle_count; }
+uint32_t get_state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
 
 }  // namespace nes::cpu
-
-#endif
-// #include "shapones/dma.hpp"
-
-#ifndef SHAPONES_DMA_HPP
-#define SHAPONES_DMA_HPP
-
-// #include "shapones/common.hpp"
-
-
-namespace nes::dma {
-
-static constexpr int TRANSFER_SIZE = 256;
-
-bool dma_is_running();
-void start(int src_page);
-int exec_next_cycle();
-
-}  // namespace nes::dma
 
 #endif
 // #include "shapones/host_intf.hpp"
@@ -385,8 +692,8 @@ int exec_next_cycle();
 namespace nes {
 
 struct file_info_t {
-  bool is_dir = false;
-  char *name = nullptr;
+  bool is_dir;
+  const char *name;
 };
 
 using fs_enum_files_cb_t = bool (*)(const file_info_t &info);
@@ -396,13 +703,29 @@ void lock_deinit(int id);
 void lock_get(int id);
 void lock_release(int id);
 
+result_t sem_init(int id);
+void sem_deinit(int id);
+bool sem_try_take(int id);
+void sem_take(int id);
+void sem_give(int id);
+
+result_t load_ines(const char *path, const uint8_t **out_ines,
+                   size_t *out_size);
+void unload_ines();
+
 result_t fs_mount();
 void fs_unmount();
 
 result_t fs_get_current_dir(char *out_path);
 result_t fs_enum_files(const char *path, fs_enum_files_cb_t callback);
-
-result_t request_load_nes_file(const char *path);
+bool fs_exists(const char *path);
+result_t fs_open(const char *path, bool write, void **handle);
+void fs_close(void *handle);
+result_t fs_seek(void *handle, size_t offset);
+result_t fs_read(void *handle, uint8_t *buff, size_t size);
+result_t fs_write(void *handle, const uint8_t *buff, size_t size);
+result_t fs_size(void *handle, size_t *out_size);
+result_t fs_delete(const char *path);
 
 }  // namespace nes
 
@@ -448,11 +771,21 @@ union control_t {
   };
 };
 
+result_t init();
+void deinit();
+
+result_t reset();
+
 status_t get_status(int player);
 void set_status(int player, status_t data);
+
 void update();
 uint8_t read_latched(int player);
 void write_control(uint8_t data);
+
+uint32_t state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
 
 }  // namespace nes::input
 
@@ -496,6 +829,11 @@ static SHAPONES_INLINE source_t& operator&=(source_t& a, source_t b) {
   return a;
 }
 
+result_t init();
+void deinit();
+
+result_t reset();
+
 void assert_irq(source_t src);
 void deassert_irq(source_t src);
 source_t get_irq();
@@ -504,10 +842,40 @@ void assert_nmi();
 void deassert_nmi();
 bool is_nmi_asserted();
 
+uint32_t get_state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
+
 }  // namespace nes::interrupt
 
 #endif
-// #include "shapones/mapper.hpp"
+// #include "shapones/lock.hpp"
+
+#ifndef SHAPONES_LOCK_HPP
+#define SHAPONES_LOCK_HPP
+
+// #include "shapones/host_intf.hpp"
+
+
+namespace nes {
+
+class LockBlock {
+ public:
+  const int id;
+  SHAPONES_INLINE LockBlock(int id) : id(id) { lock_get(id); }
+  SHAPONES_INLINE ~LockBlock() { lock_release(id); }
+};
+
+class SemBlock {
+ public:
+  const int id;
+  SHAPONES_INLINE SemBlock(int id) : id(id) { sem_take(id); }
+  SHAPONES_INLINE ~SemBlock() { sem_give(id); }
+};
+
+}  // namespace nes
+
+#endif// #include "shapones/mapper.hpp"
 
 #ifndef SHAPONES_MAPPER_HPP
 #define SHAPONES_MAPPER_HPP
@@ -598,8 +966,10 @@ static constexpr uint16_t SCROLL_MASK_NAME_SEL = 0x0c00u;
 static constexpr uint16_t SCROLL_MASK_FINE_Y = 0x7000u;
 static constexpr uint16_t SCROLL_MASK_PPU_ADDR = 0x3fffu;
 
-struct Registers {
+struct registers_t {
  public:
+  static constexpr uint32_t STATE_SIZE = 16;
+
   // Control Register
   union {
     uint8_t raw;
@@ -647,6 +1017,26 @@ struct Registers {
   // Scroll Registers
   uint8_t fine_x;
   uint16_t scroll;
+
+  void store(uint8_t *buff) const {
+    BufferWriter writer(buff);
+    writer.u8(control.raw);
+    writer.u8(mask.raw);
+    writer.u8(status.raw);
+    writer.u8(oam_addr);
+    writer.u8(fine_x);
+    writer.u16(scroll);
+  }
+
+  void load(const uint8_t *buff) {
+    BufferReader reader(buff);
+    control.raw = reader.u8();
+    mask.raw = reader.u8();
+    status.raw = reader.u8();
+    oam_addr = reader.u8();
+    fine_x = reader.u8();
+    scroll = reader.u16();
+  }
 };
 
 static constexpr uint8_t OAM_ATTR_PALETTE = 0x3;
@@ -654,12 +1044,10 @@ static constexpr uint8_t OAM_ATTR_PRIORITY = 0x20;
 static constexpr uint8_t OAM_ATTR_INVERT_H = 0x40;
 static constexpr uint8_t OAM_ATTR_INVERT_V = 0x80;
 
-struct oam_entry_t {
-  uint8_t y;
-  uint8_t tile;
-  uint8_t attr;
-  uint8_t x;
-};
+static constexpr int OAM_ENTRY_OFFSET_Y = 0;
+static constexpr int OAM_ENTRY_OFFSET_TILE = 1;
+static constexpr int OAM_ENTRY_OFFSET_ATTR = 2;
+static constexpr int OAM_ENTRY_OFFSET_X = 3;
 
 static constexpr uint8_t SL_ATTR_BEHIND = 0x1;
 static constexpr uint8_t SL_ATTR_ZERO = 0x2;
@@ -698,6 +1086,10 @@ void oam_dma_write(addr_t offset, uint8_t data);
 
 result_t service(uint8_t *line_buff,  bool skip_render = false, status_t* status = nullptr);
 
+uint32_t get_state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
+
 }  // namespace nes::ppu
 
 #endif
@@ -713,11 +1105,15 @@ class Mapper {
   virtual ~Mapper() {}
 
   virtual result_t init() { return result_t::SUCCESS; }
-  virtual void reset() {}
-  virtual bool vblank(const nes::ppu::Registers &reg) { return false; }
-  virtual bool hblank(const nes::ppu::Registers &reg, int y) { return false; }
+  virtual result_t reset() { return result_t::SUCCESS; }
+  virtual bool vblank(const nes::ppu::registers_t &reg) { return false; }
+  virtual bool hblank(const nes::ppu::registers_t &reg, int y) { return false; }
   virtual uint8_t read(addr_t addr) { return 0; }
   virtual void write(addr_t addr, uint8_t value) {}
+
+  virtual uint32_t get_state_size() { return 0; }
+  virtual result_t save_state(void *file_handle) { return result_t::SUCCESS; }
+  virtual result_t load_state(void *file_handle) { return result_t::SUCCESS; }
 };
 
 extern Mapper *instance;
@@ -820,12 +1216,14 @@ extern uint8_t *chrram;
 extern const uint8_t *prgrom;
 extern const uint8_t *chrrom;
 
-extern int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
-extern int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
+extern uint16_t prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
+extern uint16_t chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
 
-extern addr_t prgram_addr_mask;
 extern uint32_t prgrom_phys_size;
 extern uint32_t prgrom_phys_addr_mask;
+extern uint32_t prgram_size;
+extern addr_t prgram_addr_mask;
+
 extern uint32_t chrrom_phys_size;
 extern uint32_t chrrom_phys_addr_mask;
 
@@ -833,7 +1231,7 @@ result_t init();
 void deinit();
 
 result_t map_ines(const uint8_t *ines);
-void unmap();
+void unmap_ines();
 
 static SHAPONES_INLINE uint8_t vram_read(addr_t addr) {
   return vram[(addr & vram_addr_and) | vram_addr_or];
@@ -850,6 +1248,9 @@ static SHAPONES_INLINE void prgrom_remap(addr_t cpu_base, uint32_t phys_base,
   uint32_t num_blocks = size >> PRGROM_BLOCK_ADDR_BITS;
   for (int i = 0; i < num_blocks; i++) {
     prgrom_remap_table[cpu_block + i] = phys_block + i;
+    SHAPONES_PRINTF("PRGROM Remap: CPU 0x%04X -> PHYS 0x%04X\n",
+                    (unsigned int)(PRGROM_BASE + ((cpu_block + i) << PRGROM_BLOCK_ADDR_BITS)),
+                    (unsigned int)((phys_block + i) << PRGROM_BLOCK_ADDR_BITS));
   }
 }
 
@@ -913,6 +1314,10 @@ static SHAPONES_INLINE uint_fast16_t chrrom_read_double(addr_t addr,
 
 void set_nametable_arrangement(nametable_arrangement_t mode);
 
+uint32_t get_state_size();
+result_t save_state(void *file_handle);
+result_t load_state(void *file_handle);
+
 }  // namespace nes::memory
 
 #endif
@@ -925,11 +1330,6 @@ void set_nametable_arrangement(nametable_arrangement_t mode);
 
 
 namespace nes::menu {
-
-enum class tab_t {
-  NES_LIST,
-  COUNT,
-};
 
 extern bool shown;
 
@@ -957,7 +1357,6 @@ config_t get_default_config();
 result_t init(const config_t &cfg);
 void deinit();
 
-result_t map_ines(const uint8_t *ines);
 result_t reset();
 
 result_t render_next_line(uint8_t *line_buff, bool skip_render = false,
@@ -968,6 +1367,73 @@ result_t vsync(uint8_t *line_buff, bool skip_render = false);
 
 #endif
 #ifdef SHAPONES_IMPLEMENTATION
+// #include "shapones/common.hpp"
+
+
+namespace nes {
+
+const uint32_t NES_PALETTE_24BPP[64] = {
+    0x808080, 0x003DA6, 0x0012B0, 0x440096, 0xA1005E, 0xC70028, 0xBA0600,
+    0x8C1700, 0x5C2F00, 0x104500, 0x054A00, 0x00472E, 0x004166, 0x000000,
+    0x050505, 0x050505, 0xC7C7C7, 0x0077FF, 0x2155FF, 0x8237FA, 0xEB2FB5,
+    0xFF2950, 0xFF2200, 0xD63200, 0xC46200, 0x358000, 0x058F00, 0x008A55,
+    0x0099CC, 0x212121, 0x090909, 0x090909, 0xFFFFFF, 0x0FD7FF, 0x69A2FF,
+    0xD480FF, 0xFF45F3, 0xFF618B, 0xFF8833, 0xFF9C12, 0xFABC20, 0x9FE30E,
+    0x2BF035, 0x0CF0A4, 0x05FBFF, 0x5E5E5E, 0x0D0D0D, 0x0D0D0D, 0xFFFFFF,
+    0xA6FCFF, 0xB3ECFF, 0xDAABEB, 0xFFA8F9, 0xFFABB3, 0xFFD2B0, 0xFFEFA6,
+    0xFFF79C, 0xD7E895, 0xA6EDAF, 0xA2F2DA, 0x99FFFC, 0xDDDDDD, 0x111111,
+    0x111111,
+};
+
+uint8_t blend_table[64 * 64];
+
+const char* result_to_string(result_t res) {
+  switch (res) {
+    case result_t::SUCCESS: return "Ok";
+    case result_t::ERR_INVALID_NES_FORMAT: return "Bad iNES";
+    case result_t::ERR_NO_DISK: return "No Disk";
+    case result_t::ERR_DIR_NOT_FOUND: return "Dir Not Found";
+    case result_t::ERR_PATH_TOO_LONG: return "Path Too Long";
+    case result_t::ERR_FAILED_TO_OPEN_FILE: return "Open Failed";
+    case result_t::ERR_FILE_NOT_OPEN: return "File Not Open";
+    case result_t::ERR_FAILED_TO_SEEK_FILE: return "Seek Failed";
+    case result_t::ERR_FAILED_TO_READ_FILE: return "Read Failed";
+    case result_t::ERR_FAILED_TO_WRITE_FILE: return "Write Failed";
+    case result_t::ERR_FAILED_TO_DELETE_FILE: return "Delete Failed";
+    case result_t::ERR_INES_TOO_LARGE: return "iNES Too Large";
+    case result_t::ERR_INVALID_STATE_FORMAT: return "Bad State Format";
+    case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
+    case result_t::ERR_INES_NOT_LOADED: return "iNES Not Loaded";
+    case result_t::ERR_STATE_SLOT_FULL: return "State Slot Full";
+    default: return "Unknown Error";
+  }
+}
+
+uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b) {
+  int best_dist = 99999;
+  uint_fast8_t best_index = 0;
+  for (uint_fast8_t i = 0; i < 64; i++) {
+    if (i == 0x0D) {
+      // skip "darker than black"
+      continue;
+    }
+    uint32_t ci = NES_PALETTE_24BPP[i];
+    uint8_t ri = (ci >> 16) & 0xff;
+    uint8_t gi = (ci >> 8) & 0xff;
+    uint8_t bi = ci & 0xff;
+    int dr = (r > ri) ? (r - ri) : (ri - r);
+    int dg = (g > gi) ? (g - gi) : (gi - g);
+    int db = (b > bi) ? (b - bi) : (bi - b);
+    int dist = dr + dg + db;
+    if (dist < best_dist) {
+      best_dist = dist;
+      best_index = i;
+    }
+  }
+  return best_index;
+}
+
+}  // namespace nes
 // #include "shapones/apu.hpp"
 
 // #include "shapones/cpu.hpp"
@@ -976,24 +1442,7 @@ result_t vsync(uint8_t *line_buff, bool skip_render = false);
 
 // #include "shapones/lock.hpp"
 
-#ifndef SHAPONES_LOCK_HPP
-#define SHAPONES_LOCK_HPP
-
-// #include "shapones/host_intf.hpp"
-
-
-namespace nes {
-
-class Exclusive {
- public:
-  const int id;
-  SHAPONES_INLINE Exclusive(int id) : id(id) { lock_get(id); }
-  SHAPONES_INLINE ~Exclusive() { lock_release(id); }
-};
-
-}  // namespace nes
-
-#endif// #include "shapones/menu.hpp"
+// #include "shapones/menu.hpp"
 
 
 namespace nes::apu {
@@ -1003,94 +1452,80 @@ static constexpr int QUARTER_FRAME_PHASE_PREC = 16;
 static constexpr uint32_t QUARTER_FRAME_PHASE_PERIOD =
     1ul << QUARTER_FRAME_PHASE_PREC;
 
-static uint32_t sampling_rate;
-static uint32_t pulse_timer_step;
-static uint32_t triangle_timer_step;
-static uint32_t noise_timer_step;
-static uint32_t dmc_step_coeff;
-static int qframe_phase_step;
-
-static int quarter_frame_phase;
-static int quarter_frame_count;
-static bool frame_step;
-static bool half_frame_step;
-static bool quarter_frame_step;
+static constexpr uint8_t STEP_FLAG_FRAME = 0x01;
+static constexpr uint8_t STEP_FLAG_HALF = 0x02;
+static constexpr uint8_t STEP_FLAG_QUARTER = 0x04;
 
 // see: https://www.nesdev.org/wiki/APU_Length_Counter
-static constexpr uint8_t LENGTH_TABLE[] = {
+static const uint8_t LENGTH_TABLE[] = {
     10, 254, 20, 2,  40, 4,  80, 6,  160, 8,  60, 10, 14, 12, 26, 14,
     12, 16,  24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
 };
 
 // see: https://www.nesdev.org/wiki/APU_Noise
-static constexpr uint16_t NOISE_PERIOD_TABLE[16] = {
+static const uint16_t NOISE_PERIOD_TABLE[16] = {
     4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
 };
 
 // see: https://www.nesdev.org/wiki/APU_DMC
-static constexpr uint16_t DMC_RATE_TABLE[16] = {
+static const uint16_t DMC_RATE_TABLE[16] = {
     428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
 };
+
+static constexpr uint32_t STATE_SIZE =
+    pulse_state_t::STATE_SIZE * 2 + triangle_state_t::STATE_SIZE +
+    noise_state_t::STATE_SIZE + dmc_state_t::STATE_SIZE + 16;
+
+static uint32_t sampling_rate;
+static uint32_t pulse_timer_step;
+static uint32_t triangle_timer_step;
+static uint32_t noise_timer_step;
+static uint32_t dmc_step_coeff;
+static uint32_t quarter_frame_phase_step;
+
+static uint32_t quarter_frame_phase;
+static uint8_t quarter_frame_count;
+static uint8_t frame_step_flags;
+static status_t status;
 
 static pulse_state_t pulse[2];
 static triangle_state_t triangle;
 static noise_state_t noise;
 static dmc_state_t dmc;
-static status_t status;
 
-static void pulse_write_reg0(pulse_state_t *s, uint8_t value);
-static void pulse_write_reg1(pulse_state_t *s, uint8_t value);
-static void pulse_write_reg2(pulse_state_t *s, uint8_t value);
-static void pulse_write_reg3(pulse_state_t *s, uint8_t value);
-static void triangle_write_reg0(triangle_state_t *s, uint8_t value);
-static void triangle_write_reg2(triangle_state_t *s, uint8_t value);
-static void triangle_write_reg3(triangle_state_t *s, uint8_t value);
-static void noise_write_reg0(noise_state_t *s, uint8_t value);
-static void noise_write_reg2(noise_state_t *s, uint8_t value);
-static void noise_write_reg3(noise_state_t *s, uint8_t value);
-static void dmc_write_reg0(dmc_state_t *s, uint8_t value);
-static void dmc_write_reg1(dmc_state_t *s, uint8_t value);
-static void dmc_write_reg2(dmc_state_t *s, uint8_t value);
-static void dmc_write_reg3(dmc_state_t *s, uint8_t value);
+static void pulse_write_reg0(pulse_state_t &s, uint8_t value);
+static void pulse_write_reg1(pulse_state_t &s, uint8_t value);
+static void pulse_write_reg2(pulse_state_t &s, uint8_t value);
+static void pulse_write_reg3(pulse_state_t &s, uint8_t value);
+static void triangle_write_reg0(triangle_state_t &s, uint8_t value);
+static void triangle_write_reg2(triangle_state_t &s, uint8_t value);
+static void triangle_write_reg3(triangle_state_t &s, uint8_t value);
+static void noise_write_reg0(noise_state_t &s, uint8_t value);
+static void noise_write_reg2(noise_state_t &s, uint8_t value);
+static void noise_write_reg3(noise_state_t &s, uint8_t value);
+static void dmc_write_reg0(dmc_state_t &s, uint8_t value);
+static void dmc_write_reg1(dmc_state_t &s, uint8_t value);
+static void dmc_write_reg2(dmc_state_t &s, uint8_t value);
+static void dmc_write_reg3(dmc_state_t &s, uint8_t value);
 
-result_t init() { return result_t::SUCCESS; }
+result_t init() {
+  deinit();
+  return result_t::SUCCESS;
+}
 void deinit() {}
 
 result_t reset() {
   for (int i = 0; i < 2; i++) {
-    pulse[i].timer = 0;
-    pulse[i].length = 0;
-    pulse[i].waveform = 0;
-    pulse[i].phase = 0;
-    pulse[i].sweep.flags = 0;
+    memset(&pulse[i], 0, sizeof(pulse_state_t));
   }
-
-  triangle.length = 0;
-  triangle.timer = 0;
-
-  noise.timer = 0;
-  noise.length = 0;
-  noise.lfsr = 0xFFFF;
-  noise.mode = false;
-  noise.timer_period = NOISE_PERIOD_TABLE[0] * (1u << TIMER_PREC);
-
-  dmc.irq_enabled = false;
-  dmc.loop = false;
-  dmc.timer_step = 0;
-  dmc.timer = 0;
-  dmc.sample_addr = 0;
-  dmc.sample_length = 0;
-  dmc.addr_counter = 0;
-  dmc.bytes_remaining = 0;
-  dmc.shift_reg = 0;
-  dmc.bits_remaining = 0;
-  dmc.out_level = 0;
-
+  memset(&triangle, 0, sizeof(triangle_state_t));
+  memset(&noise, 0, sizeof(noise_state_t));
+  noise.lfsr = 0x7FFF;
+  memset(&dmc, 0, sizeof(dmc_state_t));
+  status.raw = 0;
   quarter_frame_phase = 0;
   quarter_frame_count = 0;
-  frame_step = false;
-  half_frame_step = false;
-  quarter_frame_step = false;
+  frame_step_flags = 0;
 
   return result_t::SUCCESS;
 }
@@ -1119,24 +1554,24 @@ uint8_t reg_read(addr_t addr) {
 // todo: exclusive control
 void reg_write(addr_t addr, uint8_t value) {
   switch (addr) {
-    case REG_PULSE1_REG0: pulse_write_reg0(&pulse[0], value); break;
-    case REG_PULSE1_REG1: pulse_write_reg1(&pulse[0], value); break;
-    case REG_PULSE1_REG2: pulse_write_reg2(&pulse[0], value); break;
-    case REG_PULSE1_REG3: pulse_write_reg3(&pulse[0], value); break;
-    case REG_PULSE2_REG0: pulse_write_reg0(&pulse[1], value); break;
-    case REG_PULSE2_REG1: pulse_write_reg1(&pulse[1], value); break;
-    case REG_PULSE2_REG2: pulse_write_reg2(&pulse[1], value); break;
-    case REG_PULSE2_REG3: pulse_write_reg3(&pulse[1], value); break;
-    case REG_TRIANGLE_REG0: triangle_write_reg0(&triangle, value); break;
-    case REG_TRIANGLE_REG2: triangle_write_reg2(&triangle, value); break;
-    case REG_TRIANGLE_REG3: triangle_write_reg3(&triangle, value); break;
-    case REG_NOISE_REG0: noise_write_reg0(&noise, value); break;
-    case REG_NOISE_REG2: noise_write_reg2(&noise, value); break;
-    case REG_NOISE_REG3: noise_write_reg3(&noise, value); break;
-    case REG_DMC_REG0: dmc_write_reg0(&dmc, value); break;
-    case REG_DMC_REG1: dmc_write_reg1(&dmc, value); break;
-    case REG_DMC_REG2: dmc_write_reg2(&dmc, value); break;
-    case REG_DMC_REG3: dmc_write_reg3(&dmc, value); break;
+    case REG_PULSE1_REG0: pulse_write_reg0(pulse[0], value); break;
+    case REG_PULSE1_REG1: pulse_write_reg1(pulse[0], value); break;
+    case REG_PULSE1_REG2: pulse_write_reg2(pulse[0], value); break;
+    case REG_PULSE1_REG3: pulse_write_reg3(pulse[0], value); break;
+    case REG_PULSE2_REG0: pulse_write_reg0(pulse[1], value); break;
+    case REG_PULSE2_REG1: pulse_write_reg1(pulse[1], value); break;
+    case REG_PULSE2_REG2: pulse_write_reg2(pulse[1], value); break;
+    case REG_PULSE2_REG3: pulse_write_reg3(pulse[1], value); break;
+    case REG_TRIANGLE_REG0: triangle_write_reg0(triangle, value); break;
+    case REG_TRIANGLE_REG2: triangle_write_reg2(triangle, value); break;
+    case REG_TRIANGLE_REG3: triangle_write_reg3(triangle, value); break;
+    case REG_NOISE_REG0: noise_write_reg0(noise, value); break;
+    case REG_NOISE_REG2: noise_write_reg2(noise, value); break;
+    case REG_NOISE_REG3: noise_write_reg3(noise, value); break;
+    case REG_DMC_REG0: dmc_write_reg0(dmc, value); break;
+    case REG_DMC_REG1: dmc_write_reg1(dmc, value); break;
+    case REG_DMC_REG2: dmc_write_reg2(dmc, value); break;
+    case REG_DMC_REG3: dmc_write_reg3(dmc, value); break;
     case REG_STATUS:
       status.raw = value;
       if (!status.pulse0_enable) pulse[0].length = 0;
@@ -1163,9 +1598,7 @@ void reg_write(addr_t addr, uint8_t value) {
       if (value & 0x40) {
         quarter_frame_count = 0;
         quarter_frame_phase = 0;
-        frame_step = true;
-        half_frame_step = true;
-        quarter_frame_step = true;
+        frame_step_flags = STEP_FLAG_FRAME | STEP_FLAG_HALF | STEP_FLAG_QUARTER;
       }
       break;
   }
@@ -1178,178 +1611,184 @@ result_t set_sampling_rate(uint32_t rate_hz) {
   triangle_timer_step =
       (1ULL << TIMER_PREC) * cpu::CLOCK_FREQ_NTSC / sampling_rate;
   noise_timer_step = cpu::CLOCK_FREQ_NTSC / sampling_rate;
-  qframe_phase_step =
+  quarter_frame_phase_step =
       (QUARTER_FRAME_FREQUENCY * QUARTER_FRAME_PHASE_PERIOD) / rate_hz;
   dmc_step_coeff = ((uint64_t)cpu::CLOCK_FREQ_NTSC << TIMER_PREC) / rate_hz;
   return result_t::SUCCESS;
 }
 
-static void pulse_write_reg0(pulse_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
   // duty pattern
   switch ((value >> 6) & 0x3) {
-    case 0: s->waveform = 0b00000001; break;
-    case 1: s->waveform = 0b00000011; break;
-    case 2: s->waveform = 0b00001111; break;
-    default: s->waveform = 0b11111100; break;
+    default:
+    case 0: s.waveform = 0b00000001; break;
+    case 1: s.waveform = 0b00000011; break;
+    case 2: s.waveform = 0b00001111; break;
+    case 3: s.waveform = 0b11111100; break;
   }
 
-  s->envelope.flags = 0;
-  if (value & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
-  if (value & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
-  s->envelope.volume = value & 0xf;
+  s.envelope.flags = 0;
+  if (value & 0x10) s.envelope.flags |= ENV_FLAG_CONSTANT;
+  if (value & 0x20) s.envelope.flags |= ENV_FLAG_HALT_LOOP;
+  s.envelope.volume = value & 0xf;
 
-  if (!(s->envelope.flags & ENV_FLAG_CONSTANT)) {
-    s->envelope.flags |= ENV_FLAG_START;
-    s->envelope.divider = s->envelope.volume;
+  if (!(s.envelope.flags & ENV_FLAG_CONSTANT)) {
+    s.envelope.flags |= ENV_FLAG_START;
+    s.envelope.divider = s.envelope.volume;
   }
 }
 
-static void pulse_write_reg1(pulse_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->sweep.period = (value >> 4) & 0x7;
-  s->sweep.shift = value & 0x7;
-  s->sweep.flags = 0;
-  if (value & 0x80) s->sweep.flags |= SWP_FLAG_ENABLED;
-  if (value & 0x08) s->sweep.flags |= SWP_FLAG_NEGATE;
-  s->sweep.divider = 0;
+static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.sweep.period = (value >> 4) & 0x7;
+  s.sweep.shift = value & 0x7;
+  s.sweep.flags = 0;
+  if (value & 0x80) s.sweep.flags |= SWP_FLAG_ENABLE;
+  if (value & 0x08) s.sweep.flags |= SWP_FLAG_NEGATE;
+  s.sweep.divider = 0;
 }
 
-static void pulse_write_reg2(pulse_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->timer_period &= ~(0xff << TIMER_PREC);
-  s->timer_period |= (uint32_t)value << TIMER_PREC;
+static void pulse_write_reg2(pulse_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.timer_period &= ~(0xff << TIMER_PREC);
+  s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
-static void pulse_write_reg3(pulse_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->timer_period &= ~(0x700 << TIMER_PREC);
-  s->timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
-  s->timer = 0;
-  s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
-  s->phase = 0;
+static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.timer_period &= ~(0x700 << TIMER_PREC);
+  s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
+  s.timer = 0;
+  s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
+  s.phase = 0;
 }
 
-static void triangle_write_reg0(triangle_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->linear.reload_value = value & 0x7f;
+static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.linear.reload_value = value & 0x7f;
   if (value & 0x80) {
-    s->linear.flags |= LIN_FLAG_CONTROL;
+    s.linear.flags |= LIN_FLAG_CONTROL;
   } else {
-    s->linear.flags &= ~LIN_FLAG_CONTROL;
+    s.linear.flags &= ~LIN_FLAG_CONTROL;
   }
 }
 
-static void triangle_write_reg2(triangle_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->timer_period &= ~(0xff << TIMER_PREC);
-  s->timer_period |= (uint32_t)value << TIMER_PREC;
+static void triangle_write_reg2(triangle_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.timer_period &= ~(0xff << TIMER_PREC);
+  s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
-static void triangle_write_reg3(triangle_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->timer_period &= ~(0x700 << TIMER_PREC);
-  s->timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
-  s->timer = 0;
-  s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
-  s->phase = 0;
-  s->linear.flags |= LIN_FLAG_RELOAD;
+static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.timer_period &= ~(0x700 << TIMER_PREC);
+  s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
+  s.timer = 0;
+  s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
+  s.phase = 0;
+  s.linear.flags |= LIN_FLAG_RELOAD;
 }
 
-static void noise_write_reg0(noise_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->envelope.flags = 0;
-  if (value & 0x10) s->envelope.flags |= ENV_FLAG_CONSTANT;
-  if (value & 0x20) s->envelope.flags |= ENV_FLAG_HALT_LOOP;
-  s->envelope.volume = value & 0xf;
+static void noise_write_reg0(noise_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.envelope.flags = 0;
+  if (value & 0x10) s.envelope.flags |= ENV_FLAG_CONSTANT;
+  if (value & 0x20) s.envelope.flags |= ENV_FLAG_HALT_LOOP;
+  s.envelope.volume = value & 0xf;
 
-  if (!(s->envelope.flags & ENV_FLAG_CONSTANT)) {
-    s->envelope.flags |= ENV_FLAG_START;
-    s->envelope.divider = s->envelope.volume;
+  if (!(s.envelope.flags & ENV_FLAG_CONSTANT)) {
+    s.envelope.flags |= ENV_FLAG_START;
+    s.envelope.divider = s.envelope.volume;
   }
 }
 
-static void noise_write_reg2(noise_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->mode = !!(value & 0x80);
-  s->timer_period = NOISE_PERIOD_TABLE[value & 0xF];
+static void noise_write_reg2(noise_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  if (value & 0x80) {
+    s.flags |= NOISE_FLAG_FB_MODE;
+  } else {
+    s.flags &= ~NOISE_FLAG_FB_MODE;
+  }
+  s.timer_period = NOISE_PERIOD_TABLE[value & 0xF];
 }
 
-static void noise_write_reg3(noise_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->length = LENGTH_TABLE[(value >> 3) & 0x1f];
+static void noise_write_reg3(noise_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
 }
 
-static void dmc_write_reg0(dmc_state_t *s, uint8_t value) {
-  bool irq_ena_old = s->irq_enabled;
-  bool irq_ena_new = (value & 0x80) != 0;
+static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
+  bool irq_ena_old = !!(s.flags & DMC_FLAG_IRQ_ENABLE);
+  bool irq_ena_new = !!(value & 0x80);
   if (irq_ena_new && !irq_ena_old) {
     interrupt::deassert_irq(interrupt::source_t::APU_DMC);
   }
   {
-    Exclusive lock(LOCK_APU);
-    s->irq_enabled = irq_ena_new;
-    s->loop = (value & 0x40) != 0;
-    s->timer_step = dmc_step_coeff / DMC_RATE_TABLE[value & 0x0f];
+    LockBlock lock(LOCK_APU);
+    s.flags = 0;
+    if (irq_ena_new) s.flags |= DMC_FLAG_IRQ_ENABLE;
+    if (value & 0x40) s.flags |= DMC_FLAG_LOOP;
+    s.timer_step = dmc_step_coeff / DMC_RATE_TABLE[value & 0x0f];
   }
 }
 
-static void dmc_write_reg1(dmc_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->out_level = value & 0x7f;
+static void dmc_write_reg1(dmc_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.out_level = value & 0x7f;
 }
 
-static void dmc_write_reg2(dmc_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->sample_addr = 0xc000 + ((addr_t)value << 6);
+static void dmc_write_reg2(dmc_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.sample_addr = 0xc000 + ((addr_t)value << 6);
 }
 
-static void dmc_write_reg3(dmc_state_t *s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
-  s->sample_length = ((int)value << 4) + 1;
+static void dmc_write_reg3(dmc_state_t &s, uint8_t value) {
+  LockBlock lock(LOCK_APU);
+  s.sample_length = ((int)value << 4) + 1;
 }
 
 // see: https://www.nesdev.org/wiki/APU_Envelope
-static SHAPONES_INLINE int step_envelope(envelope_t *e) {
-  if (quarter_frame_step) {
-    if (e->flags & ENV_FLAG_START) {
-      e->flags &= ~ENV_FLAG_START;  // clear start flag
-      e->decay = 15;
-      e->divider = e->volume;
-    } else if (e->divider > 0) {
-      e->divider--;
+static SHAPONES_INLINE uint8_t step_envelope(envelope_t &e) {
+  if (frame_step_flags & STEP_FLAG_QUARTER) {
+    if (e.flags & ENV_FLAG_START) {
+      e.flags &= ~ENV_FLAG_START;  // clear start flag
+      e.decay = 15;
+      e.divider = e.volume;
+    } else if (e.divider > 0) {
+      e.divider--;
     } else {
-      e->divider = e->volume;
-      if (e->decay > 0) {
-        e->decay--;
-      } else if (e->flags & ENV_FLAG_HALT_LOOP) {
-        e->decay = 15;
+      e.divider = e.volume;
+      if (e.decay > 0) {
+        e.decay--;
+      } else if (e.flags & ENV_FLAG_HALT_LOOP) {
+        e.decay = 15;
       }
     }
   }
 
-  if (e->flags & ENV_FLAG_CONSTANT) {
-    return e->volume;
+  if (e.flags & ENV_FLAG_CONSTANT) {
+    return e.volume;
   } else {
-    return e->decay;
+    return e.decay;
   }
 }
 
 // see: https://www.nesdev.org/wiki/APU_Sweep
 static SHAPONES_INLINE int step_sweep(pulse_state_t &s) {
   int gate = 1;
-  if (s.sweep.flags & SWP_FLAG_ENABLED) {
-    if (half_frame_step) {
+  if (s.sweep.flags & SWP_FLAG_ENABLE) {
+    if (frame_step_flags & STEP_FLAG_HALF) {
       if (s.sweep.divider < s.sweep.period) {
         s.sweep.divider++;
       } else {
         s.sweep.divider = 0;
-        int change_amount = s.timer_period;
-        change_amount >>= s.sweep.shift;
+        int32_t change = s.timer_period;
+        change >>= s.sweep.shift;
         if (s.sweep.flags & SWP_FLAG_NEGATE) {
-          change_amount = -change_amount;
+          change = -change;
         }
-        int target = s.timer_period + change_amount;
+        int32_t target = s.timer_period + change;
         if (target < 0) {
           target = 0;
         } else if (target >= (0x7ff << TIMER_PREC)) {
@@ -1371,7 +1810,7 @@ static SHAPONES_INLINE int step_sweep(pulse_state_t &s) {
 // see: https://www.nesdev.org/wiki/APU_Triangle
 static SHAPONES_INLINE int step_linear_counter(linear_counter_t &c) {
   // linear counter
-  if (quarter_frame_step) {
+  if (frame_step_flags & STEP_FLAG_QUARTER) {
     if (c.flags & LIN_FLAG_RELOAD) {
       c.counter = c.reload_value;
     } else if (c.counter > 0) {
@@ -1391,14 +1830,15 @@ static SHAPONES_INLINE int step_linear_counter(linear_counter_t &c) {
 // see: https://www.nesdev.org/wiki/APU_Pulse
 static SHAPONES_INLINE int sample_pulse(pulse_state_t &s) {
   // envelope unit
-  int vol = step_envelope(&(s.envelope));
+  uint_fast8_t vol = step_envelope(s.envelope);
 
   // sweep unit
   vol *= step_sweep(s);
 
   // length counter
-  if (half_frame_step && !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
-    if (s.length >= 0) {
+  if ((frame_step_flags & STEP_FLAG_HALF) &&
+      !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
+    if (s.length > 0) {
 #if SHAPONES_MUTEX_FAST
       Exclusive lock(LOCK_APU);
 #endif
@@ -1408,7 +1848,7 @@ static SHAPONES_INLINE int sample_pulse(pulse_state_t &s) {
 
   // mute
   if (s.timer_period < 8) vol = 0;
-  if (s.length < 0) vol = 0;
+  if (s.length <= 0) vol = 0;
 
   // sequencer
   uint32_t phase;
@@ -1435,8 +1875,9 @@ static SHAPONES_INLINE int sample_triangle(triangle_state_t &s) {
   int vol = 1;
 
   // length counter
-  if (half_frame_step && !(s.linear.flags & LIN_FLAG_CONTROL)) {
-    if (s.length >= 0) {
+  if ((frame_step_flags & STEP_FLAG_HALF) &&
+      !(s.linear.flags & LIN_FLAG_CONTROL)) {
+    if (s.length > 0) {
 #if SHAPONES_MUTEX_FAST
       Exclusive lock(LOCK_APU);
 #endif
@@ -1478,11 +1919,12 @@ static SHAPONES_INLINE int sample_triangle(triangle_state_t &s) {
 // see: https://www.nesdev.org/wiki/APU_Noise
 static SHAPONES_INLINE int sample_noise(noise_state_t &s) {
   // envelope unit
-  int vol = step_envelope(&(s.envelope));
+  uint_fast8_t vol = step_envelope(s.envelope);
 
   // length counter
-  if (half_frame_step && !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
-    if (s.length >= 0) {
+  if ((frame_step_flags & STEP_FLAG_HALF) &&
+      !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
+    if (s.length > 0) {
 #if SHAPONES_MUTEX_FAST
       Exclusive lock(LOCK_APU);
 #endif
@@ -1491,7 +1933,7 @@ static SHAPONES_INLINE int sample_noise(noise_state_t &s) {
   }
 
   // mute
-  if (s.length < 0) vol = 0;
+  if (s.length <= 0) vol = 0;
 
   // timer
   s.timer += noise_timer_step;
@@ -1504,7 +1946,7 @@ static SHAPONES_INLINE int sample_noise(noise_state_t &s) {
   // LFSR
   for (int i = 0; i < step; i++) {
     uint32_t fb;
-    if (s.mode) {
+    if (s.flags & NOISE_FLAG_FB_MODE) {
       fb = ((s.lfsr >> 6) ^ (s.lfsr >> 0)) & 1;
     } else {
       fb = ((s.lfsr >> 1) ^ (s.lfsr >> 0)) & 1;
@@ -1536,12 +1978,12 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
         s.addr_counter++;
         s.bytes_remaining--;
         if (s.bytes_remaining == 0) {
-          if (s.loop) {
+          if (s.flags & DMC_FLAG_LOOP) {
             s.addr_counter = s.sample_addr;
             s.bytes_remaining = s.sample_length;
           } else {
             status.dmc_enable = 0;
-            if (s.irq_enabled) {
+            if (s.flags & DMC_FLAG_IRQ_ENABLE) {
               interrupt::assert_irq(interrupt::source_t::APU_DMC);
             }
           }
@@ -1576,30 +2018,26 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
 }
 
 result_t service(uint8_t *buff, int len) {
-  if (nes::menu::is_shown()) {
-    for (int i = 0; i < len; i++) {
-      buff[i] = 0;
-    }
-    return result_t::SUCCESS;
-  }
-
+  SemBlock sem(SEM_APU);
 #if !SHAPONES_MUTEX_FAST
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
 #endif
   for (int i = 0; i < len; i++) {
-    quarter_frame_phase += qframe_phase_step;
+    quarter_frame_phase += quarter_frame_phase_step;
     if (quarter_frame_phase >= QUARTER_FRAME_PHASE_PERIOD) {
       quarter_frame_phase -= QUARTER_FRAME_PHASE_PERIOD;
 
-      frame_step = (quarter_frame_count & 3) == 3;
-      half_frame_step = (quarter_frame_count & 1) == 1;
-      quarter_frame_step = true;
-
+      frame_step_flags = 0;
+      if ((quarter_frame_count & 3) == 3) {
+        frame_step_flags |= STEP_FLAG_FRAME;
+      }
+      if ((quarter_frame_count & 1) == 1) {
+        frame_step_flags |= STEP_FLAG_HALF;
+      }
+      frame_step_flags |= STEP_FLAG_QUARTER;
       quarter_frame_count = (quarter_frame_count + 1) & 0x3;
     } else {
-      frame_step = false;
-      half_frame_step = false;
-      quarter_frame_step = false;
+      frame_step_flags = 0;
     }
 
     uint8_t sample = 0;
@@ -1614,6 +2052,52 @@ result_t service(uint8_t *buff, int len) {
   return result_t::SUCCESS;
 }
 
+uint32_t get_state_size() { return STATE_SIZE; }
+
+result_t save_state(void *file_handle) {
+  uint8_t buff[STATE_SIZE];
+  memset(buff, 0, sizeof(buff));
+  uint8_t *p = buff;
+  for (int i = 0; i < 2; i++) {
+    pulse[i].store(p);
+    p += pulse_state_t::STATE_SIZE;
+  }
+  triangle.store(p);
+  p += triangle_state_t::STATE_SIZE;
+  noise.store(p);
+  p += noise_state_t::STATE_SIZE;
+  dmc.store(p);
+  p += dmc_state_t::STATE_SIZE;
+  BufferWriter writer(p);
+  writer.u32(quarter_frame_phase);
+  writer.u8(quarter_frame_count);
+  writer.u8(frame_step_flags);
+  writer.u8(status.raw);
+  return fs_write(file_handle, buff, sizeof(buff));
+}
+
+result_t load_state(void *file_handle) {
+  uint8_t buff[STATE_SIZE];
+  SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));
+  uint8_t *p = buff;
+  for (int i = 0; i < 2; i++) {
+    pulse[i].load(p);
+    p += pulse_state_t::STATE_SIZE;
+  }
+  triangle.load(p);
+  p += triangle_state_t::STATE_SIZE;
+  noise.load(p);
+  p += noise_state_t::STATE_SIZE;
+  dmc.load(p);
+  p += dmc_state_t::STATE_SIZE;
+  BufferReader reader(p);
+  quarter_frame_phase = reader.u32();
+  quarter_frame_count = reader.u8();
+  frame_step_flags = reader.u8();
+  status.raw = reader.u8();
+  return result_t::SUCCESS;
+}
+
 }  // namespace nes::apu
 // #include "shapones/cpu.hpp"
 
@@ -1621,11 +2105,13 @@ result_t service(uint8_t *buff, int len) {
 
 // #include "shapones/common.hpp"
 
-// #include "shapones/dma.hpp"
+// #include "shapones/host_intf.hpp"
 
 // #include "shapones/input.hpp"
 
 // #include "shapones/interrupt.hpp"
+
+// #include "shapones/lock.hpp"
 
 // #include "shapones/mapper.hpp"
 
@@ -1635,17 +2121,130 @@ result_t service(uint8_t *buff, int len) {
 
 // #include "shapones/ppu.hpp"
 
+// #include "shapones/state.hpp"
+
+#ifndef SHAPONES_STATE_HPP
+#define SHAPONES_STATE_HPP
+
+// #include "shapones/common.hpp"
+
+
+namespace nes::state {
+
+static const char *STATE_FILE_EXT = "spn";
+
+static constexpr uint32_t MAX_SLOTS = 16;
+static constexpr uint64_t MARKER = 0x74617453736E7053ULL;  // "SpnsStat"
+static constexpr uint64_t VERSION = 1;
+
+static constexpr uint32_t SLOT_FLAG_USED = 0x00000001;
+
+static constexpr int SS_WIDTH = 60;
+static constexpr int SS_HEIGHT = 56;
+static constexpr int SS_SIZE_BYTES = state::SS_WIDTH * state::SS_HEIGHT;
+
+struct state_file_header_t {
+  static constexpr uint32_t SIZE = 32;
+
+  uint64_t marker;
+  uint64_t version;
+  uint32_t slot_size;
+
+  void store(uint8_t *buff) const {
+    BufferWriter writer(buff);
+    writer.u64(marker);
+    writer.u64(version);
+    writer.u32(slot_size);
+  }
+
+  void load(const uint8_t *buff) {
+    BufferReader reader(buff);
+    marker = reader.u64();
+    version = reader.u64();
+    slot_size = reader.u32();
+  }
+};
+
+struct state_slot_entry_t {
+  static constexpr uint32_t SIZE = 32;
+  static constexpr uint32_t NAME_LENGTH = 16;
+
+  int index;
+  uint32_t flags;
+  uint32_t play_time_sec;
+  char name[NAME_LENGTH];
+
+  bool is_used() const { return (flags & SLOT_FLAG_USED) != 0; }
+
+  void store(uint8_t *buff) const {
+    BufferWriter writer(buff);
+    writer.u32(flags);
+    writer.u32(play_time_sec);
+    for (int i = 0; i < NAME_LENGTH; i++) {
+      writer.u8(name[i]);
+    }
+  }
+
+  void load(const uint8_t *buff) {
+    BufferReader reader(buff);
+    flags = reader.u32();
+    play_time_sec = reader.u32();
+    for (int i = 0; i < NAME_LENGTH; i++) {
+      name[i] = (char)reader.u8();
+    }
+  }
+};
+
+using enum_slot_cb_t = bool (*)(const state_slot_entry_t &entry);
+
+void reset();
+void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render);
+
+result_t get_state_path(char *out_path, size_t max_len);
+
+uint32_t get_slot_size();
+
+result_t enum_slots(const char *path, enum_slot_cb_t callback);
+
+result_t save(const char *path, int slot);
+result_t load(const char *path, int slot);
+
+result_t read_screenshot(const char *path, int slot, uint8_t *out_buff);
+
+}  // namespace nes::state
+
+#endif
 
 namespace nes::cpu {
+
+static constexpr int MAX_BATCH_SIZE = 32;
 
 static registers_t reg;
 static bool stopped = false;
 #if SHAPONES_IRQ_PENDING_SUPPORT
-static int irq_pending = 0;
+static uint8_t irq_pending = 0;
 #else
-static constexpr int irq_pending = 0;
+static constexpr uint8_t irq_pending = 0;
 #endif
 volatile cycle_t ppu_cycle_count;
+
+static addr_t dma_addr = 0;
+static uint16_t dma_cycle = DMA_TRANSFER_SIZE;
+
+static SHAPONES_INLINE bool dma_is_running() {
+  return dma_cycle < DMA_TRANSFER_SIZE;
+}
+
+static SHAPONES_INLINE void dma_start(uint8_t src_page) {
+  dma_cycle = 0;
+  dma_addr = (addr_t)src_page * 0x100;
+}
+
+static SHAPONES_INLINE uint_fast8_t dma_service() {
+  if (dma_cycle >= DMA_TRANSFER_SIZE) return 0;
+  ppu::oam_dma_write(dma_cycle++, cpu::bus_read(dma_addr++));
+  return 2;
+}
 
 uint8_t bus_read(addr_t addr) {
   uint8_t retval;
@@ -1681,7 +2280,7 @@ void bus_write(addr_t addr, uint8_t data) {
   } else if (PPUREG_BASE <= addr && addr < PPUREG_BASE + ppu::REG_SIZE) {
     ppu::reg_write(addr, data);
   } else if (addr == OAM_DMA_REG) {
-    dma::start(data);
+    dma_start(data);
   } else if (apu::REG_PULSE1_REG0 <= addr && addr <= apu::REG_DMC_REG3 ||
              addr == apu::REG_STATUS) {
     apu::reg_write(addr, data);
@@ -1698,7 +2297,10 @@ static SHAPONES_INLINE uint16_t bus_read_w(addr_t addr) {
   return (uint16_t)bus_read(addr) | ((uint16_t)bus_read(addr + 1) << 8);
 }
 
-result_t init() { return result_t::SUCCESS; }
+result_t init() {
+  deinit();
+  return result_t::SUCCESS;
+}
 
 void deinit() {}
 
@@ -1716,8 +2318,10 @@ result_t reset() {
   reg.status.carry = 0;
   reg.SP = 0xfd;
   reg.PC = bus_read_w(VEC_RESET) | 0x8000;
-  stopped = false;
+  dma_cycle = DMA_TRANSFER_SIZE;
+  dma_addr = 0;
   ppu_cycle_count = 0;
+  stopped = false;
   SHAPONES_PRINTF("Entry point: 0x%x\n", (int)reg.PC);
   return result_t::SUCCESS;
 }
@@ -2118,13 +2722,8 @@ static SHAPONES_INLINE void opISB(addr_t addr) {
 }
 
 result_t service() {
-  constexpr int MAX_BATCH_SIZE = 32;
-
+  menu::service();
   input::update();
-
-  if (menu::is_shown()) {
-    return result_t::SUCCESS;
-  }
 
   int n = MAX_BATCH_SIZE;
   while (n-- > 0) {
@@ -2137,9 +2736,9 @@ result_t service() {
 
     if (stopped) {
       cycle += 1;  // nop
-    } else if (dma::dma_is_running()) {
+    } else if (dma_is_running()) {
       // DMA is running
-      cycle += dma::exec_next_cycle();
+      cycle += dma_service();
     } else if (irq_pending == 0 && interrupt::is_nmi_asserted()) {
       // NMI
       interrupt::deassert_nmi();
@@ -2150,8 +2749,6 @@ result_t service() {
       push(s.raw);
       reg.status.interrupt = true;
       reg.PC = bus_read_w(VEC_NMI);
-      // SHAPONES_PRINTF("NMI PC=0x%04x, SP=0x%02x, interrupt=%d\n", (unsigned
-      // int)reg.PC, (unsigned int)reg.SP, (int)reg.status.interrupt);
       cycle += 7;  // ?
     } else if (irq_pending == 0 && !!interrupt::get_irq() &&
                !reg.status.interrupt) {
@@ -2164,8 +2761,6 @@ result_t service() {
       push(s.raw);
       reg.status.interrupt = true;
       reg.PC = bus_read_w(VEC_IRQ);
-      // SHAPONES_PRINTF("IRQ 0x%02x, PC=0x%04x, SP=0x%02x\n", (unsigned
-      // int)interrupt::get_irq(), (unsigned int)reg.PC, (unsigned int)reg.SP);
       cycle += 7;  // ?
     } else {
       uint8_t op_code = fetch();
@@ -2498,51 +3093,188 @@ result_t service() {
   return result_t::SUCCESS;
 }
 
+uint32_t get_state_size() { return STATE_SIZE; }
+
+result_t save_state(void *file_handle) {
+  uint8_t buffer[STATE_SIZE];
+  memset(buffer, 0, sizeof(buffer));
+  uint8_t *p = buffer;
+  reg.store(p);
+  p += registers_t::STATE_SIZE;
+  BufferWriter writer(p);
+  writer.u64(ppu_cycle_count);
+  writer.u16(dma_addr);
+  writer.u16(dma_cycle);
+  writer.b(stopped);
+  writer.u8(irq_pending);
+  SHAPONES_PRINTF("SAVE: %d %d %d %d %d %d %d %d %d\n", (int)reg.PC, (int)reg.A,
+                  (int)reg.X, (int)reg.Y, (int)reg.SP, (int)reg.status.raw,
+                  (int)dma_addr, (int)dma_cycle, (int)irq_pending);
+  return fs_write(file_handle, buffer, sizeof(buffer));
+}
+
+result_t load_state(void *file_handle) {
+  uint8_t buffer[STATE_SIZE];
+  SHAPONES_TRY(fs_read(file_handle, buffer, sizeof(buffer)));
+  const uint8_t *p = buffer;
+  reg.load(p);
+  p += registers_t::STATE_SIZE;
+  BufferReader reader(p);
+  ppu_cycle_count = reader.u64();
+  dma_addr = reader.u16();
+  dma_cycle = reader.u16();
+  stopped = reader.b();
+#if SHAPONES_IRQ_PENDING_SUPPORT
+  irq_pending = reader.u8();
+#else
+  reader.u8();  // discard
+#endif
+  SHAPONES_PRINTF("LOAD: %d %d %d %d %d %d %d %d %d\n", (int)reg.PC, (int)reg.A,
+                  (int)reg.X, (int)reg.Y, (int)reg.SP, (int)reg.status.raw,
+                  (int)dma_addr, (int)dma_cycle, (int)irq_pending);
+  return result_t::SUCCESS;
+}
+
 }  // namespace nes::cpu
-// #include "shapones/dma.hpp"
+// #include "shapones/fs.hpp"
 
-// #include "shapones/cpu.hpp"
+#ifndef SHAPONES_FS_HPP
+#define SHAPONES_FS_HPP
 
-// #include "shapones/ppu.hpp"
+// #include "shapones/common.hpp"
 
 
-namespace nes::dma {
+namespace nes::fs {
 
-static bool running = false;
-static int cycle = 0;
-static addr_t dma_addr = 0;
 
-bool dma_is_running() { return running; }
+ bool is_root_dir(const char *path);
+ int find_parent_separator(const char *path);
+ int find_char_rev(const char *path, char c, int start_idx = -1);
+ result_t append_separator(char *path);
+ result_t append_path(char *path, const char *name);
+ result_t replace_ext(char *path, const char *new_ext);
 
-void start(int src_page) {
-  running = true;
-  cycle = 0;
-  dma_addr = (addr_t)src_page * 0x100;
-}
+}  // namespace nes::fs
 
-int exec_next_cycle() {
-  if (!running) return 0;
+#endif
 
-  ppu::oam_dma_write(cycle++, cpu::bus_read(dma_addr++));
+namespace nes::fs {
 
-  if (cycle >= TRANSFER_SIZE) {
-    running = false;
+bool is_root_dir(const char *path) { return find_parent_separator(path) < 0; }
+
+int find_parent_separator(const char *path) {
+  int n = strnlen(path, nes::MAX_PATH_LENGTH);
+  if (n == 0) {
+    return -1;
   }
-  return 2;
+  if (path[n - 1] == '/') {
+    n--;
+  }
+  return find_char_rev(path, '/', n);
 }
 
-}  // namespace nes::dma// #include "shapones/input.hpp"
+int find_char_rev(const char *path, char c, int start_idx) {
+  if (start_idx < 0) {
+    start_idx = strnlen(path, nes::MAX_PATH_LENGTH);
+  } else if (start_idx == 0) {
+    return -1;
+  }
+  for (int i = start_idx - 1; i >= 0; i--) {
+    if (path[i] == c) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+result_t append_separator(char *path) {
+  int len = strnlen(path, nes::MAX_PATH_LENGTH);
+  if (path[len - 1] == '/') {
+    return result_t::SUCCESS;
+  }
+  if (len + 1 >= nes::MAX_PATH_LENGTH) {
+    return result_t::ERR_PATH_TOO_LONG;
+  }
+  path[len++] = '/';
+  path[len] = '\0';
+  return result_t::SUCCESS;
+}
+
+result_t append_path(char *path, const char *name) {
+  SHAPONES_TRY(append_separator(path));
+  int len = strnlen(path, nes::MAX_PATH_LENGTH);
+  int name_len = strnlen(name, nes::MAX_PATH_LENGTH);
+  if (len + name_len >= nes::MAX_PATH_LENGTH) {
+    return result_t::ERR_PATH_TOO_LONG;
+  }
+
+  strcat(path, name);
+  return result_t::SUCCESS;
+}
+
+result_t replace_ext(char *path, const char *new_ext) {
+  int old_path_len = strnlen(path, nes::MAX_PATH_LENGTH);
+
+  int sep_idx = find_char_rev(path, '/');
+  int old_name_len = old_path_len;
+  if (sep_idx >= 0) {
+    old_name_len -= (sep_idx + 1);
+  }
+
+  int dot_idx = find_char_rev(path, '.');
+  if (dot_idx < 0 || dot_idx < sep_idx) {
+    dot_idx = old_path_len;
+  }
+
+  int old_ext_len = old_path_len - dot_idx - 1;
+  int new_ext_len = strnlen(new_ext, nes::MAX_FILENAME_LENGTH);
+
+  int new_path_len = old_path_len - old_ext_len + new_ext_len;
+  if (new_path_len >= nes::MAX_PATH_LENGTH) {
+    return result_t::ERR_PATH_TOO_LONG;
+  }
+
+  int new_name_len = old_name_len - old_ext_len + new_ext_len;
+  if (new_name_len >= nes::MAX_FILENAME_LENGTH) {
+    return result_t::ERR_PATH_TOO_LONG;
+  }
+
+  path[dot_idx] = '.';
+  strcpy(&path[dot_idx + 1], new_ext);
+  return result_t::SUCCESS;
+}
+
+}  // namespace nes::fs// #include "shapones/input.hpp"
+
+// #include "shapones/host_intf.hpp"
 
 // #include "shapones/menu.hpp"
 
 
 namespace nes::input {
 
+static constexpr uint32_t STATE_SIZE = 16;
+
 static control_t reg;
-static InputStatus raw[2];
+static status_t raw[2];
 static uint8_t shift_reg[2];
 
-InputStatus get_status(int player) {
+result_t init() {
+  deinit();
+  return result_t::SUCCESS;
+}
+void deinit() {}
+
+result_t reset() {
+  reg.raw = 0;
+  raw[0].raw = 0;
+  raw[1].raw = 0;
+  shift_reg[0] = 0;
+  shift_reg[1] = 0;
+  return result_t::SUCCESS;
+}
+
+status_t get_status(int player) {
   if (player < 0) {
     player = 0;
   } else if (player > 1) {
@@ -2551,7 +3283,7 @@ InputStatus get_status(int player) {
   return raw[player];
 }
 
-void set_status(int player, InputStatus s) {
+void set_status(int player, status_t s) {
   if (player < 0) {
     player = 0;
   } else if (player > 1) {
@@ -2588,6 +3320,34 @@ void write_control(uint8_t data) {
   update();
 }
 
+uint32_t state_size() { return STATE_SIZE; }
+
+result_t save_state(void *file_handle) {
+  uint8_t buffer[STATE_SIZE];
+  memset(buffer, 0, STATE_SIZE);
+  uint8_t *p = buffer;
+  BufferWriter writer(p);
+  writer.u8(reg.raw);
+  writer.u8(raw[0].raw);
+  writer.u8(raw[1].raw);
+  writer.u8(shift_reg[0]);
+  writer.u8(shift_reg[1]);
+  return fs_write(file_handle, buffer, STATE_SIZE);
+}
+
+result_t load_state(void *file_handle) {
+  uint8_t buffer[STATE_SIZE];
+  SHAPONES_TRY(fs_read(file_handle, buffer, STATE_SIZE));
+  const uint8_t *p = buffer;
+  BufferReader reader(p);
+  reg.raw = reader.u8();
+  raw[0].raw = reader.u8();
+  raw[1].raw = reader.u8();
+  shift_reg[0] = reader.u8();
+  shift_reg[1] = reader.u8();
+  return result_t::SUCCESS;
+}
+
 }  // namespace nes::input
 // #include "shapones/interrupt.hpp"
 
@@ -2596,15 +3356,30 @@ void write_control(uint8_t data) {
 
 namespace nes::interrupt {
 
+static constexpr uint32_t STATE_SIZE = 16;
+
 static volatile source_t irq;
 static volatile bool nmi;
 
+result_t init() {
+  deinit();
+  return result_t::SUCCESS;
+}
+void deinit() {}
+
+result_t reset() {
+  LockBlock lock(LOCK_INTERRUPTS);
+  irq = static_cast<source_t>(0);
+  nmi = false;
+  return result_t::SUCCESS;
+}
+
 void assert_irq(source_t src) {
-  Exclusive lock(LOCK_INTERRUPTS);
+  LockBlock lock(LOCK_INTERRUPTS);
   irq = irq | src;
 }
 void deassert_irq(source_t src) {
-  Exclusive lock(LOCK_INTERRUPTS);
+  LockBlock lock(LOCK_INTERRUPTS);
   irq = irq & ~src;
 }
 source_t get_irq() { return irq; }
@@ -2612,6 +3387,28 @@ source_t get_irq() { return irq; }
 void assert_nmi() { nmi = true; }
 void deassert_nmi() { nmi = false; }
 bool is_nmi_asserted() { return nmi; }
+
+uint32_t get_state_size() { return STATE_SIZE; }
+
+result_t save_state(void *file_handle) {
+  uint8_t buffer[STATE_SIZE];
+  memset(buffer, 0, STATE_SIZE);
+  uint8_t *p = buffer;
+  BufferWriter writer(p);
+  writer.u32(static_cast<uint32_t>(irq));
+  writer.b(nmi);
+  return fs_write(file_handle, buffer, STATE_SIZE);
+}
+
+result_t load_state(void *file_handle) {
+  uint8_t buffer[STATE_SIZE];
+  SHAPONES_TRY(fs_read(file_handle, buffer, STATE_SIZE));
+  const uint8_t *p = buffer;
+  BufferReader reader(p);
+  irq = static_cast<source_t>(reader.u32());
+  nmi = reader.b();
+  return result_t::SUCCESS;
+}
 
 }  // namespace nes::interrupt
 // #include "shapones/mapper.hpp"
@@ -2664,10 +3461,24 @@ class Map001 : public Mapper {
   uint8_t prg_bank = 0;
 
  public:
+  static constexpr uint32_t STATE_SIZE = 8;
+
   Map001() : Mapper(1, "MMC1") {}
+
+  result_t reset() override {
+    shift_reg = 0b10000;
+    ctrl_reg = 0x0C;
+    chr_bank0 = 0;
+    chr_bank1 = 0;
+    prg_bank = 0x00;
+    perform_remap();
+    return result_t::SUCCESS;
+  }
 
   void write(addr_t addr, uint8_t value) override {
     bool remap = false;
+    SHAPONES_PRINTF("Map001: write addr=0x%04X value=0x%02X\n", (int)addr,
+                    (int)value);
     if (value & 0x80) {
       shift_reg = 0b10000;
       ctrl_reg |= 0x0C;
@@ -2691,41 +3502,76 @@ class Map001 : public Mapper {
     }
 
     if (remap) {
-      switch (ctrl_reg & 0x03) {
-        default:
-        case 0:
-          set_nametable_arrangement(nametable_arrangement_t::SINGLE_LOWER);
-          break;
-        case 1:
-          set_nametable_arrangement(nametable_arrangement_t::SINGLE_UPPER);
-          break;
-        case 2:
-          set_nametable_arrangement(nametable_arrangement_t::HORIZONTAL);
-          break;
-        case 3: set_nametable_arrangement(nametable_arrangement_t::VERTICAL); break;
-      }
-
-      switch (ctrl_reg & 0x0C) {
-        default:
-        case 0x00:
-        case 0x04: prgrom_remap(0x8000, (prg_bank & 0x0E) << 14, 0x8000); break;
-        case 0x08:
-          prgrom_remap(0x8000, 0, 0x4000);
-          prgrom_remap(0xC000, (prg_bank & 0x0F) << 14, 0x4000);
-          break;
-        case 0x0C:
-          prgrom_remap(0x8000, (prg_bank & 0x0F) << 14, 0x4000);
-          prgrom_remap(0xC000, prgrom_phys_size - 0x4000, 0x4000);
-          break;
-      }
-
-      if ((ctrl_reg & 0x10) == 0) {
-        chrrom_remap(0x0000, (chr_bank0 & 0x1E) << 12, 0x2000);
-      } else {
-        chrrom_remap(0x0000, (chr_bank0 & 0x1F) << 12, 0x1000);
-        chrrom_remap(0x1000, (chr_bank1 & 0x1F) << 12, 0x1000);
-      }
+      perform_remap();
     }
+  }
+
+  void perform_remap() {
+    switch (ctrl_reg & 0x03) {
+      default:
+      case 0:
+        set_nametable_arrangement(nametable_arrangement_t::SINGLE_LOWER);
+        break;
+      case 1:
+        set_nametable_arrangement(nametable_arrangement_t::SINGLE_UPPER);
+        break;
+      case 2:
+        set_nametable_arrangement(nametable_arrangement_t::HORIZONTAL);
+        break;
+      case 3:
+        set_nametable_arrangement(nametable_arrangement_t::VERTICAL);
+        break;
+    }
+
+    switch (ctrl_reg & 0x0C) {
+      default:
+      case 0x00:
+      case 0x04:
+        prgrom_remap(0x8000, (prg_bank & 0xFE) * 0x4000, 0x8000);
+        break;
+      case 0x08:
+        prgrom_remap(0x8000, 0 * 0x4000, 0x4000);
+        prgrom_remap(0xC000, (prg_bank & 0x0F) * 0x4000, 0x4000);
+        break;
+      case 0x0C:
+        prgrom_remap(0x8000, (prg_bank & 0x0F) * 0x4000, 0x4000);
+        prgrom_remap(0xC000, prgrom_phys_size - 0x4000, 0x4000);
+        break;
+    }
+
+    if ((ctrl_reg & 0x10) == 0) {
+      chrrom_remap(0x0000, (chr_bank0 & 0x1E) << 12, 0x2000);
+    } else {
+      chrrom_remap(0x0000, (chr_bank0 & 0x1F) << 12, 0x1000);
+      chrrom_remap(0x1000, (chr_bank1 & 0x1F) << 12, 0x1000);
+    }
+  }
+
+  uint32_t get_state_size() override { return STATE_SIZE; }
+
+  result_t save_state(void *file_handle) override {
+    uint8_t buffer[STATE_SIZE];
+    memset(buffer, 0, sizeof(buffer));
+    uint32_t offset = 0;
+    buffer[offset++] = shift_reg;
+    buffer[offset++] = ctrl_reg;
+    buffer[offset++] = chr_bank0;
+    buffer[offset++] = chr_bank1;
+    buffer[offset++] = prg_bank;
+    return nes::fs_write(file_handle, buffer, STATE_SIZE);
+  }
+
+  result_t load_state(void *file_handle) override {
+    uint8_t buffer[STATE_SIZE];
+    SHAPONES_TRY(nes::fs_read(file_handle, buffer, STATE_SIZE));
+    uint32_t offset = 0;
+    shift_reg = buffer[offset++];
+    ctrl_reg = buffer[offset++];
+    chr_bank0 = buffer[offset++];
+    chr_bank1 = buffer[offset++];
+    prg_bank = buffer[offset++];
+    perform_remap();
+    return result_t::SUCCESS;
   }
 };
 
@@ -2748,19 +3594,46 @@ using namespace nes::memory;
 
 // see: https://www.nesdev.org/wiki/UxROM
 class Map002 : public Mapper {
+ private:
+  uint8_t bank = 0;
+
  public:
+  static constexpr uint32_t STATE_SIZE = 8;
+
   Map002() : Mapper(2, "UxROM") {}
 
-  result_t init() override {
+  result_t init() override { return result_t::SUCCESS; }
+
+  result_t reset() override {
+    bank = 0;
     prgrom_remap(0xC000, prgrom_phys_size - 0x4000, 0x4000);
     return result_t::SUCCESS;
   }
 
   void write(addr_t addr, uint8_t value) override {
     if (0x8000 <= addr && addr <= 0xffff) {
-      uint32_t bank = value & 0x0F;
-      prgrom_remap(0x8000, bank * 0x4000, 0x4000);
+      bank = value & 0x0F;
+      perform_remap();
     }
+  }
+
+  void perform_remap() { prgrom_remap(0x8000, bank * 0x4000, 0x4000); }
+
+  uint32_t get_state_size() override { return STATE_SIZE; }
+
+  result_t save_state(void *file_handle) override {
+    uint8_t buff[STATE_SIZE];
+    memset(buff, 0, sizeof(buff));
+    buff[0] = bank;
+    return nes::fs_write(file_handle, buff, STATE_SIZE);
+  }
+
+  result_t load_state(void *file_handle) override {
+    uint8_t buff[STATE_SIZE];
+    SHAPONES_TRY(nes::fs_read(file_handle, buff, STATE_SIZE));
+    bank = buff[0];
+    perform_remap();
+    return result_t::SUCCESS;
   }
 };
 
@@ -2782,14 +3655,38 @@ namespace nes::mapper {
 using namespace nes::memory;
 
 class Map003 : public Mapper {
+ private:
+  uint8_t bank = 0;
+
  public:
+  static constexpr uint32_t STATE_SIZE = 8;
+
   Map003() : Mapper(3, "CNROM") {}
 
   void write(addr_t addr, uint8_t value) override {
     if (0x8000 <= addr && addr <= 0xffff) {
-      uint32_t bank = value & 0x3;
-      chrrom_remap(0x0000, bank * 0x2000, 0x2000);
+      bank = value & 0x3;
+      perform_remap();
     }
+  }
+
+  void perform_remap() { chrrom_remap(0x0000, bank * 0x2000, 0x2000); }
+
+  uint32_t get_state_size() override { return STATE_SIZE; }
+
+  result_t save_state(void *file_handle) override {
+    uint8_t buff[STATE_SIZE];
+    memset(buff, 0, sizeof(buff));
+    buff[0] = bank;
+    return nes::fs_write(file_handle, buff, STATE_SIZE);
+  }
+
+  result_t load_state(void *file_handle) override {
+    uint8_t buff[STATE_SIZE];
+    SHAPONES_TRY(nes::fs_read(file_handle, buff, STATE_SIZE));
+    bank = buff[0];
+    perform_remap();
+    return result_t::SUCCESS;
   }
 };
 
@@ -2816,13 +3713,18 @@ class Map004 : public Mapper {
  private:
   uint8_t reg_sel;
   uint8_t map_reg[8];
+  uint8_t nametable_arrangement;
+  uint8_t ram_protection;
 
   volatile bool irq_enable = false;
   volatile bool irq_reloading = false;
   volatile uint8_t irq_latch = 255;
-  volatile uint8_t irq_counter = 0;
+
+  uint8_t irq_counter = 0;
 
  public:
+  static constexpr uint32_t STATE_SIZE = 32;
+
   Map004() : Mapper(4, "MMC3") {}
 
   result_t init() override {
@@ -2841,43 +3743,14 @@ class Map004 : public Mapper {
         }
         map_reg[ireg] = value;
       }
-
-      constexpr int pbs = 8192;
-      prgrom_remap(0xA000, map_reg[7] * pbs, pbs);
-      if ((reg_sel & 0x40) == 0) {
-        prgrom_remap(0x8000, map_reg[6] * pbs, pbs);
-        prgrom_remap(0xC000, prgrom_phys_size - pbs * 2, pbs);
-      } else {
-        prgrom_remap(0x8000, prgrom_phys_size - pbs * 2, pbs);
-        prgrom_remap(0xC000, map_reg[6] * pbs, pbs);
-      }
-
-      constexpr int cbs = 1024;
-      if ((reg_sel & 0x80) == 0) {
-        chrrom_remap(0x0000, map_reg[0] * cbs, cbs * 2);
-        chrrom_remap(0x0800, map_reg[1] * cbs, cbs * 2);
-        chrrom_remap(0x1000, map_reg[2] * cbs, cbs);
-        chrrom_remap(0x1400, map_reg[3] * cbs, cbs);
-        chrrom_remap(0x1800, map_reg[4] * cbs, cbs);
-        chrrom_remap(0x1C00, map_reg[5] * cbs, cbs);
-      } else {
-        chrrom_remap(0x0000, map_reg[2] * cbs, cbs);
-        chrrom_remap(0x0400, map_reg[3] * cbs, cbs);
-        chrrom_remap(0x0800, map_reg[4] * cbs, cbs);
-        chrrom_remap(0x0C00, map_reg[5] * cbs, cbs);
-        chrrom_remap(0x1000, map_reg[0] * cbs, cbs * 2);
-        chrrom_remap(0x1800, map_reg[1] * cbs, cbs * 2);
-      }
+      perform_remap();
     } else if (0xA000 <= addr && addr <= 0xBFFF) {
       if ((addr & 0x0001) == 0) {
-        if ((value & 0x01) == 0) {
-          set_nametable_arrangement(nametable_arrangement_t::HORIZONTAL);
-        } else {
-          set_nametable_arrangement(nametable_arrangement_t::VERTICAL);
-        }
+        nametable_arrangement = value;
+        perform_nametable_arrangement();
       } else {
         // PRG RAM protect
-        // TODO
+        ram_protection = value;
       }
     } else if (0xC000 <= addr && addr <= 0xDFFF) {
       if ((addr & 0x0001) == 0) {
@@ -2897,10 +3770,9 @@ class Map004 : public Mapper {
     }
   }
 
-  bool hblank(const nes::ppu::Registers &reg, int y) override {
+  bool hblank(const nes::ppu::registers_t &reg, int y) override {
     bool irq = false;
     if (reg.mask.bg_enable && reg.mask.sprite_enable) {
-      uint8_t irq_counter_before = irq_counter;
       if (irq_counter == 0 || irq_reloading) {
         irq_reloading = false;
         irq_counter = irq_latch;
@@ -2914,6 +3786,81 @@ class Map004 : public Mapper {
     }
     return irq;
   }
+
+  void perform_remap() {
+    constexpr int pbs = 8192;
+    prgrom_remap(0xA000, map_reg[7] * pbs, pbs);
+    if ((reg_sel & 0x40) == 0) {
+      prgrom_remap(0x8000, map_reg[6] * pbs, pbs);
+      prgrom_remap(0xC000, prgrom_phys_size - pbs * 2, pbs);
+    } else {
+      prgrom_remap(0x8000, prgrom_phys_size - pbs * 2, pbs);
+      prgrom_remap(0xC000, map_reg[6] * pbs, pbs);
+    }
+
+    constexpr int cbs = 1024;
+    if ((reg_sel & 0x80) == 0) {
+      chrrom_remap(0x0000, map_reg[0] * cbs, cbs * 2);
+      chrrom_remap(0x0800, map_reg[1] * cbs, cbs * 2);
+      chrrom_remap(0x1000, map_reg[2] * cbs, cbs);
+      chrrom_remap(0x1400, map_reg[3] * cbs, cbs);
+      chrrom_remap(0x1800, map_reg[4] * cbs, cbs);
+      chrrom_remap(0x1C00, map_reg[5] * cbs, cbs);
+    } else {
+      chrrom_remap(0x0000, map_reg[2] * cbs, cbs);
+      chrrom_remap(0x0400, map_reg[3] * cbs, cbs);
+      chrrom_remap(0x0800, map_reg[4] * cbs, cbs);
+      chrrom_remap(0x0C00, map_reg[5] * cbs, cbs);
+      chrrom_remap(0x1000, map_reg[0] * cbs, cbs * 2);
+      chrrom_remap(0x1800, map_reg[1] * cbs, cbs * 2);
+    }
+  }
+
+  void perform_nametable_arrangement() {
+    if (nametable_arrangement & 0x01) {
+      set_nametable_arrangement(nametable_arrangement_t::VERTICAL);
+    } else {
+      set_nametable_arrangement(nametable_arrangement_t::HORIZONTAL);
+    }
+  }
+
+  uint32_t get_state_size() override { return STATE_SIZE; }
+
+  result_t save_state(void *file_handle) override {
+    uint8_t buffer[STATE_SIZE];
+    memset(buffer, 0, sizeof(buffer));
+    uint32_t offset = 0;
+    buffer[offset++] = reg_sel;
+    for (int i = 0; i < 8; i++) {
+      buffer[offset++] = map_reg[i];
+    }
+    buffer[offset++] = nametable_arrangement;
+    buffer[offset++] = ram_protection;
+    buffer[offset++] = irq_enable ? 1 : 0;
+    buffer[offset++] = irq_reloading ? 1 : 0;
+    buffer[offset++] = irq_latch;
+    buffer[offset++] = irq_counter;
+    return nes::fs_write(file_handle, buffer, STATE_SIZE);
+  }
+
+  result_t load_state(void *file_handle) override {
+    uint8_t buffer[STATE_SIZE];
+    SHAPONES_TRY(nes::fs_read(file_handle, buffer, STATE_SIZE));
+    uint32_t offset = 0;
+    reg_sel = buffer[offset++];
+    for (int i = 0; i < 8; i++) {
+      map_reg[i] = buffer[offset++];
+    }
+    nametable_arrangement = buffer[offset++];
+    ram_protection = buffer[offset++];
+    irq_enable = buffer[offset++] != 0;
+    irq_reloading = buffer[offset++] != 0;
+    irq_latch = buffer[offset++];
+    irq_counter = buffer[offset++];
+    perform_remap();
+    perform_nametable_arrangement();
+    return result_t::SUCCESS;
+  }
 };
 
 }  // namespace nes::mapper
@@ -2925,6 +3872,7 @@ namespace nes::mapper {
 Mapper *instance = nullptr;
 
 result_t init() {
+  deinit();
   instance = new Map000();
   return result_t::SUCCESS;
 }
@@ -2941,7 +3889,6 @@ result_t map_ines(const uint8_t *ines) {
   uint8_t flags7 = ines[7];
 
   int id = (flags7 & 0xf0) | ((flags6 >> 4) & 0xf);
-  SHAPONES_PRINTF("Mapper No.%d\n", id);
 
   Mapper *old = instance;
   switch (id) {
@@ -2958,6 +3905,8 @@ result_t map_ines(const uint8_t *ines) {
 
   SHAPONES_TRY(instance->init());
 
+  SHAPONES_PRINTF("Mapper No.%d (%s) initialized.\n", id, instance->name);
+
   if (old) {
     delete old;
   }
@@ -2967,6 +3916,8 @@ result_t map_ines(const uint8_t *ines) {
 
 }  // namespace nes::mapper
 // #include "shapones/memory.hpp"
+
+// #include "shapones/host_intf.hpp"
 
 // #include "shapones/mapper.hpp"
 
@@ -2987,25 +3938,28 @@ uint8_t *chrram = nullptr;
 const uint8_t *prgrom = &dummy_memory;
 const uint8_t *chrrom = &dummy_memory;
 
-int prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
-int chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
+uint16_t prgrom_remap_table[PRGROM_REMAP_TABLE_SIZE];
+uint16_t chrrom_remap_table[CHRROM_REMAP_TABLE_SIZE];
 
-addr_t prgram_addr_mask = 0;
 uint32_t prgrom_phys_size = PRGROM_RANGE;
 uint32_t prgrom_phys_addr_mask = 0;
+uint32_t prgram_size = 0;
+addr_t prgram_addr_mask = 0;
+
 uint32_t chrrom_phys_size = CHRROM_RANGE;
 uint32_t chrrom_phys_addr_mask = 0;
 addr_t prgrom_cpu_addr_mask = PRGROM_RANGE - 1;
+uint32_t chrram_size = 0;
 
 result_t init() {
+  deinit();
+  unmap_ines();
   if (prgram) prgram = new uint8_t[1];
   if (chrram == nullptr) chrram = new uint8_t[1];
-  unmap();
   return result_t::SUCCESS;
 }
 
 void deinit() {
-  unmap();
   if (prgram) {
     delete[] prgram;
     prgram = nullptr;
@@ -3020,7 +3974,7 @@ result_t map_ines(const uint8_t *ines) {
   // iNES file format
   // https://www.nesdev.org/wiki/INES
 
-  unmap();
+  unmap_ines();
 
   // marker
   if (ines[0] != 0x4e && ines[1] != 0x45 && ines[2] != 0x53 &&
@@ -3095,7 +4049,7 @@ result_t map_ines(const uint8_t *ines) {
   }
   set_nametable_arrangement(mode);
 
-  int prgram_size = ines[8] * 8192;
+  prgram_size = ines[8] * 8192;
   if (prgram_size == 0) {
     prgram_size = 8192;  // 8KB PRG RAM if not specified
   }
@@ -3107,7 +4061,7 @@ result_t map_ines(const uint8_t *ines) {
   prgram_addr_mask = prgram_size - 1;
 
   // 512-byte trainer at $7000-$71FF (stored before PRG data)
-  bool has_trainer = (flags6 & 0x2) != 0;
+  bool has_trainer = (flags6 & 0x4) != 0;
 
   int start_of_prg_rom = 0x10;
   if (has_trainer) start_of_prg_rom += 0x200;
@@ -3117,9 +4071,11 @@ result_t map_ines(const uint8_t *ines) {
     delete[] chrram;
   }
   if (num_chr_rom_pages == 0) {
+    chrram_size = CHRROM_RANGE;
     chrram = new uint8_t[CHRROM_RANGE];
     chrrom = chrram;
   } else {
+    chrram_size = 0;
     chrram = new uint8_t[1];
     int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
     chrrom = ines + start_of_chr_rom;
@@ -3130,7 +4086,7 @@ result_t map_ines(const uint8_t *ines) {
   return result_t::SUCCESS;
 }
 
-void unmap() {
+void unmap_ines() {
   prgrom = &dummy_memory;
   chrrom = &dummy_memory;
   prgram_addr_mask = 0;
@@ -3167,602 +4123,37 @@ void set_nametable_arrangement(nametable_arrangement_t mode) {
   }
 }
 
+uint32_t get_state_size() {
+  return WRAM_SIZE + VRAM_SIZE + prgram_size + chrram_size;
+}
+
+result_t save_state(void *file_handle) {
+  SHAPONES_TRY(fs_write(file_handle, wram, WRAM_SIZE));
+  SHAPONES_TRY(fs_write(file_handle, vram, VRAM_SIZE));
+  if (prgram_size > 0) {
+    SHAPONES_TRY(fs_write(file_handle, prgram, prgram_size));
+  }
+  if (chrram_size > 0) {
+    SHAPONES_TRY(fs_write(file_handle, chrram, chrram_size));
+  }
+  return result_t::SUCCESS;
+}
+
+result_t load_state(void *file_handle) {
+  SHAPONES_TRY(fs_read(file_handle, wram, WRAM_SIZE));
+  SHAPONES_TRY(fs_read(file_handle, vram, VRAM_SIZE));
+  if (prgram_size > 0) {
+    SHAPONES_TRY(fs_read(file_handle, prgram, prgram_size));
+  }
+  if (chrram_size > 0) {
+    SHAPONES_TRY(fs_read(file_handle, chrram, chrram_size));
+  }
+  return result_t::SUCCESS;
+}
+
 }  // namespace nes::memory
 // #include "shapones/menu.hpp"
 
-// #include "shapones/font12x24.hpp"
-
-#ifndef SHAPONES_FONT12X24_HPP
-#define SHAPONES_FONT12X24_HPP
-
-#include <stdint.h>
-
-namespace nes::menu {
-
-const uint16_t FONT12X24_CODE_FIRST = 0x20;
-const uint16_t FONT12X24_CODE_LAST = 0xAF;
-const uint32_t FONT12X24_DATA[] = {
-  // 0x20 ' '
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x21 '!'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x00F0, 0x00F0, 0x00F0, 0x00F0,
-  0x00F0, 0x00F0, 0x00F0, 0x00F0, 0x00F0, 0x00F0, 0x0000, 0x0000,
-  0x00F0, 0x00F0, 0x00F0, 0x00F0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x22 '"'
-  0x0000, 0x0000, 0x7D07D, 0xFF0FF, 0xFF0FF, 0xFD0FD, 0xF00F0, 0x7C07C,
-  0x3F03F, 0x7007, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x23 '#'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x1E1E0, 0x1E1E0, 0x1E1E0, 0x1E1E0,
-  0xFFFFF, 0xFFFFF, 0xF0F0, 0xF0F0, 0xF0F0, 0xF0F0, 0xFFFFF, 0xFFFFF,
-  0xB4B4, 0xB4B4, 0xB4B4, 0xB4B4, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x24 '$'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0F00, 0x0F00, 0x1FFF4, 0x7FFFD,
-  0xF8F2F, 0xF0F2F, 0x0FBD, 0x2FF4, 0x1FF80, 0x7EF00, 0xF8F0F, 0xF8F2F,
-  0x7FFFD, 0x1FFF4, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x25 '%'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF02F8, 0xF87FD, 0xBCFAF, 0x3EF0F,
-  0x2FF0F, 0xFFAF, 0xBFFD, 0x3FF8, 0x2FFC0, 0x7FFE0, 0xFAFF0, 0xF0FF8,
-  0xF0FBC, 0xFAF3E, 0x7FD2F, 0x2F80F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x26 '&'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x02F8, 0x07FD, 0x0FAF, 0x0F0F,
-  0x0F0F, 0x0FAF, 0xF0BFE, 0xF83FC, 0xBCBFC, 0x3FFFE, 0x2FD7F, 0xF41F,
-  0x2F41F, 0x3FD7F, 0xBFFFD, 0xF9FF4, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x27 '''
-  0x0000, 0x0000, 0x7D00, 0xFF00, 0xFF00, 0xFD00, 0xF000, 0x7C00,
-  0x3F00, 0x0700, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x28 '('
-  0x0000, 0x0000, 0xFF000, 0x3FC00, 0xFE00, 0xBF40, 0x7FC0, 0x3FD0,
-  0x2FE0, 0x1FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x1FF0, 0x2FE0,
-  0x3FD0, 0x7FC0, 0xBF40, 0xFE00, 0x3FC00, 0xFF000, 0x0000, 0x0000,
-  // 0x29 ')'
-  0x0000, 0x0000, 0x00FF, 0x03FC, 0x0BF0, 0x1FE0, 0x3FD0, 0x7FC0,
-  0xBF80, 0xFF40, 0xFF00, 0xFF00, 0xFF00, 0xFF00, 0xFF40, 0xBF80,
-  0x7FC0, 0x3FD0, 0x1FE0, 0x0BF0, 0x03FC, 0x00FF, 0x0000, 0x0000,
-  // 0x2A '*'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0F00, 0x0F00,
-  0xF0F0F, 0xFCF3F, 0x3FFFC, 0xFFF0, 0x3FC0, 0x3FC0, 0xFFF0, 0x3FFFC,
-  0xFCF3F, 0xF0F0F, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x2B '+'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0xFFFFF, 0xFFFFF, 0x0F00, 0x0F00,
-  0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x2C ','
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x07D0, 0x0FF0, 0x0FF0, 0x0FD0, 0x0F00, 0x07C0, 0x03F0, 0x0070,
-  // 0x2D '-'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x2E '.'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x07D0, 0x0FF0, 0x0FF0, 0x07D0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x2F '/'
-  0x0000, 0x0000, 0xFF000, 0xFF400, 0xBF800, 0x7FC00, 0x3FD00, 0x2FE00,
-  0x1FF00, 0xFF40, 0xBF80, 0x7FC0, 0x3FD0, 0x2FE0, 0x1FF0, 0x0FF4,
-  0x0BF8, 0x07FC, 0x03FD, 0x02FE, 0x01FF, 0x00FF, 0x0000, 0x0000,
-  // 0x30 '0'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0xF000F, 0xFD00F, 0xFFC0F, 0xFFF4F, 0xF1FFF, 0xF03FF, 0xF007F, 0xF000F,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x31 '1'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0F00, 0x0FD0, 0x0FFC, 0x0F7C,
-  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00,
-  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x32 '2'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0xF8000, 0x7C000, 0x2F000, 0xFC00, 0x3F00, 0x0FC0, 0x03F0, 0x00FC,
-  0x007D, 0x003F, 0xFFFFF, 0xFFFFF, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x33 '3'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0x3F000, 0xFC00,
-  0x3F00, 0x0FC0, 0x7FF0, 0x2FFF0, 0x7E000, 0xF8000, 0xF0000, 0xF0000,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x34 '4'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x3D00, 0x1F00, 0x0F40, 0x07C0,
-  0x03D0, 0x01F0, 0xF0F4, 0xF07C, 0xF03D, 0xF01F, 0xFFFFF, 0xFFFFF,
-  0xF000, 0xF000, 0xF000, 0xF000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x35 '5'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFFC, 0xFFFFC, 0x003D, 0x003D,
-  0x002E, 0x002E, 0x7FFF, 0x2FFFF, 0x7E000, 0xF8000, 0xF0000, 0xF0000,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x36 '6'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0BC0, 0x07D0, 0x03E0, 0x02F0,
-  0x01F4, 0x00F8, 0x7FFC, 0x2FFFD, 0x7E0BE, 0xF802F, 0xF000F, 0xF000F,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x37 '7'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0xF400F, 0xF800F,
-  0xBC00F, 0x7D00F, 0x3E000, 0x2F000, 0x1F400, 0xF800, 0xBC00, 0x7D00,
-  0x3E00, 0x2F00, 0x1F40, 0x0F80, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x38 '8'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x2FFF8, 0x7E0BD, 0xF802F, 0xF000F, 0xF000F,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x39 '9'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0xF000F, 0xF000F, 0xF802F, 0xBE0BD, 0x7FFF8, 0x3FFD0, 0x2F000, 0x1F400,
-  0xF800, 0xBC00, 0x7D00, 0x3E00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x3A ':'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x07D0, 0x0FF0, 0x0FF0, 0x07D0, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x07D0, 0x0FF0, 0x0FF0, 0x07D0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x3B ';'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x07D0, 0x0FF0, 0x0FF0, 0x07D0, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x07D0, 0x0FF0, 0x0FF0, 0x0FD0, 0x0F00, 0x07C0, 0x03F0, 0x0070,
-  // 0x3C '<'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xD0000,
-  0xF8000, 0xFF400, 0x2FE00, 0x7FD0, 0x0BF8, 0x01FF, 0x01FF, 0x0BF8,
-  0x7FD0, 0x2FE00, 0xFF400, 0xF8000, 0xD0000, 0x0000, 0x0000, 0x0000,
-  // 0x3D '='
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0x0000, 0x0000, 0x0000, 0x0000,
-  0xFFFFF, 0xFFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x3E '>'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0007,
-  0x002F, 0x01FF, 0x0BF8, 0x7FD0, 0x2FE00, 0xFF400, 0xFF400, 0x2FE00,
-  0x7FD0, 0x0BF8, 0x01FF, 0x002F, 0x0007, 0x0000, 0x0000, 0x0000,
-  // 0x3F '?'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0xF800F, 0xFC00F, 0x7F000, 0xFC00, 0x3E00, 0x1F00, 0x0000, 0x0000,
-  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x40 '@'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0xF0F0F, 0xF0F0F, 0xF0F0F, 0xF0F0F, 0xF0F0F, 0xF8F0F, 0xFFF0F, 0xF7D0F,
-  0x002F, 0x00BD, 0xFFF8, 0xFFD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x41 'A'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0F00, 0x1F40, 0x2F80, 0x3FC0,
-  0x7FD0, 0xBFE0, 0xFAF0, 0x1F5F4, 0x2F0F8, 0x3E0BC, 0x7FFFD, 0xBFFFE,
-  0xF802F, 0xF401F, 0xF000F, 0xF000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x42 'B'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FFF, 0x2FFFF, 0x7E00F, 0xF800F,
-  0xF800F, 0x7E00F, 0x2FFFF, 0x2FFFF, 0x7E00F, 0xF800F, 0xF000F, 0xF000F,
-  0xF800F, 0x7E00F, 0x2FFFF, 0x7FFF, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x43 'C'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0x000F, 0x000F, 0x000F, 0x000F, 0x000F, 0x000F, 0x000F, 0x000F,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x44 'D'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FFF, 0x2FFFF, 0x7E00F, 0xF800F,
-  0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F,
-  0xF800F, 0x7E00F, 0x2FFFF, 0x7FFF, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x45 'E'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0x000F, 0x000F,
-  0x000F, 0x000F, 0xFFFF, 0xFFFF, 0x000F, 0x000F, 0x000F, 0x000F,
-  0x000F, 0x000F, 0xFFFFF, 0xFFFFF, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x46 'F'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0x000F, 0x000F,
-  0x000F, 0x000F, 0xFFFF, 0xFFFF, 0x000F, 0x000F, 0x000F, 0x000F,
-  0x000F, 0x000F, 0x000F, 0x000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x47 'G'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0x000F, 0x000F, 0x000F, 0x000F, 0xFFF0F, 0xFFF0F, 0xF000F, 0xF000F,
-  0xF802F, 0xFE0BD, 0xFFFF8, 0xF7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x48 'H'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF000F, 0xF000F, 0xF000F, 0xF000F,
-  0xF000F, 0xF000F, 0xFFFFF, 0xFFFFF, 0xF000F, 0xF000F, 0xF000F, 0xF000F,
-  0xF000F, 0xF000F, 0xF000F, 0xF000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x49 'I'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFF0, 0xFFF0, 0x0F00, 0x0F00,
-  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00,
-  0x0F00, 0x0F00, 0xFFF0, 0xFFF0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x4A 'J'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF0000, 0xF0000, 0xF0000, 0xF0000,
-  0xF0000, 0xF0000, 0xF0000, 0xF0000, 0xF0000, 0xF0000, 0xF000F, 0xF000F,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x4B 'K'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x3F000F, 0xFC00F, 0x3F00F, 0xFC0F,
-  0x3F0F, 0x0FCF, 0x03FF, 0x00FF, 0x00FF, 0x03FF, 0x0FCF, 0x3F0F,
-  0xFC0F, 0x3F00F, 0xFC00F, 0x3F000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x4C 'L'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x000F, 0x000F, 0x000F, 0x000F,
-  0x000F, 0x000F, 0x000F, 0x000F, 0x000F, 0x000F, 0x000F, 0x000F,
-  0x000F, 0x000F, 0xFFFFF, 0xFFFFF, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x4D 'M'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF000F, 0xF401F, 0xF802F, 0xFC03F,
-  0xFD07F, 0xFE0BF, 0xFF0FF, 0xFF5FF, 0xFFAFF, 0xFBFEF, 0xF7FDF, 0xF3FCF,
-  0xF2F8F, 0xF1F4F, 0xF0F0F, 0xF0A0F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x4E 'N'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF002F, 0xF003F, 0xF00BF, 0xF00FF,
-  0xF02FF, 0xF03EF, 0xF0BCF, 0xF0F8F, 0xF2F0F, 0xF3E0F, 0xFBC0F, 0xFF80F,
-  0xFF00F, 0xFE00F, 0xFC00F, 0xF800F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x4F 'O'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x50 'P'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FFF, 0x2FFFF, 0x7E00F, 0xF800F,
-  0xF000F, 0xF000F, 0xF800F, 0x7E00F, 0x2FFFF, 0x7FFF, 0x000F, 0x000F,
-  0x000F, 0x000F, 0x000F, 0x000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x51 'Q'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF0FCF, 0xF2F0F, 0xF3E0F, 0xFFC0F,
-  0xFF42F, 0x7F0BD, 0xFFFF8, 0xF7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x52 'R'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FFF, 0x2FFFF, 0x7E00F, 0xF800F,
-  0xF000F, 0xF000F, 0xF800F, 0x7E00F, 0x2FFFF, 0x7FFF, 0xBD0F, 0x1F80F,
-  0x3F00F, 0xBD00F, 0x1F800F, 0x3F000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x53 'S'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F,
-  0x002F, 0x00BD, 0x0BF8, 0x7FD0, 0x2FE00, 0x7E000, 0xF8000, 0xF0000,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x54 'T'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0x0F00, 0x0F00,
-  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0F00,
-  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x55 'U'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF000F, 0xF000F, 0xF000F, 0xF000F,
-  0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x56 'V'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF000F, 0xF000F, 0xF401F, 0xF802F,
-  0xBC03E, 0x7D07D, 0x3E0BC, 0x2F0F8, 0x1F5F4, 0xFAF0, 0xBFE0, 0x7FD0,
-  0x3FC0, 0x2F80, 0x1F40, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x57 'W'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF000F, 0xF401F, 0xF401F, 0xF802F,
-  0xB8F2E, 0xBCF3E, 0x7DF7D, 0x7EFBD, 0x3FFFC, 0x3FFFC, 0x2FAF8, 0x2FAF8,
-  0x1F0F4, 0x1F0F4, 0xF0F0, 0xF0F0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x58 'X'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF000F, 0xF802F, 0xBC03E, 0x3E0BC,
-  0x2F0F8, 0xFAF0, 0xBFE0, 0x3FC0, 0x3FC0, 0xBFE0, 0xFAF0, 0x2F0F8,
-  0x3E0BC, 0xBC03E, 0xF802F, 0xF000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x59 'Y'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF000F, 0xF802F, 0xBC03E, 0x3E0BC,
-  0x2F0F8, 0xFAF0, 0xBFE0, 0x3FC0, 0x2F80, 0x0F00, 0x0F00, 0x0F00,
-  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x5A 'Z'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0xFC000, 0xBE000,
-  0x3F400, 0x1FC00, 0xBE00, 0x3F40, 0x1FC0, 0x0BE0, 0x03F4, 0x01FC,
-  0x00BE, 0x003F, 0xFFFFF, 0xFFFFF, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x5B '['
-  0x0000, 0x0000, 0xFFFF0, 0xFFFF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0,
-  0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0,
-  0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0xFFFF0, 0xFFFF0, 0x0000, 0x0000,
-  // 0x5C '\'
-  0x0000, 0x0000, 0x00FF, 0x01FF, 0x02FE, 0x03FD, 0x07FC, 0x0BF8,
-  0x0FF4, 0x1FF0, 0x2FE0, 0x3FD0, 0x7FC0, 0xBF80, 0xFF40, 0x1FF00,
-  0x2FE00, 0x3FD00, 0x7FC00, 0xBF800, 0xFF400, 0xFF000, 0x0000, 0x0000,
-  // 0x5D ']'
-  0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFF00, 0xFF00, 0xFF00, 0xFF00,
-  0xFF00, 0xFF00, 0xFF00, 0xFF00, 0xFF00, 0xFF00, 0xFF00, 0xFF00,
-  0xFF00, 0xFF00, 0xFF00, 0xFF00, 0xFFFF, 0xFFFF, 0x0000, 0x0000,
-  // 0x5E '^'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0F00, 0x3FC0, 0xFFF0, 0x3F0FC,
-  0xFC03F, 0xF000F, 0xC0003, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x5F '_'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0x0000, 0x0000,
-  // 0x60 '`'
-  0x0000, 0x0000, 0x7F00, 0xFC00, 0x1F000, 0x3C000, 0x70000, 0xC0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x61 'a'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xBFE0, 0x3FFFC, 0xBD004, 0xF4000, 0xFFFF8, 0xFFFFE,
-  0xF401F, 0xF801F, 0xFFFFE, 0xF7FF8, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x62 'b'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x000F, 0x000F, 0x000F, 0x000F,
-  0x000F, 0x000F, 0x7FDF, 0x2FFFF, 0x7E0BF, 0xF802F, 0xF000F, 0xF000F,
-  0xF802F, 0x7E0BF, 0x2FFFF, 0x7FDF, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x63 'c'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x1FFD0, 0xFFFF8, 0xB80BD, 0x1002F, 0x000F, 0x000F,
-  0x1002F, 0xF80BD, 0xBFFF8, 0x1FFD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x64 'd'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xF0000, 0xF0000, 0xF0000, 0xF0000,
-  0xF0000, 0xF0000, 0xF7FD0, 0xFFFF8, 0xFE0BD, 0xF802F, 0xF000F, 0xF000F,
-  0xF802F, 0xFE0BD, 0xFFFF8, 0xF7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x65 'e'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F, 0xFFFFF, 0xFFFFF,
-  0x002F, 0x00BD, 0xFFF8, 0xFFD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x66 'f'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x1FF40, 0x7FFD0, 0xF82F0, 0xF00F0,
-  0x00F0, 0x00F0, 0xFFFFF, 0xFFFFF, 0x00F0, 0x00F0, 0x00F0, 0x00F0,
-  0x00F0, 0x00F0, 0x00F0, 0x00F0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x67 'g'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xF7FD0, 0xFFFF8, 0xFE0BD, 0xF802F, 0xF000F, 0xF000F,
-  0xF802F, 0xFE0BD, 0xFFFF8, 0xF7FD0, 0xF8000, 0x7E000, 0x2FFF0, 0x7FF0,
-  // 0x68 'h'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x000F, 0x000F, 0x000F, 0x000F,
-  0x000F, 0x000F, 0x7FDF, 0x2FFFF, 0x7E0BF, 0xF802F, 0xF000F, 0xF000F,
-  0xF000F, 0xF000F, 0xF000F, 0xF000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x69 'i'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0,
-  0x0000, 0x0000, 0x0FF0, 0x0FF0, 0x0F00, 0x0F00, 0x0F00, 0x0F00,
-  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x6A 'j'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFF00, 0xFF00, 0xFF00, 0xFF00,
-  0x0000, 0x0000, 0xFF00, 0xFF00, 0xF000, 0xF000, 0xF000, 0xF000,
-  0xF000, 0xF000, 0xF000, 0xF000, 0xF82F, 0x7EBD, 0x2FF8, 0x07D0,
-  // 0x6B 'k'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x000F, 0x000F, 0x000F, 0x000F,
-  0x000F, 0xD000F, 0xF800F, 0xFF40F, 0x2FE0F, 0x7FDF, 0x0FFF, 0x3FFF,
-  0xFC2F, 0x3F00F, 0xFC00F, 0xF000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x6C 'l'
-  0x0000, 0x0000, 0x0000, 0x0000, 0xFF00, 0xFF00, 0xF000, 0xF000,
-  0xF000, 0xF000, 0xF000, 0xF000, 0xF000, 0xF000, 0xF000, 0xF000,
-  0xF000, 0xF000, 0xF000, 0xF000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x6D 'm'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xB7DF, 0x3FFFF, 0xBFFFF, 0xF5F5F, 0xF0F0F, 0xF0F0F,
-  0xF0F0F, 0xF0F0F, 0xF0F0F, 0xF0F0F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x6E 'n'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x7FDF, 0x2FFFF, 0x7E0BF, 0xF802F, 0xF000F, 0xF000F,
-  0xF000F, 0xF000F, 0xF000F, 0xF000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x6F 'o'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x7FD0, 0x2FFF8, 0x7E0BD, 0xF802F, 0xF000F, 0xF000F,
-  0xF802F, 0x7E0BD, 0x2FFF8, 0x7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x70 'p'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x7FDF, 0x2FFFF, 0x7E0BF, 0xF802F, 0xF000F, 0xF000F,
-  0xF802F, 0x7E0BF, 0x2FFFF, 0x7FDF, 0x000F, 0x000F, 0x000F, 0x000F,
-  // 0x71 'q'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xF7FD0, 0xFFFF8, 0xFE0BD, 0xF802F, 0xF000F, 0xF000F,
-  0xF802F, 0xFE0BD, 0xFFFF8, 0xF7FD0, 0xF0000, 0xF0000, 0xF0000, 0xF0000,
-  // 0x72 'r'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x7FDF, 0x2FFFF, 0x7E0BF, 0xF802F, 0x000F, 0x000F,
-  0x000F, 0x000F, 0x000F, 0x000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x73 's'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x2FFF8, 0x7FFFE, 0x1007F, 0x007F, 0x2FFFE, 0xBFFF8,
-  0xFD000, 0xFD004, 0xBFFFD, 0x2FFF8, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x74 't'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x00F0, 0x00F0, 0xFFFFF, 0xFFFFF, 0x00F0, 0x00F0, 0x00F0, 0x00F0,
-  0xF00F0, 0xF82F0, 0x7FFD0, 0x1FF40, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x75 'u'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F, 0xF000F,
-  0xF802F, 0xFE0BD, 0xFFFF8, 0xF7FD0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x76 'v'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xF000F, 0xF802F, 0xBC03E, 0x3E0BC, 0x2F0F8, 0xFAF0,
-  0xBFE0, 0x3FC0, 0x2F80, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x77 'w'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xF000F, 0xF802F, 0xBCF3E, 0x7CF3D, 0x3DF7C, 0x3EFBC,
-  0x2FFF8, 0x1FAF4, 0xF5F0, 0xF0F0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x78 'x'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xF000F, 0xFC03F, 0x3F0FC, 0xFFF0, 0x3FC0, 0x3FC0,
-  0xFFF0, 0x3F0FC, 0xFC03F, 0xF000F, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x79 'y'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xF000F, 0xF802F, 0xBC03E, 0x3E0BC, 0x2F0F8, 0xFAF0,
-  0xBFE0, 0x3FC0, 0x2F80, 0x0F80, 0x0BC0, 0x03E0, 0x02FF, 0x00BF,
-  // 0x7A 'z'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0xFFFFF, 0xFFFFF, 0x3F000, 0xFC00, 0x3F00, 0x0FC0,
-  0x03F0, 0x00FC, 0xFFFFF, 0xFFFFF, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x7B '{'
-  0x0000, 0x0000, 0xFFE00, 0xFFFC0, 0x2FE0, 0x0FF0, 0x0FF0, 0x0FF0,
-  0x0FF0, 0x0FF0, 0x0BF8, 0x03FF, 0x03FF, 0x0BF8, 0x0FF0, 0x0FF0,
-  0x0FF0, 0x0FF0, 0x0FF0, 0x2FE0, 0xFFFC0, 0xFFE00, 0x0000, 0x0000,
-  // 0x7C '|'
-  0x0000, 0x0000, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0,
-  0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0,
-  0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0FF0, 0x0000, 0x0000,
-  // 0x7D '}'
-  0x0000, 0x0000, 0x0BFF, 0x3FFF, 0xBF80, 0xFF00, 0xFF00, 0xFF00,
-  0xFF00, 0xFF00, 0x2FE00, 0xFFC00, 0xFFC00, 0x2FE00, 0xFF00, 0xFF00,
-  0xFF00, 0xFF00, 0xFF00, 0xBF80, 0x3FFF, 0x0BFF, 0x0000, 0x0000,
-  // 0x7E '~'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x02F8, 0x0BFE, 0xF0FFF, 0xF0F5F, 0xF5F0F, 0xFFF0F,
-  0xBFE00, 0x2F800, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x7F ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x80 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x81 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x82 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x83 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x84 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x85 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x86 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x87 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x88 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x89 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x8A ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x8B ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x8C ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x8D ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x8E ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x8F ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x90 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x91 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x92 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x93 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x94 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x95 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x96 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x97 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x98 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x99 ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x9A ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x9B ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x9C ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x9D ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x9E ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0x9F ''
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0xA0 ' '
-  0x6AAAAA, 0x1AAAAA, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x5555A,
-  0x5695A, 0x57D5A, 0x5BE5A, 0x5FF5A, 0x6FF9A, 0x7FFDA, 0xBFFEA, 0xFFFFA,
-  0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x0006, 0x0001,
-  // 0xA1 '¡'
-  0x6AAAAA, 0x1AAAAA, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x5555A,
-  0xFFFFA, 0xBFFEA, 0x7FFDA, 0x6FF9A, 0x5FF5A, 0x5BE5A, 0x57D5A, 0x5695A,
-  0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x000A, 0x0002,
-  // 0xA2 '¢'
-  0x111111, 0x444444, 0x111111, 0x444444, 0x111111, 0x444444, 0x111111, 0x444444,
-  0x111111, 0x444444, 0x111111, 0x444444, 0x111111, 0x444444, 0x111111, 0x444444,
-  0x111111, 0x444444, 0x111111, 0x444444, 0x111111, 0x444444, 0x111111, 0x444444,
-  // 0xA3 '£'
-  0x6AAAAA, 0x1AAAAA, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0xAAAAA, 0xAAAAA,
-  0x000A, 0x000A, 0xAAAAA, 0xAAAAA, 0x000A, 0x000A, 0xAAAAA, 0xAAAAA,
-  0x000A, 0x000A, 0x5555A, 0x5555A, 0x5555A, 0x5555A, 0x0006, 0x0001,
-  // 0xA4 '¤'
-  0x0000, 0x0000, 0x0000, 0x28000, 0xAA000, 0x2AA800, 0xAAAA00, 0xAAAA80,
-  0xAAAAA0, 0xAAAAA0, 0xAA000, 0xAA000, 0xAA000, 0xAA000, 0x1AA000, 0x6AA000,
-  0xAAA000, 0xAA9000, 0xAA8000, 0xA90000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0xA5 '¥'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0002,
-  0x000A, 0x000A, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0xA6 '¦'
-  0x0000, 0x0000, 0xBFE00, 0x17FFC0, 0xE402E0, 0xF000F0, 0x00F0, 0x00F0,
-  0xFF80F0, 0xFFE0F0, 0x12F0F0, 0x44F0F0, 0x11F0F0, 0x44F0F0, 0x11F0F0, 0x44F0F0,
-  0x11F0F0, 0x44F1F0, 0xAAAAE0, 0xAAAA40, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0xA7 '§'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x02FF, 0x05FF, 0x0540, 0x0500,
-  0x2FFFF, 0x7FFFF, 0xA4511, 0xA0544, 0xA0511, 0xA0544, 0xA0511, 0xA0544,
-  0xA0511, 0xA4544, 0x6AAAA, 0x1AAAA, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0xA8 '¨'
-  0x0000, 0x0000, 0xFFF800, 0xFFFE00, 0x0F00, 0x0F00, 0xFFFF00, 0xFFFF00,
-  0x0F00, 0x0F00, 0xFFFF00, 0xFFFF00, 0x0F00, 0x0F00, 0xFFFF00, 0xFFFF00,
-  0x0F00, 0x0F00, 0xFFFF00, 0xFFFF00, 0xFFFE00, 0xFFF800, 0x0000, 0x0000,
-  // 0xA9 '©'
-  0x0000, 0x0000, 0x2FFF, 0xBFFF, 0xFF00, 0xFF00, 0xFFFF, 0xFFFF,
-  0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFF0, 0xFFF0, 0xFFFF, 0xFFFF,
-  0x000F, 0x000F, 0x6A0F, 0x1A0F, 0x060F, 0x010F, 0x0000, 0x0000,
-  // 0xAA 'ª'
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0xAB '«'
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0xAC '¬'
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0xAD '­'
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0xAE '®'
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-  // 0xAF '¯'
-  0x555555, 0x555555, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005,
-  0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x500005, 0x555555, 0x555555,
-};
-
-}  // namespace nes
-
-#endif // SHAPONES_FONT12X24_HPP
 // #include "shapones/font8x16.hpp"
 
 #ifndef SHAPONES_FONT8X16_HPP
@@ -3773,326 +4164,326 @@ const uint32_t FONT12X24_DATA[] = {
 namespace nes::menu {
 
 const uint16_t FONT8X16_CODE_FIRST = 0x20;
-const uint16_t FONT8X16_CODE_LAST = 0xAF;
+const uint16_t FONT8X16_CODE_LAST = 0xCF;
 const uint16_t FONT8X16_DATA[] = {
   // 0x20 ' '
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x21 '!'
-  0x0000, 0x0000, 0x03F0, 0x03F0, 0x03F0, 0x03F0, 0x03F0, 0x03F0,
-  0x0000, 0x0000, 0x03F0, 0x03F0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0FC0, 0x0FC0, 0x0FC0, 0x0FC0, 0x0FC0, 0x0FC0,
+  0x0000, 0x0000, 0x0FC0, 0x0FC0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x22 '"'
-  0x0000, 0x2E2E, 0x3F3F, 0x3E3E, 0x2C2C, 0x0B0B, 0x0000, 0x0000,
+  0x0000, 0xB8B8, 0xFCFC, 0xF8F8, 0xB0B0, 0x2C2C, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x23 '#'
-  0x0000, 0x0000, 0x1E78, 0x3FFF, 0x3FFF, 0x1E78, 0x0F3C, 0x0F3C,
-  0x0B6D, 0x3FFF, 0x3FFF, 0x0B6D, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x79E0, 0x79E0, 0xFFFC, 0xFFFC, 0x3CF0, 0x3CF0,
+  0xFFFC, 0xFFFC, 0x2DB4, 0x2DB4, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x24 '$'
-  0x0000, 0x01D0, 0x0BF8, 0x2FFE, 0x3DDF, 0x00EF, 0x06FD, 0x1FE4,
-  0x3EC0, 0x3DDF, 0x2FFE, 0x0BF8, 0x01D0, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0740, 0x2FE0, 0xBFF8, 0xF77C, 0x03BC, 0x1BF4, 0x7F90,
+  0xFB00, 0xF77C, 0xBFF8, 0x2FE0, 0x0740, 0x0000, 0x0000, 0x0000,
   // 0x25 '%'
-  0x0000, 0x0000, 0x3DB8, 0x1FFE, 0x0FCF, 0x07FE, 0x03F8, 0x0BF0,
-  0x2FF4, 0x3CFC, 0x2FFD, 0x0B9F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF6E0, 0x7FF8, 0x3F3C, 0x1FF8, 0x0FE0, 0x2FC0,
+  0xBFD0, 0xF3F0, 0xBFF4, 0x2E7C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x26 '&'
-  0x0000, 0x0000, 0x00B8, 0x02FE, 0x03CF, 0x3EFE, 0x3DFC, 0x1FED,
-  0x0F4F, 0x1F1F, 0x3FFD, 0x35F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x02E0, 0x0BF8, 0x0F3C, 0xFBF8, 0xF7F0, 0x7FB4,
+  0x3D3C, 0x7C7C, 0xFFF4, 0xD7D0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x27 '''
-  0x0000, 0x02E0, 0x03F0, 0x03E0, 0x02C0, 0x00B0, 0x0000, 0x0000,
+  0x0000, 0x0B80, 0x0FC0, 0x0F80, 0x0B00, 0x02C0, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x28 '('
-  0x0000, 0x0FC0, 0x07E0, 0x03F4, 0x02F8, 0x01FC, 0x00FC, 0x00FC,
-  0x01FC, 0x02F8, 0x03F4, 0x07E0, 0x0FC0, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x3F00, 0x1F80, 0x0FD0, 0x0BE0, 0x07F0, 0x03F0, 0x03F0,
+  0x07F0, 0x0BE0, 0x0FD0, 0x1F80, 0x3F00, 0x0000, 0x0000, 0x0000,
   // 0x29 ')'
-  0x0000, 0x00FC, 0x02F4, 0x07F0, 0x0BE0, 0x0FD0, 0x0FC0, 0x0FC0,
-  0x0FD0, 0x0BE0, 0x07F0, 0x02F4, 0x00FC, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x03F0, 0x0BD0, 0x1FC0, 0x2F80, 0x3F40, 0x3F00, 0x3F00,
+  0x3F40, 0x2F80, 0x1FC0, 0x0BD0, 0x03F0, 0x0000, 0x0000, 0x0000,
   // 0x2A '*'
-  0x0000, 0x0000, 0x0000, 0x03C0, 0xE7DB, 0xFFFF, 0x1BE4, 0x1BE4,
-  0xFFFF, 0xE7DB, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0F00, 0x9F6C, 0xFFFC, 0x6F90, 0x6F90,
+  0xFFFC, 0x9F6C, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x2B '+'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x03C0, 0x03C0, 0x3FFC, 0x3FFC,
-  0x03C0, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0F03, 0x0F03, 0xFFF0, 0xFFF0,
+  0x0F03, 0x0F03, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x2C ','
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x02E0, 0x03F0, 0x03E0, 0x02C0, 0x00B0, 0x0000,
+  0x0000, 0x0000, 0x0B80, 0x0FC0, 0x0F80, 0x0B00, 0x02C0, 0x0000,
   // 0x2D '-'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x3FFC, 0x3FFC,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFF0, 0xFFF0,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x2E '.'
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x02E0, 0x03F0, 0x02E0, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0B80, 0x0FC0, 0x0B80, 0x0000, 0x0000, 0x0000,
   // 0x2F '/'
-  0x0000, 0x3F00, 0x3F00, 0x1F80, 0x0FC0, 0x0BD0, 0x03F0, 0x03F0,
-  0x01F8, 0x00FC, 0x00BD, 0x003F, 0x003F, 0x0000, 0x0000, 0x0000,
+  0x0000, 0xFC00, 0xFC00, 0x7E00, 0x3F00, 0x2F40, 0x0FC0, 0x0FC0,
+  0x07E0, 0x03F0, 0x02F4, 0x00FC, 0x00FC, 0x0000, 0x0000, 0x0000,
   // 0x30 '0'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3E2F, 0x3C0F, 0x3F9F, 0x3DBF,
-  0x3C0F, 0x3E2F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF8BC, 0xF03C, 0xFE7C, 0xF6FC,
+  0xF03C, 0xF8BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x31 '1'
-  0x0000, 0x0000, 0x03C0, 0x03F4, 0x03FF, 0x03C7, 0x03C0, 0x03C0,
-  0x03C0, 0x03C0, 0x03C0, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0F00, 0x0FD0, 0x0FFC, 0x0F1C, 0x0F00, 0x0F00,
+  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x32 '2'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3E2F, 0x3C0C, 0x3F00, 0x0FC0,
-  0x03F0, 0x00FC, 0x3FFF, 0x3FFF, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF8BC, 0xF030, 0xFC00, 0x3F00,
+  0x0FC0, 0x03F0, 0xFFFC, 0xFFFC, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x33 '3'
-  0x0000, 0x0000, 0x0FFE, 0x0FFE, 0x07C0, 0x01F0, 0x07FC, 0x1FFC,
-  0x3D00, 0x3E2F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x3FF8, 0x3FF8, 0x1F00, 0x07C0, 0x1FF0, 0x7FF0,
+  0xF400, 0xF8BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x34 '4'
-  0x0000, 0x0000, 0x00F0, 0x00B4, 0x0078, 0x0F3C, 0x0F2D, 0x0F1E,
-  0x3FFF, 0x3FFF, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x03C0, 0x02D0, 0x01E0, 0x3CF0, 0x3CB4, 0x3C78,
+  0xFFFC, 0xFFFC, 0x3C00, 0x3C00, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x35 '5'
-  0x0000, 0x0000, 0x0FFC, 0x0FFC, 0x003D, 0x003E, 0x07FF, 0x1FFF,
-  0x3D00, 0x3E2F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x3FF0, 0x3FF0, 0x00F4, 0x00F8, 0x1FFC, 0x7FFC,
+  0xF400, 0xF8BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x36 '6'
-  0x0000, 0x0000, 0x01F0, 0x00F4, 0x007C, 0x07FD, 0x1FFF, 0x3E2F,
-  0x3C0F, 0x3E2F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x07C0, 0x03D0, 0x01F0, 0x1FF4, 0x7FFC, 0xF8BC,
+  0xF03C, 0xF8BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x37 '7'
-  0x0000, 0x0000, 0x3FFF, 0x3FFF, 0x3C0F, 0x3D0F, 0x2E00, 0x1F00,
-  0x0F40, 0x0B80, 0x07C0, 0x03D0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xFFFC, 0xFFFC, 0xF03C, 0xF43C, 0xB800, 0x7C00,
+  0x3D00, 0x2E00, 0x1F00, 0x0F40, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x38 '8'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3D1F, 0x2D1E, 0x0BF8, 0x1FFD,
-  0x3D1F, 0x3D1F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF47C, 0xB478, 0x2FE0, 0x7FF4,
+  0xF47C, 0xF47C, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x39 '9'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3E2F, 0x3C0F, 0x3E2F, 0x3FFD,
-  0x1FF4, 0x0F40, 0x07C0, 0x03D0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF8BC, 0xF03C, 0xF8BC, 0xFFF4,
+  0x7FD0, 0x3D00, 0x1F00, 0x0F40, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x3A ':'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x02E0, 0x03F0, 0x02E0, 0x0000,
-  0x0000, 0x02E0, 0x03F0, 0x02E0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0B80, 0x0FC0, 0x0B80, 0x0000,
+  0x0000, 0x0B80, 0x0FC0, 0x0B80, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x3B ';'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x02E0, 0x03F0, 0x02E0, 0x0000,
-  0x0000, 0x02E0, 0x03F0, 0x03E0, 0x02C0, 0x00B0, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0B80, 0x0FC0, 0x0B80, 0x0000,
+  0x0000, 0x0B80, 0x0FC0, 0x0F80, 0x0B00, 0x02C0, 0x0000, 0x0000,
   // 0x3C '<'
-  0x0000, 0x0000, 0x0300, 0x0FC0, 0x03F0, 0x00FC, 0x003F, 0x003F,
-  0x00FC, 0x03F0, 0x0FC0, 0x0300, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0C00, 0x3F00, 0x0FC0, 0x03F0, 0x00FC, 0x00FC,
+  0x03F0, 0x0FC0, 0x3F00, 0x0C00, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x3D '='
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0FFC, 0x0FFC, 0x0000, 0x0000,
-  0x0FFC, 0x0FFC, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x3FF0, 0x3FF0, 0x0000, 0x0000,
+  0x3FF0, 0x3FF0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x3E '>'
-  0x0000, 0x0000, 0x0030, 0x00FC, 0x03F0, 0x0FC0, 0x3F00, 0x3F00,
-  0x0FC0, 0x03F0, 0x00FC, 0x0030, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x00C0, 0x03F0, 0x0FC0, 0x3F00, 0xFC00, 0xFC00,
+  0x3F00, 0x0FC0, 0x03F0, 0x00C0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x3F '?'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3D1F, 0x3C0F, 0x3F00, 0x0FC0,
-  0x03C0, 0x0000, 0x03C0, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF47C, 0xF03C, 0xFC00, 0x3F00,
+  0x0F00, 0x0000, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x40 '@'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3E2F, 0x3F8F, 0x3CCF, 0x3CCF,
-  0x378F, 0x002F, 0x0FFD, 0x0FF4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF8BC, 0xFE3C, 0xF33C, 0xF33C,
+  0xDE3C, 0x00BC, 0x3FF4, 0x3FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x41 'A'
-  0x0000, 0x0000, 0x03F0, 0x07F4, 0x0BB8, 0x0F7C, 0x1F3D, 0x2E2E,
-  0x3FFF, 0x3FFF, 0x3C0F, 0x3C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0FC0, 0x1FD0, 0x2EE0, 0x3DF0, 0x7CF4, 0xB8B8,
+  0xFFFC, 0xFFFC, 0xF03C, 0xF03C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x42 'B'
-  0x0000, 0x0000, 0x0BFF, 0x2FFF, 0x3E0F, 0x3D0F, 0x1FFF, 0x1FFF,
-  0x3D0F, 0x3E0F, 0x2FFF, 0x0BFF, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x2FFC, 0xBFFC, 0xF83C, 0xF43C, 0x7FFC, 0x7FFC,
+  0xF43C, 0xF83C, 0xBFFC, 0x2FFC, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x43 'C'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x2E2F, 0x000F, 0x000F, 0x000F,
-  0x000F, 0x2E2F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xB8BC, 0x003C, 0x003C, 0x003C,
+  0x003C, 0xB8BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x44 'D'
-  0x0000, 0x0000, 0x07FF, 0x1FFF, 0x3E0F, 0x3C0F, 0x3C0F, 0x3C0F,
-  0x3C0F, 0x3E0F, 0x1FFF, 0x07FF, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FFC, 0x7FFC, 0xF83C, 0xF03C, 0xF03C, 0xF03C,
+  0xF03C, 0xF83C, 0x7FFC, 0x1FFC, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x45 'E'
-  0x0000, 0x0000, 0x3FFF, 0x3FFF, 0x000F, 0x000F, 0x0FFF, 0x0FFF,
-  0x000F, 0x000F, 0x3FFF, 0x3FFF, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xFFFC, 0xFFFC, 0x003C, 0x003C, 0x3FFC, 0x3FFC,
+  0x003C, 0x003C, 0xFFFC, 0xFFFC, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x46 'F'
-  0x0000, 0x0000, 0x3FFF, 0x3FFF, 0x000F, 0x000F, 0x0FFF, 0x0FFF,
-  0x000F, 0x000F, 0x000F, 0x000F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xFFFC, 0xFFFC, 0x003C, 0x003C, 0x3FFC, 0x3FFC,
+  0x003C, 0x003C, 0x003C, 0x003C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x47 'G'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x2E2F, 0x000F, 0x3FCF, 0x3FCF,
-  0x3C0F, 0x3D2F, 0x3FFD, 0x3DF4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xB8BC, 0x003C, 0xFF3C, 0xFF3C,
+  0xF03C, 0xF4BC, 0xFFF4, 0xF7D0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x48 'H'
-  0x0000, 0x0000, 0x3C0F, 0x3C0F, 0x3C0F, 0x3C0F, 0x3FFF, 0x3FFF,
-  0x3C0F, 0x3C0F, 0x3C0F, 0x3C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF03C, 0xF03C, 0xF03C, 0xF03C, 0xFFFC, 0xFFFC,
+  0xF03C, 0xF03C, 0xF03C, 0xF03C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x49 'I'
-  0x0000, 0x0000, 0x03FC, 0x03FC, 0x00F0, 0x00F0, 0x00F0, 0x00F0,
-  0x00F0, 0x00F0, 0x03FC, 0x03FC, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0FF0, 0x0FF0, 0x03C0, 0x03C0, 0x03C0, 0x03C0,
+  0x03C0, 0x03C0, 0x0FF0, 0x0FF0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x4A 'J'
-  0x0000, 0x0000, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00,
-  0x3C00, 0x3E2E, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF000, 0xF000, 0xF000, 0xF000, 0xF000, 0xF000,
+  0xF000, 0xF8B8, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x4B 'K'
-  0x0000, 0x0000, 0x0C0F, 0x3F0F, 0x0FCF, 0x03FF, 0x00FF, 0x00FF,
-  0x03FF, 0x0FCF, 0x3F0F, 0x0C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x303C, 0xFC3C, 0x3F3C, 0x0FFC, 0x03FC, 0x03FC,
+  0x0FFC, 0x3F3C, 0xFC3C, 0x303C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x4C 'L'
-  0x0000, 0x0000, 0x000F, 0x000F, 0x000F, 0x000F, 0x000F, 0x000F,
-  0x000F, 0x000F, 0x3FFF, 0x3FFF, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x003C, 0x003C, 0x003C, 0x003C, 0x003C, 0x003C,
+  0x003C, 0x003C, 0xFFFC, 0xFFFC, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x4D 'M'
-  0x0000, 0x0000, 0x3C0F, 0x3D1F, 0x3E2F, 0x3F3F, 0x3F7F, 0x3FBF,
-  0x3EEF, 0x3DDF, 0x3CCF, 0x3C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF03C, 0xF47C, 0xF8BC, 0xFCFC, 0xFDFC, 0xFEFC,
+  0xFBBC, 0xF77C, 0xF33C, 0xF03C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x4E 'N'
-  0x0000, 0x0000, 0x3C0F, 0x3C1F, 0x3C3F, 0x3CBF, 0x3CFF, 0x3FFF,
-  0x3F8F, 0x3F0F, 0x3D0F, 0x3C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF03C, 0xF07C, 0xF0FC, 0xF2FC, 0xF3FC, 0xFFFC,
+  0xFE3C, 0xFC3C, 0xF43C, 0xF03C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x4F 'O'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3E2F, 0x3C0F, 0x3C0F, 0x3C0F,
-  0x3C0F, 0x3E2F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF8BC, 0xF03C, 0xF03C, 0xF03C,
+  0xF03C, 0xF8BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x50 'P'
-  0x0000, 0x0000, 0x07FF, 0x1FFF, 0x3E0F, 0x3C0F, 0x3E0F, 0x1FFF,
-  0x07FF, 0x000F, 0x000F, 0x000F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FFC, 0x7FFC, 0xF83C, 0xF03C, 0xF83C, 0x7FFC,
+  0x1FFC, 0x003C, 0x003C, 0x003C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x51 'Q'
-  0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3E2F, 0x3C0F, 0x3C0F, 0x3EDF,
-  0x3F8F, 0x3F2F, 0x2FFD, 0x3BF4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF8BC, 0xF03C, 0xF03C, 0xFB7C,
+  0xFE3C, 0xFCBC, 0xBFF4, 0xEFD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x52 'R'
-  0x0000, 0x0000, 0x07FF, 0x1FFF, 0x3E0F, 0x3C0F, 0x3E0F, 0x1FFF,
-  0x07FF, 0x0F0F, 0x2E0F, 0x3C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x1FFC, 0x7FFC, 0xF83C, 0xF03C, 0xF83C, 0x7FFC,
+  0x1FFC, 0x3C3C, 0xB83C, 0xF03C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x53 'S'
-  0x0000, 0x0000, 0x0BF8, 0x2FFE, 0x3D1F, 0x002F, 0x06FD, 0x1FE4,
-  0x3E00, 0x3D1F, 0x2FFE, 0x0BF8, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x2FE0, 0xBFF8, 0xF47C, 0x00BC, 0x1BF4, 0x7F90,
+  0xF800, 0xF47C, 0xBFF8, 0x2FE0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x54 'T'
-  0x0000, 0x0000, 0xBFFE, 0xBFFE, 0x03C0, 0x03C0, 0x03C0, 0x03C0,
-  0x03C0, 0x03C0, 0x03C0, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xFFF8, 0xFFF8, 0x0F00, 0x0F00, 0x0F00, 0x0F00,
+  0x0F00, 0x0F00, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x55 'U'
-  0x0000, 0x0000, 0x3C0F, 0x3C0F, 0x3C0F, 0x3C0F, 0x3C0F, 0x3C0F,
-  0x3C0F, 0x3E2F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF03E, 0xF03E, 0xF03C, 0xF03C, 0xF03C, 0xF03C,
+  0xF03C, 0xF8BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x56 'V'
-  0x0000, 0x0000, 0x3C0F, 0x3C0F, 0x3D1F, 0x2E2E, 0x1F3D, 0x0F7C,
-  0x0BB8, 0x07F4, 0x03F0, 0x02E0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF03C, 0xF03C, 0xF47C, 0xB8B8, 0x7CF4, 0x3DF0,
+  0x2EE0, 0x1FD0, 0x0FC0, 0x0B80, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x57 'W'
-  0x0000, 0x0000, 0x3C0F, 0x3C0F, 0x3CCF, 0x3DDF, 0x2EEE, 0x2FFE,
-  0x1FBD, 0x1F7D, 0x0F3C, 0x0F3C, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF03C, 0xF03C, 0xF33C, 0xF77C, 0xBBB8, 0xBFF8,
+  0x7EF4, 0x7DF4, 0x3CF0, 0x3CF0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x58 'X'
-  0x0000, 0x0000, 0x3C0F, 0x3D1F, 0x1F3D, 0x0F7C, 0x07F4, 0x07F4,
-  0x0F7C, 0x1F3D, 0x3D1F, 0x3C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF03C, 0xF47C, 0x7CF4, 0x3DF0, 0x1FD0, 0x1FD0,
+  0x3DF0, 0x7CF4, 0xF47C, 0xF03C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x59 'Y'
-  0x0000, 0x0000, 0xF00F, 0xF41F, 0x7C3D, 0x3D7C, 0x1FF4, 0x0FF0,
-  0x07D0, 0x03C0, 0x03C0, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xC03C, 0xD07C, 0xF0F4, 0xF5F0, 0x7FD0, 0x3FC0,
+  0x1F40, 0x0F00, 0x0F00, 0x0F00, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x5A 'Z'
-  0x0000, 0x0000, 0x3FFF, 0x3FFF, 0x0F00, 0x0BC0, 0x03D0, 0x01F0,
-  0x00F8, 0x003C, 0x3FFF, 0x3FFF, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xFFFF, 0xFFFF, 0x3C01, 0x2F00, 0x0F40, 0x07C0,
+  0x03E0, 0x00F0, 0xFFFC, 0xFFFC, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x5B '['
-  0x0000, 0x0FFC, 0x0FFC, 0x00FC, 0x00FC, 0x00FC, 0x00FC, 0x00FC,
-  0x00FC, 0x00FC, 0x00FC, 0x0FFC, 0x0FFC, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x3FF0, 0x3FF0, 0x03F0, 0x03F0, 0x03F0, 0x03F0, 0x03F0,
+  0x03F0, 0x03F0, 0x03F0, 0x3FF0, 0x3FF0, 0x0000, 0x0000, 0x0000,
   // 0x5C '\'
-  0x0000, 0x003F, 0x003F, 0x00BD, 0x00FC, 0x01F8, 0x03F0, 0x03F0,
-  0x0BD0, 0x0FC0, 0x1F80, 0x3F00, 0x3F00, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x00FC, 0x00FC, 0x02F4, 0x03F0, 0x07E0, 0x0FC0, 0x0FC0,
+  0x2F40, 0x3F00, 0x7E00, 0xFC00, 0xFC00, 0x0000, 0x0000, 0x0000,
   // 0x5D ']'
-  0x0000, 0x3FFC, 0x3FFC, 0x3F00, 0x3F00, 0x3F00, 0x3F00, 0x3F00,
-  0x3F00, 0x3F00, 0x3F00, 0x3FFC, 0x3FFC, 0x0000, 0x0000, 0x0000,
+  0x0000, 0xFFF0, 0xFFF0, 0xFC00, 0xFC00, 0xFC00, 0xFC00, 0xFC00,
+  0xFC00, 0xFC00, 0xFC00, 0xFFF0, 0xFFF0, 0x0000, 0x0000, 0x0000,
   // 0x5E '^'
-  0x0000, 0x00C0, 0x03F0, 0x0FFC, 0x3F3F, 0x0C0C, 0x0000, 0x0000,
+  0x0000, 0x0300, 0x0FC0, 0x3FF0, 0xFCFC, 0x3030, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x5F '_'
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  0x0000, 0x0000, 0x0000, 0x3FFF, 0x3FFF, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0xFFFC, 0xFFFC, 0x0000, 0x0000, 0x0000,
   // 0x60 '`'
-  0x0000, 0x03F0, 0x07C0, 0x0B00, 0x0C00, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0FC0, 0x1F00, 0x2C00, 0x3000, 0x0000, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x61 'a'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0BF8, 0x2FFE, 0x3C04, 0x3FF8,
-  0x3FFE, 0x3E0F, 0x3FFE, 0x3DF8, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x2FE0, 0xBFF8, 0xF010, 0xFFE0,
+  0xFFF8, 0xF83C, 0xFFF8, 0xF7E0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x62 'b'
-  0x0000, 0x0000, 0x000F, 0x000F, 0x07DF, 0x1FFF, 0x3E2F, 0x3C0F,
-  0x3C0F, 0x3E2F, 0x1FFF, 0x07DF, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x003C, 0x003C, 0x1F7C, 0x7FFC, 0xF8BC, 0xF03C,
+  0xF03C, 0xF8BC, 0x7FFC, 0x1F7C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x63 'c'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x07F4, 0x1FFD, 0x0D2F, 0x000F,
-  0x000F, 0x0D2F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x1FD0, 0x7FF4, 0x34BC, 0x003C,
+  0x003C, 0x34BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x64 'd'
-  0x0000, 0x0000, 0x3C00, 0x3C00, 0x3DF4, 0x3FFD, 0x3E2F, 0x3C0F,
-  0x3C0F, 0x3E2F, 0x3FFD, 0x3DF4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0xF000, 0xF000, 0xF7D0, 0xFFF4, 0xF8BC, 0xF03C,
+  0xF03C, 0xF8BC, 0xFFF4, 0xF7D0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x65 'e'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3E2F, 0x3C0F,
-  0x3FFF, 0x002F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF8BC, 0xF03C,
+  0xFFFC, 0x00BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x66 'f'
-  0x0000, 0x0000, 0x0BE0, 0x2FF8, 0x0D7C, 0x003C, 0x03FF, 0x03FF,
-  0x003C, 0x003C, 0x003C, 0x003C, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x2F80, 0xBFE0, 0x35F0, 0x00F0, 0x0FFC, 0x0FFC,
+  0x00F0, 0x00F0, 0x00F0, 0x00F0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x67 'g'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x3DF4, 0x3FFD, 0x3E2F, 0x3C0F,
-  0x3E2F, 0x3FFD, 0x3DF4, 0x3E1C, 0x1FFD, 0x07F4, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0xF7D0, 0xFFF4, 0xF8BC, 0xF03C,
+  0xF8BC, 0xFFF4, 0xF7D0, 0xF870, 0x7FF4, 0x1FD0, 0x0000, 0x0000,
   // 0x68 'h'
-  0x0000, 0x0000, 0x000F, 0x000F, 0x07DF, 0x1FFF, 0x3E2F, 0x3C0F,
-  0x3C0F, 0x3C0F, 0x3C0F, 0x3C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x003C, 0x003C, 0x1F7C, 0x7FFC, 0xF8BC, 0xF03C,
+  0xF03C, 0xF03C, 0xF03C, 0xF03C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x69 'i'
-  0x0000, 0x0000, 0x00F0, 0x00F0, 0x0000, 0x00F0, 0x00F0, 0x00F0,
-  0x00F0, 0x00F0, 0x00F0, 0x00F0, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x6A 'j'
   0x0000, 0x0000, 0x03C0, 0x03C0, 0x0000, 0x03C0, 0x03C0, 0x03C0,
-  0x03C0, 0x03C0, 0x03C0, 0x03E0, 0x01FF, 0x007F, 0x0000, 0x0000,
+  0x03C0, 0x03C0, 0x03C0, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000,
+  // 0x6A 'j'
+  0x0000, 0x0000, 0x0F00, 0x0F00, 0x0000, 0x0F00, 0x0F00, 0x0F00,
+  0x0F00, 0x0F00, 0x0F00, 0x0F80, 0x07FC, 0x01FC, 0x0000, 0x0000,
   // 0x6B 'k'
-  0x0000, 0x0000, 0x000F, 0x000F, 0x0C0F, 0x3F0F, 0x0FCF, 0x03FF,
-  0x03FF, 0x0FCF, 0x3F0F, 0x0C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x003C, 0x003C, 0x303C, 0xFC3C, 0x3F3C, 0x0FFC,
+  0x0FFC, 0x3F3C, 0xFC3C, 0x303C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x6C 'l'
-  0x0000, 0x0000, 0x00FC, 0x00F0, 0x00F0, 0x00F0, 0x00F0, 0x00F0,
-  0x00F0, 0x00F0, 0x00F0, 0x00F0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x03F0, 0x03C0, 0x03C0, 0x03C0, 0x03C0, 0x03C0,
+  0x03C0, 0x03C0, 0x03C0, 0x03C0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x6D 'm'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x09B7, 0x2FFF, 0x3FFF, 0x3DDF,
-  0x3CCF, 0x3CCF, 0x3CCF, 0x3CCF, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x26DC, 0xBFFC, 0xFFFC, 0xF77C,
+  0xF33C, 0xF33C, 0xF33C, 0xF33C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x6E 'n'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x07DF, 0x1FFF, 0x3E2F, 0x3C0F,
-  0x3C0F, 0x3C0F, 0x3C0F, 0x3C0F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x1F7C, 0x7FFC, 0xF8BC, 0xF03C,
+  0xF03C, 0xF03C, 0xF03C, 0xF03C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x6F 'o'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x07F4, 0x1FFD, 0x3E2F, 0x3C0F,
-  0x3C0F, 0x3E2F, 0x1FFD, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x1FD0, 0x7FF4, 0xF8BC, 0xF03C,
+  0xF03C, 0xF8BC, 0x7FF4, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x70 'p'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x07DF, 0x1FFF, 0x3E2F, 0x3C0F,
-  0x3C0F, 0x3E2F, 0x1FFF, 0x07DF, 0x000F, 0x000F, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x1F7C, 0x7FFC, 0xF8BC, 0xF03C,
+  0xF03C, 0xF8BC, 0x7FFC, 0x1F7C, 0x003C, 0x003C, 0x0000, 0x0000,
   // 0x71 'q'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x3DF4, 0x3FFD, 0x3E2F, 0x3C0F,
-  0x3C0F, 0x3E2F, 0x3FFD, 0x3DF4, 0x3C00, 0x3C00, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0xF7D0, 0xFFF4, 0xF8BC, 0xF03C,
+  0xF03C, 0xF8BC, 0xFFF4, 0xF7D0, 0xF000, 0xF000, 0x0000, 0x0000,
   // 0x72 'r'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x07DF, 0x1FFF, 0x0D2F, 0x000F,
-  0x000F, 0x000F, 0x000F, 0x000F, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x1F7C, 0x7FFC, 0x34BC, 0x003C,
+  0x003C, 0x003C, 0x003C, 0x003C, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x73 's'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0BF8, 0x2FFE, 0x3D1F, 0x07FD,
-  0x1FF4, 0x3D1F, 0x2FFE, 0x0BF8, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x2FE0, 0xBFF8, 0xF47C, 0x1FF4,
+  0x7FD0, 0xF47C, 0xBFF8, 0x2FE0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x74 't'
-  0x0000, 0x0000, 0x003C, 0x003C, 0x0FFF, 0x0FFF, 0x003C, 0x003C,
-  0x003C, 0x0D7C, 0x2FF8, 0x0BE0, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x00F0, 0x00F0, 0x3FFC, 0x3FFC, 0x00F0, 0x00F0,
+  0x00F0, 0x35F0, 0xBFE0, 0x2F80, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x75 'u'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x3C0F, 0x3C0F, 0x3C0F, 0x3C0F,
-  0x3C0F, 0x3E2F, 0x3FFD, 0x3DF4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0xF03C, 0xF03C, 0xF03C, 0xF03C,
+  0xF03C, 0xF8BC, 0xFFF4, 0xF7D0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x76 'v'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x3C0F, 0x3D1F, 0x3E2F, 0x2F3E,
-  0x1F7D, 0x0FBC, 0x0BF8, 0x07F4, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0xF03C, 0xF47C, 0xF8BC, 0xBCF8,
+  0x7DF4, 0x3EF0, 0x2FE0, 0x1FD0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x77 'w'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x3C0F, 0x3CCF, 0x3DDF, 0x2EEE,
-  0x2FFE, 0x1FBD, 0x1F7D, 0x0F3C, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0xF03C, 0xF33C, 0xF77C, 0xBBB8,
+  0xBFF8, 0x7EF4, 0x7DF4, 0x3CF0, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x78 'x'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0C0C, 0x3E2F, 0x0FFC, 0x07F4,
-  0x07F4, 0x0FFC, 0x3E2F, 0x0C0C, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x3030, 0xF8BC, 0x3FF0, 0x1FD0,
+  0x1FD0, 0x3FF0, 0xF8BC, 0x3030, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x79 'y'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x3C0F, 0x3C0F, 0x3D1F, 0x1F3D,
-  0x0FFC, 0x07F4, 0x03F0, 0x00FC, 0x003F, 0x000C, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0xF03C, 0xF03C, 0xF47C, 0x7CF4,
+  0x3FF0, 0x1FD0, 0x0FC0, 0x03F0, 0x00FC, 0x0030, 0x0000, 0x0000,
   // 0x7A 'z'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x3FFF, 0x3FFF, 0x3F00, 0x0FC0,
-  0x03F0, 0x00FC, 0x3FFF, 0x3FFF, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0xFFFC, 0xFFFC, 0xFC00, 0x3F00,
+  0x0FC0, 0x03F0, 0xFFFC, 0xFFFC, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x7B '{'
-  0x0000, 0x0000, 0x0FE0, 0x0FF8, 0x01FC, 0x00FC, 0x00FC, 0x007F,
-  0x007F, 0x00FC, 0x00FC, 0x01FC, 0x0FF8, 0x0FE0, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x3F80, 0x3FE0, 0x07F0, 0x03F0, 0x03F0, 0x01FC,
+  0x01FC, 0x03F0, 0x03F0, 0x07F0, 0x3FE0, 0x3F80, 0x0000, 0x0000,
   // 0x7C '|'
-  0x0000, 0x0000, 0x03F0, 0x03F0, 0x03F0, 0x03F0, 0x03F0, 0x03F0,
-  0x03F0, 0x03F0, 0x03F0, 0x03F0, 0x03F0, 0x03F0, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0FC0, 0x0FC0, 0x0FC0, 0x0FC0, 0x0FC0, 0x0FC0,
+  0x0FC0, 0x0FC0, 0x0FC0, 0x0FC0, 0x0FC0, 0x0FC0, 0x0000, 0x0000,
   // 0x7D '}'
-  0x0000, 0x0000, 0x02FC, 0x0BFC, 0x0FD0, 0x0FC0, 0x0FC0, 0x3F40,
-  0x3F40, 0x0FC0, 0x0FC0, 0x0FD0, 0x0BFC, 0x02FC, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0BF0, 0x2FF0, 0x3F40, 0x3F00, 0x3F00, 0xFD00,
+  0xFD00, 0x3F00, 0x3F00, 0x3F40, 0x2FF0, 0x0BF0, 0x0000, 0x0000,
   // 0x7E '~'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x3C7D, 0x3CFF,
-  0x3FCF, 0x1F4F, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xF1F4, 0xF3FC,
+  0xFF3C, 0x7D3C, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x7F ''
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
   // 0x80 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0xA400, 0xA900, 0xAA00, 0x6A00,
   // 0x81 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0x82 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x001A, 0x006A, 0x00AA, 0x00A9,
   // 0x83 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00,
+  0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00,
   // 0x84 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8,
+  0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8,
   // 0x85 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x6A00, 0xAA00, 0xA900, 0xA400, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x86 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x87 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x00A9, 0x00AA, 0x006A, 0x001A, 0x0000, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x88 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0x0000, 0xA2A4, 0xA028, 0xA028, 0xA1A4, 0xA280, 0xA280,
+  0xA1A8, 0x0000, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0x89 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0x0000, 0x028A, 0x0280, 0x0280, 0x028A, 0x0280, 0x0280,
+  0x2A8A, 0x0000, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0x8A ''
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
@@ -4100,41 +4491,41 @@ const uint16_t FONT8X16_DATA[] = {
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
   // 0x8C ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x6AA9, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0xA96A, 0xA82A, 0xA41A,
+  0xA00A, 0x9006, 0x8002, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x6AA9,
   // 0x8D ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x6AA9, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x8002, 0x9006, 0xA00A,
+  0xA41A, 0xA82A, 0xA96A, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x6AA9,
   // 0x8E ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111,
+  0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111,
   // 0x8F ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x5555, 0x6AA9, 0xAAAA, 0xAAAA, 0xAAAA, 0xAFFA, 0xA55A, 0xAFFA,
+  0xA55A, 0xAFFA, 0xA55A, 0xAAAA, 0xAAAA, 0xAAAA, 0x6AA9, 0x5555,
   // 0x90 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0xAA90, 0xAAA4, 0xAAA8, 0xAAA8, 0xAAA8, 0xAAA8, 0xAAA8,
+  0xAAA8, 0xAAA8, 0xAAA8, 0x0068, 0x0028, 0x0028, 0x0028, 0x0028,
   // 0x91 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA,
+  0xAAAA, 0xAAAA, 0xAAAA, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x92 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0x06AA, 0x1AAA, 0x2AAA, 0x2AAA, 0x2AAA, 0x2AAA, 0x2AAA,
+  0x2AAA, 0x2AAA, 0x2AAA, 0x2900, 0x2800, 0x2800, 0x2800, 0x2800,
   // 0x93 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028,
+  0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028,
   // 0x94 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800,
+  0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800,
   // 0x95 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0028, 0x0028, 0x0028, 0x0028, 0x0068, 0xAAA4, 0xAA90, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x96 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x97 ''
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  0x2800, 0x2800, 0x2800, 0x2800, 0x2900, 0x1AAA, 0x06AA, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   // 0x98 ''
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
@@ -4160,35 +4551,35 @@ const uint16_t FONT8X16_DATA[] = {
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
   // 0xA0 ' '
-  0x6AAA, 0x1556, 0x1556, 0x1556, 0x1556, 0x1696, 0x17D6, 0x1BE6,
-  0x1FF6, 0x2FFA, 0x3FFE, 0x1556, 0x1556, 0x1556, 0x1556, 0x0001,
+  0x0000, 0x5540, 0x5550, 0x5554, 0x0154, 0x4054, 0x4054, 0x5454,
+  0x5454, 0x4054, 0x4054, 0x0154, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0xA1 '¡'
-  0x6AAA, 0x1556, 0x1556, 0x1556, 0x1556, 0x3FFE, 0x2FFA, 0x1FF6,
-  0x1BE6, 0x17D6, 0x1696, 0x1556, 0x1556, 0x1556, 0x1556, 0x0001,
+  0x0000, 0x5555, 0x5555, 0x5555, 0x0000, 0x0001, 0x0001, 0x0015,
+  0x1015, 0x5401, 0x1001, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0xA2 '¢'
-  0x1111, 0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111, 0x4444,
-  0x1111, 0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111, 0x4444,
+  0x0000, 0x0555, 0x1555, 0x5555, 0x5500, 0x5400, 0x5400, 0x5400,
+  0x5410, 0x5454, 0x5410, 0x5500, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0xA3 '£'
-  0x6AAA, 0x1556, 0x1556, 0x1556, 0x1556, 0x1AA6, 0x1006, 0x1AA6,
-  0x1006, 0x1AA6, 0x1006, 0x1556, 0x1556, 0x1556, 0x1556, 0x0001,
+  0x0000, 0x5540, 0x1550, 0x1554, 0x1554, 0x1554, 0x1554, 0x1554,
+  0x1554, 0x1554, 0x1554, 0x1554, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0xA4 '¤'
-  0x0000, 0x0000, 0x2000, 0xA800, 0xAA00, 0xAA80, 0xAAA0, 0xA800,
-  0xA800, 0xA800, 0xA800, 0xA800, 0xA400, 0x9000, 0x0000, 0x0000,
+  0x0000, 0x5555, 0x0000, 0x1550, 0x1150, 0x1150, 0x0000, 0x5554,
+  0x5004, 0x5554, 0x5404, 0x5554, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0xA5 '¥'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x0002, 0x000A, 0x002A, 0x0000,
-  0x0000, 0x0000, 0x0001, 0x0AAA, 0x0AAA, 0x0AAA, 0x0000, 0x0000,
+  0x0000, 0x0555, 0x1555, 0x5554, 0x5550, 0x5550, 0x5550, 0x5550,
+  0x5550, 0x5550, 0x5550, 0x5550, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0xA6 '¦'
-  0x0000, 0x0000, 0x1F80, 0x55E0, 0x8070, 0x0030, 0xFE30, 0x0330,
-  0x0330, 0x0330, 0x0330, 0x0330, 0xAA90, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x5540, 0x5550, 0x5554, 0x5554, 0x0554, 0x0154, 0x0054,
+  0x0154, 0x0554, 0x1554, 0x5554, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0xA7 '§'
-  0x0000, 0x0000, 0x0000, 0x0000, 0x007F, 0x0055, 0x07FF, 0x0840,
-  0x0840, 0x0840, 0x0840, 0x0840, 0x06AA, 0x0000, 0x0000, 0x0000,
+  0x0000, 0x5555, 0x5555, 0x4005, 0x0000, 0x0000, 0x0000, 0x4000,
+  0x4000, 0x5000, 0x1540, 0x5014, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0xA8 '¨'
-  0x0000, 0x0000, 0xFF80, 0xFFC0, 0x03C0, 0xFFC0, 0x03C0, 0xFFC0,
-  0x03C0, 0xFFC0, 0x03C0, 0xFFC0, 0xFFC0, 0xFF80, 0x0000, 0x0000,
+  0x0000, 0x0555, 0x1555, 0x5555, 0x5554, 0x5545, 0x5501, 0x5401,
+  0x5500, 0x5540, 0x5550, 0x5550, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
   // 0xA9 '©'
-  0x0000, 0x0000, 0x02FF, 0x03FF, 0x03F0, 0x03FF, 0x03FC, 0x03FF,
-  0x03C0, 0x03FF, 0x0003, 0x01A3, 0x0063, 0x0013, 0x0000, 0x0000,
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
   // 0xAA 'ª'
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
@@ -4207,39 +4598,180 @@ const uint16_t FONT8X16_DATA[] = {
   // 0xAF '¯'
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xB0 '°'
+  0xAA90, 0xAAA4, 0xAAA8, 0x01A8, 0x80A8, 0x80A8, 0xA8A8, 0xA8A8,
+  0x80A8, 0x80A8, 0x01A8, 0xAAA8, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB1 '±'
+  0xAAAA, 0xAAAA, 0xAAAA, 0x0000, 0x0002, 0x0002, 0x002A, 0x642A,
+  0xA802, 0x6402, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB2 '²'
+  0x1AAA, 0x6AAA, 0xAAAA, 0xA900, 0xA800, 0xA800, 0xA800, 0xA864,
+  0xA8A8, 0xA864, 0xA900, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB3 '³'
+  0xAA90, 0x6AA4, 0x2AA8, 0x2AA8, 0x2AA8, 0x2AA8, 0x2AA8, 0x2AA8,
+  0x2AA8, 0x2AA8, 0x2AA8, 0x6AA8, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB4 '´'
+  0xAAAA, 0x1550, 0x22A0, 0x22A0, 0x26A0, 0x0000, 0x6AA4, 0xA558,
+  0xAAA8, 0xA958, 0xAAA8, 0x5555, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB5 'µ'
+  0x1AAA, 0x6AAA, 0xAAA8, 0xAAA0, 0xAAA0, 0xAAA0, 0xAAA0, 0xAAA0,
+  0xAAA0, 0xAAA0, 0xAAA0, 0xAAA5, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB6 '¶'
+  0xAA90, 0xAAA4, 0xAAA8, 0x6AA8, 0x0AA8, 0x02A8, 0x00A8, 0x02A8,
+  0x0AA8, 0x2AA8, 0xAAA8, 0xAAA8, 0xAAAA, 0xAAAA, 0xAAAA, 0x5555,
+  // 0xB7 '·'
+  0xAAAA, 0xAAAA, 0x5016, 0x0000, 0x0000, 0x4000, 0x8000, 0x9000,
+  0x6000, 0x2A90, 0xA468, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x5555,
+  // 0xB8 '¸'
+  0x1AAA, 0x6AAA, 0xAAAA, 0xAAA4, 0xAA86, 0xAA02, 0xA801, 0xAA00,
+  0xAA80, 0xAAA0, 0xAAA8, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x5555,
+  // 0xB9 '¹'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xBA 'º'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xBB '»'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xBC '¼'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xBD '½'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xBE '¾'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xBF '¿'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xC0 'À'
+  0x0000, 0x0000, 0x2000, 0xA800, 0xAA00, 0xAA80, 0xAAA0, 0xA800,
+  0xA800, 0xA800, 0xA800, 0xA800, 0xA400, 0x9000, 0x0000, 0x0000,
+  // 0xC1 'Á'
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0002, 0x000A, 0x002A, 0x0000,
+  0x0000, 0x0000, 0x0001, 0x0AAA, 0x0AAA, 0x0AAA, 0x0000, 0x0000,
+  // 0xC2 'Â'
+  0x0000, 0x0000, 0x1F80, 0x55E0, 0x8070, 0x0030, 0xFE30, 0x0330,
+  0x0330, 0x0330, 0x0330, 0x0330, 0xAA90, 0x0000, 0x0000, 0x0000,
+  // 0xC3 'Ã'
+  0x0000, 0x0000, 0x0000, 0x0000, 0x007F, 0x0055, 0x07FF, 0x0840,
+  0x0840, 0x0840, 0x0840, 0x0840, 0x06AA, 0x0000, 0x0000, 0x0000,
+  // 0xC4 'Ä'
+  0x0000, 0x0000, 0xFF80, 0xFFC0, 0x03C0, 0xFFC0, 0x03C0, 0xFFC0,
+  0x03C0, 0xFFC0, 0x03C0, 0xFFC0, 0xFFC0, 0xFF80, 0x0000, 0x0000,
+  // 0xC5 'Å'
+  0x0000, 0x0000, 0x02FF, 0x03FF, 0x03F0, 0x03FF, 0x03FC, 0x03FF,
+  0x03C0, 0x03FF, 0x0003, 0x01A3, 0x0063, 0x0013, 0x0000, 0x0000,
+  // 0xC6 'Æ'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xC7 'Ç'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xC8 'È'
+  0x0000, 0x0000, 0xE000, 0xF000, 0xF000, 0xF000, 0xFFE0, 0xFFF0,
+  0xFFF0, 0xFFE0, 0xF000, 0xF000, 0xF000, 0xE000, 0x0000, 0x0000,
+  // 0xC9 'É'
+  0x0000, 0x0000, 0x000B, 0x000F, 0x000F, 0x000F, 0x0BFF, 0x0FFF,
+  0x0FFF, 0x0BFF, 0x000F, 0x000F, 0x000F, 0x000B, 0x0000, 0x0000,
+  // 0xCA 'Ê'
+  0x0000, 0x0000, 0xFFE0, 0xFC30, 0xFC30, 0xFC30, 0xF830, 0x0030,
+  0xFD30, 0x0330, 0xFF30, 0x0330, 0xFF30, 0xFFE0, 0x0000, 0x0000,
+  // 0xCB 'Ë'
+  0x0000, 0x0000, 0x01FF, 0x0733, 0x0C33, 0x0C33, 0x0C2F, 0x0C00,
+  0x0C7F, 0x0CF0, 0x0CFF, 0x0CFF, 0x0CFF, 0x0BFF, 0x0000, 0x0000,
+  // 0xCC 'Ì'
+  0x0000, 0x0000, 0x01D0, 0x1FF0, 0xFFF0, 0xFFF0, 0xFFF0, 0xFFF0,
+  0xFFF0, 0xFFF0, 0xFFF0, 0xFFF0, 0x1FF0, 0x01D0, 0x0000, 0x0000,
+  // 0xCD 'Í'
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0001, 0x001F, 0x01FF, 0x1FFF,
+  0x1FFF, 0x01FF, 0x001F, 0x0001, 0x0000, 0x0000, 0x0000, 0x0000,
+  // 0xCE 'Î'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xCF 'Ï'
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
 };
 
 }  // namespace nes
 
 #endif // SHAPONES_FONT8X16_HPP
+// #include "shapones/fs.hpp"
+
 // #include "shapones/host_intf.hpp"
 
 // #include "shapones/input.hpp"
 
+// #include "shapones/interrupt.hpp"
+
+// #include "shapones/state.hpp"
+
 
 namespace nes::menu {
 
-static constexpr int MENU_MAX_ITEMS = 1024;
-#if SHAPONES_MENU_LARGE_FONT
-static constexpr int CHAR_WIDTH = 12;
-static constexpr int CHAR_HEIGHT = 24;
-static constexpr int MARGIN_X = 0;
-static constexpr int MARGIN_Y = 0;
-#else
 static constexpr int CHAR_WIDTH = 8;
 static constexpr int CHAR_HEIGHT = 16;
-static constexpr int MARGIN_X = 2;
-static constexpr int MARGIN_Y = 2;
-#endif
+#if SHAPONES_MENU_LARGE_FONT
+static constexpr int BUFF_WIDTH = SCREEN_WIDTH / (CHAR_WIDTH * 2);
+static constexpr int BUFF_HEIGHT = SCREEN_HEIGHT / (CHAR_HEIGHT * 2);
+static constexpr int CLIENT_X = 0;
+static constexpr int CLIENT_Y = 1;
+static constexpr int CLIENT_WIDTH = BUFF_WIDTH - 0;
+static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT - 1;
+#else
 static constexpr int BUFF_WIDTH = SCREEN_WIDTH / CHAR_WIDTH;
 static constexpr int BUFF_HEIGHT = SCREEN_HEIGHT / CHAR_HEIGHT;
+static constexpr int CLIENT_X = 1;
+static constexpr int CLIENT_Y = 2;
+static constexpr int CLIENT_WIDTH = BUFF_WIDTH - 2;
+static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT - 3;
+#endif
 
-static constexpr int CLIENT_X = MARGIN_X;
-static constexpr int CLIENT_Y = MARGIN_Y + 1;
-static constexpr int CLIENT_WIDTH = BUFF_WIDTH - MARGIN_X * 2;
-static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT - MARGIN_Y * 2 - 2;
+static constexpr int MENU_MAX_ITEMS = 256;
 
-static constexpr int LIST_LINES = CLIENT_HEIGHT - 1;
+static constexpr int POPUP_MAX_ITEMS = 4;
+static constexpr int POPUP_MAX_MESSAGE_LENGTH = 64;
+static constexpr int POPUP_WIDTH = BUFF_WIDTH - 8;
+static constexpr int POPUP_X = (BUFF_WIDTH - POPUP_WIDTH) / 2;
+static constexpr int POPUP_Y = (BUFF_HEIGHT - POPUP_MAX_ITEMS - 3) / 2;
+
+enum class tab_t {
+  NES_LIST,
+  SAVE_LIST,
+  MONITOR,
+  COUNT,
+};
+
+static constexpr int NUM_TABS = (int)tab_t::COUNT;
+
+enum class icon_t {
+  NONE,
+  PARENT,
+  FOLDER,
+  FILE,
+  ADD,
+  WARNING,
+  ERROR,
+  PLAY,
+  SAVE,
+};
+
+enum class action_t {
+  NONE,
+  OPEN_DIR,
+  LOAD_ROM,
+  ADD_STATE_SLOT,
+  STATE_SELECT,
+  LOAD_STATE,
+  SAVE_STATE,
+  DELETE_STATE,
+  FORCE_NMI_CONFIRM,
+  FORCE_NMI_TRIGGER,
+  CLOSE_POPUP,
+};
 
 // Workaround for the issue where repeated use of strdup in PicoLibSDK causes a
 // panic:
@@ -4251,56 +4783,189 @@ static char *strdup_safe(const char *src) {
   return dst;
 }
 
+static void request_redraw();
+
+class ListItem {
+ public:
+  const icon_t icon;
+  const action_t action;
+  const char *label;
+  const int32_t tag;
+  ListItem(icon_t icon, action_t action, const char *label, int32_t tag = 0)
+      : icon(icon), action(action), label(strdup_safe(label)), tag(tag) {}
+  ~ListItem() {
+    if (label != nullptr) {
+      delete[] label;
+      label = nullptr;
+    }
+  }
+};
+
+class ListBox {
+ public:
+  const int capacity;
+  ListItem **items;
+  int num_items;
+  int sel_index;
+  int scroll_pos;
+  int x, y, width, height;
+
+  ListBox(int capacity)
+      : capacity(capacity),
+        items(new ListItem *[capacity]),
+        num_items(0),
+        sel_index(0),
+        scroll_pos(0) {}
+
+  ~ListBox() {
+    for (int i = 0; i < num_items; i++) {
+      delete items[i];
+    }
+    delete[] items;
+  }
+
+  void set_bounds(int x, int y, int w, int h) {
+    this->x = x;
+    this->y = y;
+    this->width = w;
+    this->height = h;
+  }
+
+  ListItem *get_selected_item() const {
+    if (0 <= sel_index && sel_index < num_items) {
+      return items[sel_index];
+    } else {
+      return nullptr;
+    }
+  }
+
+  void clear() {
+    for (int i = 0; i < num_items; i++) {
+      delete items[i];
+    }
+    num_items = 0;
+    sel_index = 0;
+    scroll_pos = 0;
+    request_redraw();
+  }
+
+  void add_item(icon_t icon, action_t action, const char *label,
+                int32_t tag = 0) {
+    if (num_items >= capacity) return;
+    items[num_items++] = new ListItem(icon, action, label, tag);
+    request_redraw();
+  }
+
+  void on_key_down(input::status_t key) {
+    if (key.up) {
+      if (num_items > 0) {
+        sel_index = (sel_index + num_items - 1) % num_items;
+        scroll_to(sel_index);
+        request_redraw();
+      }
+    } else if (key.down) {
+      if (num_items > 0) {
+        sel_index = (sel_index + 1) % num_items;
+        scroll_to(sel_index);
+        request_redraw();
+      }
+    }
+  }
+
+  void scroll_to(int index) {
+    if (index < scroll_pos) {
+      scroll_pos = index;
+      request_redraw();
+    } else if (index >= scroll_pos + height) {
+      scroll_pos = index - height + 1;
+      request_redraw();
+    }
+  }
+};
+
 bool shown = false;
 tab_t tab = tab_t::NES_LIST;
+int last_menu_index[NUM_TABS] = {0};
+volatile bool vsync = false;
 
-const uint8_t PALETTE_FILE[] = {0x1D, 0x00, 0x10, 0x20, 0x01, 0x11, 0x21, 0x20};
+const uint8_t PALETTE_FILE[] = {0x1D, 0x00, 0x10, 0x20, 0x21, 0x11, 0x01, 0x3F,
+                                0x2D, 0x00, 0x10, 0x3D, 0x3F, 0x0C, 0x1C, 0x2C};
 static constexpr int NUM_PALETTES = sizeof(PALETTE_FILE) / 4;
 
 uint8_t text_buff[BUFF_WIDTH * BUFF_HEIGHT];
 uint8_t palette_buff[BUFF_WIDTH * BUFF_HEIGHT];
 
-input::InputStatus key_pressed;
-input::InputStatus key_down;
+input::status_t key_pressed;
+input::status_t key_down;
+input::status_t key_up;
 
 bool disk_mounted = false;
-char current_dir[nes::MAX_PATH_LENGTH] = "";
-file_info_t file_list[MENU_MAX_ITEMS];
-int menu_scroll_y = 0;
-int menu_sel_index = 0;
-int menu_num_items = 0;
+char current_dir[nes::MAX_PATH_LENGTH + 1] = "";
+
+bool redraw_requested = false;
+
+ListBox menu(MENU_MAX_ITEMS);
+
+icon_t popup_icon = icon_t::NONE;
+char popup_message[POPUP_MAX_MESSAGE_LENGTH + 1] = "";
+ListBox popup_list(POPUP_MAX_ITEMS);
+bool popup_shown = false;
+
+uint8_t ss_buff[state::SS_SIZE_BYTES];
+bool ss_enable = false;
 
 static result_t load_tab(tab_t tab, bool force = false);
-static result_t service_nes_list();
-static void menu_clear();
 static result_t load_file_list_tab();
+static result_t load_state_list_tab();
+static result_t load_monitor_tab();
+static result_t load_state_screenshot();
+
+static int find_empty_slot();
+
+static result_t process_input();
+static result_t on_menu_selected(ListItem *item);
+
+static result_t on_open_dir(ListItem *mi);
+static result_t on_load_rom(ListItem *mi);
+static result_t on_add_state_slot();
+static result_t on_state_select(ListItem *mi);
+static result_t on_save_state(ListItem *mi);
+static result_t on_load_state(ListItem *mi);
+static result_t on_delete_state();
+static result_t on_force_nmi_trigger();
+
+static result_t show_message(icon_t icon, const char *msg);
+static result_t show_confirm(icon_t icon, const char *msg,
+                             action_t confirm_action);
+
+static void popup_show(icon_t icon, const char *msg);
+static void popup_close();
+
 static void perform_redraw();
-static void menu_scroll_to(int index);
 static int draw_text(int x, int y, const char *str, int max_len = 999999);
 static void draw_char(int x, int y, char c);
+static void draw_icon(int x, int y, icon_t icon);
+static void draw_frame(int x, int y, int w, int h, char offset);
+static void draw_list(const ListBox &list);
 static void fill_char(int x, int y, int w, int h, char c = ' ');
-static void fill_palette(int x, int y, int w, int h, uint8_t p = 0x00);
+static void fill_palette(int x, int y, int w, int h, uint8_t p);
 static void clip_rect(int *x, int *y, int *w, int *h);
-static bool is_root_dir(const char *path);
-static int find_parent_separator(const char *path);
-static int find_char_rev(const char *path, int start_idx = -1);
-static result_t append_separator(char *path);
-static result_t append_path(char *path, const char *name);
 
 result_t init() {
+  deinit();
   key_pressed.raw = 0;
   key_down.raw = 0;
+  key_up.raw = 0;
 
   shown = false;
   tab = tab_t::NES_LIST;
-  menu_clear();
   for (int i = 0; i < BUFF_WIDTH * BUFF_HEIGHT; i++) {
     text_buff[i] = '\0';
     palette_buff[i] = 0x00;
   }
   return result_t::SUCCESS;
 }
-void deinit() { menu_clear(); }
+void deinit() { menu.clear(); }
 
 void show() {
   if (shown) return;
@@ -4310,100 +4975,9 @@ void show() {
 
 void hide() {
   if (!shown) return;
+  popup_close();
+  menu.clear();
   shown = false;
-}
-
-result_t service() {
-  if (!shown) return result_t::SUCCESS;
-
-  input::InputStatus prev_pressed = key_pressed;
-  key_pressed = input::get_status(0);
-  key_down.raw = key_pressed.raw & ~prev_pressed.raw;
-
-  switch (tab) {
-    default:
-    case tab_t::NES_LIST: SHAPONES_TRY(service_nes_list()); break;
-  }
-  return result_t::SUCCESS;
-}
-
-static result_t service_nes_list() {
-  if (!disk_mounted) load_file_list_tab();
-
-  if (menu_num_items == 0) return result_t::SUCCESS;
-
-  if (key_down.up) {
-    menu_sel_index = (menu_sel_index + menu_num_items - 1) % menu_num_items;
-    menu_scroll_to(menu_sel_index);
-  } else if (key_down.down) {
-    menu_sel_index = (menu_sel_index + 1) % menu_num_items;
-    menu_scroll_to(menu_sel_index);
-  } else if (key_down.A) {
-    if (0 <= menu_sel_index && menu_sel_index < menu_num_items) {
-      file_info_t &fi = file_list[menu_sel_index];
-      if (!fi.is_dir) {
-        char path[nes::MAX_PATH_LENGTH];
-        strncpy(path, current_dir, nes::MAX_PATH_LENGTH);
-        SHAPONES_TRY(append_path(path, fi.name));
-        SHAPONES_TRY(request_load_nes_file(path));
-      } else {
-        if (strcmp(fi.name, "..") == 0) {
-          // parent directory
-          int sep_idx = find_parent_separator(current_dir);
-          if (sep_idx >= 0) {
-            current_dir[sep_idx + 1] = '\0';
-          }
-        } else {
-          // sub directory
-          SHAPONES_TRY(append_path(current_dir, fi.name));
-        }
-        SHAPONES_TRY(append_separator(current_dir));
-        load_file_list_tab();
-      }
-    }
-  }
-
-  return result_t::SUCCESS;
-}
-
-result_t overlay(int y, uint8_t *line_buff) {
-  if (!shown) return result_t::SUCCESS;
-
-  int iy = y / CHAR_HEIGHT;
-  if (iy < 0 || iy >= BUFF_HEIGHT) {
-    return result_t::SUCCESS;
-  }
-
-  for (int ix = 0; ix < BUFF_WIDTH; ix++) {
-    int x = ix * CHAR_WIDTH;
-    uint8_t c = text_buff[iy * BUFF_WIDTH + ix];
-    uint8_t p = palette_buff[iy * BUFF_WIDTH + ix] % NUM_PALETTES;
-#if SHAPONES_MENU_LARGE_FONT
-    const uint8_t code_first = FONT12X24_CODE_FIRST;
-    const uint8_t code_last = FONT12X24_CODE_LAST;
-#else
-    const uint8_t code_first = FONT8X16_CODE_FIRST;
-    const uint8_t code_last = FONT8X16_CODE_LAST;
-#endif
-    if (c < code_first || code_last < c) {
-      continue;
-    }
-
-#if SHAPONES_MENU_LARGE_FONT
-    uint32_t font_word =
-        FONT12X24_DATA[((int)c - code_first) * CHAR_HEIGHT + (y % CHAR_HEIGHT)];
-#else
-    uint16_t font_word =
-        FONT8X16_DATA[((int)c - code_first) * CHAR_HEIGHT + (y % CHAR_HEIGHT)];
-#endif
-    for (int ipix = 0; ipix < CHAR_WIDTH; ipix++) {
-      int color_index = font_word & 0x03;
-      font_word >>= 2;
-      line_buff[x + ipix] = PALETTE_FILE[p * 4 + color_index];
-    }
-  }
-
-  return result_t::SUCCESS;
 }
 
 static result_t load_tab(tab_t t, bool force) {
@@ -4413,23 +4987,24 @@ static result_t load_tab(tab_t t, bool force) {
 
   switch (tab) {
     case tab_t::NES_LIST: SHAPONES_TRY(load_file_list_tab()); break;
+    case tab_t::SAVE_LIST: SHAPONES_TRY(load_state_list_tab()); break;
+    case tab_t::MONITOR: SHAPONES_TRY(load_monitor_tab()); break;
   }
+
+  int i = last_menu_index[static_cast<int>(tab)];
+  if (0 <= i && i < menu.num_items) {
+    menu.sel_index = i;
+  }
+
+  request_redraw();
 
   return result_t::SUCCESS;
 }
 
-static void menu_clear() {
-  for (int i = 0; i < menu_num_items; i++) {
-    if (file_list[i].name) {
-      delete[] file_list[i].name;
-      file_list[i].name = nullptr;
-    }
-  }
-  menu_num_items = 0;
-}
-
 static result_t load_file_list_tab() {
-  menu_clear();
+  menu.set_bounds(CLIENT_X, CLIENT_Y + 1, CLIENT_WIDTH, CLIENT_HEIGHT - 1);
+
+  menu.clear();
 
   if (!disk_mounted) {
     if (fs_mount() == result_t::SUCCESS) {
@@ -4441,113 +5016,458 @@ static result_t load_file_list_tab() {
 
   if (current_dir[0] == '\0') {
     SHAPONES_TRY(fs_get_current_dir(current_dir));
-    SHAPONES_TRY(append_separator(current_dir));
+    SHAPONES_TRY(fs::append_separator(current_dir));
   }
 
-  if (!is_root_dir(current_dir)) {
+  if (!fs::is_root_dir(current_dir)) {
     // add parent directory entry
-    file_list[0].is_dir = true;
-    file_list[0].name = strdup_safe("..");
-    menu_num_items = 1;
+    menu.add_item(icon_t::PARENT, action_t::OPEN_DIR, "../");
   }
 
   result_t res = fs_enum_files(current_dir, [](const file_info_t &info) {
-    file_list[menu_num_items] = info;
-    file_list[menu_num_items].name = strdup_safe(info.name);
-    menu_num_items++;
-    return (menu_num_items < MENU_MAX_ITEMS);
+    char *name = (char *)info.name;
+    if (info.is_dir) {
+      // append '/' to directory names
+      size_t len = strnlen(name, nes::MAX_FILENAME_LENGTH + 1);
+      char name[nes::MAX_FILENAME_LENGTH + 2];
+      strncpy(name, info.name, nes::MAX_FILENAME_LENGTH);
+      name[len++] = '/';
+      name[len] = '\0';
+    }
+    icon_t icon = info.is_dir ? icon_t::FOLDER : icon_t::FILE;
+    action_t action = info.is_dir ? action_t::OPEN_DIR : action_t::LOAD_ROM;
+    menu.add_item(icon, action, name);
+    return (menu.num_items < menu.capacity);
   });
   if (res != result_t::SUCCESS) {
-    menu_num_items = 0;
+    menu.clear();
+    return res;
   }
 
   // sort by name
-  for (int i = 0; i < menu_num_items - 1; i++) {
-    file_info_t &fi = file_list[i];
-    for (int j = i + 1; j < menu_num_items; j++) {
-      file_info_t &fj = file_list[j];
+  for (int i = 0; i < menu.num_items - 1; i++) {
+    for (int j = i + 1; j < menu.num_items; j++) {
+      const ListItem *mi = menu.items[i];
+      const ListItem *mj = menu.items[j];
       bool swap = false;
-      if (fi.is_dir != fj.is_dir) {
-        swap = fj.is_dir;
+      if (mi->icon != mj->icon) {
+        swap = mi->icon > mj->icon;
       } else {
-        swap = strcmp(fi.name, fj.name) > 0;
+        swap = strcmp(mi->label, mj->label) > 0;
       }
       if (swap) {
-        file_info_t temp = file_list[i];
-        file_list[i] = file_list[j];
-        file_list[j] = temp;
+        ListItem *temp = menu.items[i];
+        menu.items[i] = menu.items[j];
+        menu.items[j] = temp;
       }
     }
   }
 
-  menu_scroll_y = 0;
-  menu_sel_index = 0;
+  ss_enable = false;
+  request_redraw();
+  return res;
+}
 
-  perform_redraw();
+static result_t load_state_list_tab() {
+  result_t res = result_t::SUCCESS;
+
+  menu.set_bounds(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, CLIENT_HEIGHT);
+
+  menu.clear();
+  char state_path[nes::MAX_PATH_LENGTH + 1];
+  strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
+  SHAPONES_TRY(fs::replace_ext(state_path, state::STATE_FILE_EXT));
+
+  do {
+    if (nes::fs_exists(state_path)) {
+      res = state::enum_slots(
+          state_path, [](const state::state_slot_entry_t &entry) {
+            if (!entry.is_used()) return true;
+            char label[nes::MAX_FILENAME_LENGTH + 1];
+            uint32_t t = entry.play_time_sec;
+            if (t < 60) {
+              snprintf(label, sizeof(label), "#%02d %ds", entry.index, t);
+            } else if (t < 3600) {
+              snprintf(label, sizeof(label), "#%02d %dm", entry.index, t / 60);
+            } else {
+              snprintf(label, sizeof(label), "#%02d %.1fh", entry.index,
+                       (float)t / 3600);
+            }
+            menu.add_item(icon_t::FILE, action_t::STATE_SELECT, label,
+                          entry.index);
+            return (menu.num_items < menu.capacity);
+          });
+      if (res != result_t::SUCCESS) {
+        break;
+      }
+    }
+
+    if (menu.num_items < state::MAX_SLOTS) {
+      menu.add_item(icon_t::ADD, action_t::ADD_STATE_SLOT, "New Slot", -1);
+    }
+
+    load_state_screenshot();
+  } while (0);
+
+  if (res != result_t::SUCCESS) {
+    menu.clear();
+    popup_close();
+    popup_list.add_item(icon_t::NONE, action_t::DELETE_STATE, "DELETE FILE");
+    popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+    popup_list.sel_index = 1;
+    popup_show(icon_t::ERROR, "Data Broken.");
+  }
+
+  request_redraw();
 
   return res;
 }
 
-static void menu_scroll_to(int index) {
-  if (index < menu_scroll_y) {
-    menu_scroll_y = index;
-  } else if (index >= menu_scroll_y + LIST_LINES) {
-    menu_scroll_y = index - LIST_LINES + 1;
-  }
-  perform_redraw();
+static result_t load_monitor_tab() {
+  menu.clear();
+  menu.add_item(icon_t::NONE, action_t::FORCE_NMI_CONFIRM, "Force NMI");
+  request_redraw();
+  return result_t::SUCCESS;
 }
 
-static void perform_redraw() {
-  // current directory
-  fill_char(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1);
-  draw_text(CLIENT_X, CLIENT_Y, current_dir, CLIENT_WIDTH);
-  fill_palette(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1, 0);
+static result_t load_state_screenshot() {
+  char state_path[nes::MAX_PATH_LENGTH + 1];
+  strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
+  SHAPONES_TRY(fs::replace_ext(state_path, state::STATE_FILE_EXT));
 
-  // file list area
-  {
-    const int TEXT_END_X = CLIENT_X + CLIENT_WIDTH - 1;
-    for (int iy = 0; iy < LIST_LINES; iy++) {
-      file_info_t &fi = file_list[menu_scroll_y + iy];
-      int y = CLIENT_Y + 1 + iy;
-      int i = menu_scroll_y + iy;
-      fill_char(CLIENT_X, y, CLIENT_WIDTH - 1, 1);
-      if (0 <= i && i < menu_num_items) {
-        int x = CLIENT_X;
-        if (!fi.is_dir) {
-          x += draw_text(x, y, "\xA8\xA9");  // file icon
-        } else if (strcmp(fi.name, "..") == 0) {
-          x += draw_text(x, y, "\xA4\xA5");  // parent folder icon
-        } else {
-          x += draw_text(x, y, "\xA6\xA7");  // folder icon
-        }
-        x += 1;
-        x += draw_text(x, y, fi.name, TEXT_END_X - x);
-        if (x > TEXT_END_X - 1) x = TEXT_END_X - 1;
-        if (fi.is_dir) {
-          draw_text(x, y, "/");
-        }
-      }
-      if (i == menu_sel_index) {
-        fill_palette(CLIENT_X, y, CLIENT_WIDTH - 1, 1, 1);  // highlight color
-      } else {
-        fill_palette(CLIENT_X, y, CLIENT_WIDTH - 1, 1, 0);  // normal color
-      }
+  ss_enable = false;
+  auto *mi = menu.get_selected_item();
+  if (mi && mi->tag >= 0) {
+    result_t res = state::read_screenshot(state_path, mi->tag, ss_buff);
+    ss_enable = (res == result_t::SUCCESS);
+  }
+  return result_t::SUCCESS;
+}
+
+result_t service() {
+  if (!vsync) return result_t::SUCCESS;
+  vsync = false;
+
+  if (!shown) return result_t::SUCCESS;
+
+  input::status_t prev_pressed = key_pressed;
+  key_pressed = input::get_status(0);
+  key_down.raw = key_pressed.raw & ~prev_pressed.raw;
+  key_up.raw = ~key_pressed.raw & prev_pressed.raw;
+
+  process_input();
+  if (redraw_requested) {
+    redraw_requested = false;
+    perform_redraw();
+  }
+
+  return result_t::SUCCESS;
+}
+
+static int find_empty_slot() {
+  uint64_t used_flags = 0;
+  for (int i = 0; i < menu.num_items; i++) {
+    if (menu.items[i]->tag >= 0) {
+      used_flags |= (1 << menu.items[i]->tag);
     }
   }
-  // scroll bar
-  {
-    int x = CLIENT_X + CLIENT_WIDTH - 1;
-    int y = CLIENT_Y + 1;
-    int p = 0;
-    if (menu_num_items > LIST_LINES) {
-      int n = (menu_num_items - LIST_LINES);
-      p = (menu_scroll_y * (LIST_LINES - 3) + (n - 1)) / n;
+  for (int i = 0; i < state::MAX_SLOTS; i++) {
+    if ((used_flags & (1 << i)) == 0) {
+      return i;
     }
-    fill_palette(x, y, LIST_LINES, 0);
-    draw_char(x, y, 0xA0);                   // up arrow
-    draw_char(x, y + LIST_LINES - 1, 0xA1);  // down arrow
-    fill_char(x, y + 1, 1, LIST_LINES - 2, 0xA2);
-    draw_char(x, y + 1 + p, 0xA3);  // scroll bar
+  }
+  return -1;
+}
+
+static result_t process_input() {
+  if (key_up.A) {
+    ListItem *mi = nullptr;
+    if (popup_shown) {
+      mi = popup_list.get_selected_item();
+    } else {
+      mi = menu.get_selected_item();
+    }
+    if (mi) {
+      on_menu_selected(mi);
+    }
+  } else if (key_down.select) {
+    if (!popup_shown) {
+      tab_t new_tab =
+          static_cast<tab_t>((static_cast<int>(tab) + 1) % NUM_TABS);
+      load_tab(new_tab);
+    }
+  } else if (popup_shown) {
+    popup_list.on_key_down(key_down);
+  } else {
+    int prev_sel = menu.sel_index;
+    menu.on_key_down(key_down);
+    int new_sel = menu.sel_index;
+    if (tab == tab_t::SAVE_LIST && prev_sel != new_sel) {
+      load_state_screenshot();
+    }
+    last_menu_index[static_cast<int>(tab)] = menu.sel_index;
+  }
+  return result_t::SUCCESS;
+}
+
+static result_t on_menu_selected(ListItem *mi) {
+  result_t res = result_t::SUCCESS;
+  switch (mi->action) {
+    case action_t::OPEN_DIR: res = on_open_dir(mi); break;
+    case action_t::LOAD_ROM: res = on_load_rom(mi); break;
+    case action_t::ADD_STATE_SLOT: res = on_add_state_slot(); break;
+    case action_t::STATE_SELECT: res = on_state_select(mi); break;
+    case action_t::LOAD_STATE: res = on_load_state(mi); break;
+    case action_t::SAVE_STATE: res = on_save_state(mi); break;
+    case action_t::DELETE_STATE: res = on_delete_state(); break;
+    case action_t::FORCE_NMI_CONFIRM:
+      show_confirm(icon_t::WARNING, "Force NMI?", action_t::FORCE_NMI_TRIGGER);
+      break;
+    case action_t::FORCE_NMI_TRIGGER: res = on_force_nmi_trigger(); break;
+    case action_t::CLOSE_POPUP: popup_close(); break;
+  }
+
+  if (res != result_t::SUCCESS) {
+    show_message(icon_t::ERROR, result_to_string(res));
+  }
+
+  return res;
+}
+
+static result_t on_open_dir(ListItem *mi) {
+  if (strcmp(mi->label, "../") == 0) {
+    // parent directory
+    int sep_idx = fs::find_parent_separator(current_dir);
+    if (sep_idx >= 0) {
+      current_dir[sep_idx + 1] = '\0';
+    }
+  } else {
+    // sub directory
+    SHAPONES_TRY(fs::append_path(current_dir, mi->label));
+  }
+  SHAPONES_TRY(fs::append_separator(current_dir));
+  load_file_list_tab();
+  return result_t::SUCCESS;
+}
+
+static result_t on_load_rom(ListItem *mi) {
+  char path[nes::MAX_PATH_LENGTH + 1];
+  strncpy(path, current_dir, nes::MAX_PATH_LENGTH);
+  SHAPONES_TRY(fs::append_path(path, mi->label));
+  const uint8_t *ines = nullptr;
+  size_t ines_size = 0;
+  SHAPONES_TRY(load_ines(path, &ines, &ines_size));
+  SHAPONES_TRY(map_ines(ines, path));
+  hide();
+  return result_t::SUCCESS;
+}
+
+static result_t on_add_state_slot() {
+  char path[nes::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  int slot = find_empty_slot();
+  if (slot < 0) return result_t::ERR_STATE_SLOT_FULL;
+  state::save(path, slot);
+  load_state_list_tab();
+  return result_t::SUCCESS;
+}
+
+static result_t on_state_select(ListItem *mi) {
+  popup_list.clear();
+  popup_message[0] = '\0';
+  popup_list.add_item(icon_t::PLAY, action_t::LOAD_STATE, "Load", mi->tag);
+  popup_list.add_item(icon_t::SAVE, action_t::SAVE_STATE, "Save", mi->tag);
+  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+  popup_show(icon_t::NONE, "Action?");
+  return result_t::SUCCESS;
+}
+
+static result_t on_save_state(ListItem *mi) {
+  char path[nes::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  SHAPONES_TRY(state::save(path, mi->tag));
+  popup_close();
+  load_state_list_tab();
+  return result_t::SUCCESS;
+}
+
+static result_t on_load_state(ListItem *mi) {
+  char path[nes::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  SHAPONES_TRY(state::load(path, mi->tag));
+  popup_close();
+  hide();
+  return result_t::SUCCESS;
+}
+
+static result_t on_delete_state() {
+  char path[nes::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  SHAPONES_TRY(nes::fs_delete(path));
+  popup_close();
+  load_state_list_tab();
+  return result_t::SUCCESS;
+}
+
+static result_t on_force_nmi_trigger() {
+  interrupt::assert_nmi();
+  popup_close();
+  hide();
+  return result_t::SUCCESS;
+}
+
+static result_t show_message(icon_t icon, const char *msg) {
+  popup_list.clear();
+  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Close");
+  popup_show(icon, msg);
+  return result_t::SUCCESS;
+}
+
+static result_t show_confirm(icon_t icon, const char *msg,
+                             action_t confirm_action) {
+  popup_list.clear();
+  popup_list.add_item(icon_t::NONE, confirm_action, "OK");
+  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+  popup_show(icon, msg);
+  return result_t::SUCCESS;
+}
+
+result_t overlay(int y, uint8_t *line_buff) {
+  if (y == SCREEN_HEIGHT - 1) {
+    vsync = true;
+  }
+
+  if (!shown) return result_t::SUCCESS;
+
+#if SHAPONES_MENU_LARGE_FONT
+  int iy = (y / 2) / CHAR_HEIGHT;
+  int sy = (y / 2) % CHAR_HEIGHT;
+#else
+  int iy = y / CHAR_HEIGHT;
+  int sy = y % CHAR_HEIGHT;
+#endif
+  if (iy < 0 || iy >= BUFF_HEIGHT) {
+    return result_t::SUCCESS;
+  }
+
+  for (int ix = 0; ix < BUFF_WIDTH; ix++) {
+    int x = ix * CHAR_WIDTH;
+    uint8_t c = text_buff[iy * BUFF_WIDTH + ix];
+    uint8_t p = palette_buff[iy * BUFF_WIDTH + ix] % NUM_PALETTES;
+    if (c < FONT8X16_CODE_FIRST || FONT8X16_CODE_LAST < c) {
+      continue;
+    }
+    uint16_t word =
+        FONT8X16_DATA[((int)c - FONT8X16_CODE_FIRST) * CHAR_HEIGHT + sy];
+    for (int ipix = 0; ipix < CHAR_WIDTH; ipix++) {
+      int color_index = word & 0x03;
+      word >>= 2;
+#if SHAPONES_MENU_LARGE_FONT
+      int dx = (x + ipix) * 2;
+      line_buff[dx + 0] = PALETTE_FILE[p * 4 + color_index];
+      line_buff[dx + 1] = PALETTE_FILE[p * 4 + color_index];
+#else
+      line_buff[x + ipix] = PALETTE_FILE[p * 4 + color_index];
+#endif
+    }
+  }
+
+  if (ss_enable && !popup_shown) {
+    // scren shot
+    int ss_x = SCREEN_WIDTH - CHAR_WIDTH * 2 - state::SS_WIDTH - 2;
+    int ss_y = SCREEN_HEIGHT - CHAR_HEIGHT * 2 - state::SS_HEIGHT - 2;
+    if (ss_y <= y && y < ss_y + state::SS_HEIGHT) {
+      int sy = y - ss_y;
+      memcpy(&line_buff[ss_x], &ss_buff[sy * state::SS_WIDTH], state::SS_WIDTH);
+    }
+  }
+
+  return result_t::SUCCESS;
+}
+
+static void popup_show(icon_t icon, const char *msg) {
+  popup_icon = icon;
+  strncpy(popup_message, msg, POPUP_MAX_MESSAGE_LENGTH);
+
+  popup_shown = true;
+  int msg_w = strnlen(msg, POPUP_MAX_MESSAGE_LENGTH) + 4;
+  int list_w = msg_w;
+  for (int i = 0; i < popup_list.num_items; i++) {
+    auto *mi = popup_list.items[i];
+    int item_w = strnlen(mi->label, POPUP_MAX_MESSAGE_LENGTH) + 4;
+    if (item_w > list_w) {
+      list_w = item_w;
+    }
+  }
+  int list_x = (BUFF_WIDTH - list_w) / 2;
+
+  int frame_h = popup_list.num_items + 2;
+  int message_h = 0;
+  if (msg_w > 0) {
+    message_h = 1;
+  }
+  frame_h += message_h;
+  int frame_y = (BUFF_HEIGHT - frame_h) / 2;
+  int list_y = frame_y + 1 + message_h;
+  popup_list.set_bounds(list_x, list_y, list_w, popup_list.num_items);
+  request_redraw();
+}
+
+static void popup_close() {
+  popup_list.clear();
+  popup_shown = false;
+  request_redraw();
+}
+
+static void request_redraw() { redraw_requested = true; }
+
+static void perform_redraw() {
+  fill_char(0, 0, BUFF_WIDTH, 1, ' ');
+  draw_frame(CLIENT_X - 1, CLIENT_Y - 1, CLIENT_WIDTH + 2, CLIENT_HEIGHT + 2,
+             '\x80');
+
+  // tab bar
+  draw_text(CLIENT_X, CLIENT_Y - 1, "\x88\x89");
+  for (int itab = 0; itab < NUM_TABS; itab++) {
+    for (int i = 0; i < 3; i++) {
+      char c = '\xA0' + itab * 3 + i;
+      if (itab == (int)tab) {
+        c += 0x10;
+      }
+      draw_char(CLIENT_X + 2 + itab * 3 + i, CLIENT_Y - 1, c);
+    }
+  }
+
+  if (tab == tab_t::NES_LIST) {
+    // current directory
+    fill_char(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1);
+    draw_text(CLIENT_X, CLIENT_Y, current_dir, CLIENT_WIDTH);
+    fill_palette(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, 1, 2);
+  }
+
+  // file list area
+  draw_list(menu);
+
+  // popup
+  if (popup_shown) {
+    int message_h = 0;
+    if (popup_message[0] != '\0') {
+      message_h = 1;
+    }
+    draw_frame(popup_list.x - 1, popup_list.y - 1 - message_h,
+               popup_list.width + 2, popup_list.height + 2 + message_h, '\x90');
+    if (message_h > 0) {
+      fill_char(popup_list.x, popup_list.y - 1, popup_list.width, 1);
+      int icon_w = 0;
+      if (popup_icon != icon_t::NONE) {
+        icon_w = 3;
+        draw_icon(popup_list.x, popup_list.y - 1, popup_icon);
+      }
+      draw_text(popup_list.x + icon_w, popup_list.y - 1, popup_message,
+                popup_list.width - icon_w);
+      fill_palette(popup_list.x, popup_list.y - 1, popup_list.width, 1, 0);
+    }
+    draw_list(popup_list);
   }
 }
 
@@ -4566,6 +5486,80 @@ static void draw_char(int x, int y, char c) {
   }
 }
 
+static void draw_icon(int x, int y, icon_t icon) {
+  const char *text = nullptr;
+  switch (icon) {
+    case icon_t::PARENT: text = "\xC0\xC1"; break;
+    case icon_t::FOLDER: text = "\xC2\xC3"; break;
+    case icon_t::FILE: text = "\xC4\xC5"; break;
+    case icon_t::ADD: text = "\xC8\xC9"; break;
+    case icon_t::SAVE: text = "\xCA\xCB"; break;
+    case icon_t::PLAY: text = "\xCC\xCD"; break;
+  }
+  if (text) draw_text(x, y, text);
+}
+
+static void draw_frame(int x, int y, int w, int h, char offset) {
+  // top border
+  draw_char(x, y, offset + 0);
+  fill_char(x + 1, y, w - 2, 1, offset + 1);
+  draw_char(x + w - 1, y, offset + 2);
+  fill_palette(x, y, w, 2, 0);
+
+  // side borders
+  fill_char(x, y + 1, 1, h - 2, offset + 3);
+  fill_palette(x, y + 1, 1, h - 2, 0);
+  fill_char(x + w - 1, y + 1, 1, h - 2, offset + 4);
+  fill_palette(x + w - 1, y + 1, 1, h - 2, 0);
+
+  // bottom border
+  draw_char(x, y + h - 1, offset + 5);
+  fill_char(x + 1, y + h - 1, w - 2, 1, offset + 6);
+  draw_char(x + w - 1, y + h - 1, offset + 7);
+  fill_palette(x, y + h - 1, w, 1, 0);
+}
+
+static void draw_list(const ListBox &list) {
+  int x = list.x;
+  int y = list.y;
+  int w = list.width;
+  int h = list.height;
+  int item_w = list.width;
+
+  if (list.num_items > list.height) {
+    // scroll bar
+    item_w = list.width - 1;
+    int list_right = CLIENT_X + CLIENT_WIDTH - 1;
+    int button_pos = 0;
+    if (list.num_items > h) {
+      int n = (list.num_items - h);
+      button_pos = (list.scroll_pos * (h - 3) + (n - 1)) / n;
+    }
+    fill_palette(list_right, y, 1, h, 0);
+    draw_char(list_right, y, '\x8C');          // up arrow
+    draw_char(list_right, y + h - 1, '\x8D');  // down arrow
+    fill_char(list_right, y + 1, 1, h - 2, '\x8E');
+    draw_char(list_right, y + 1 + button_pos, '\x8F');  // scroll bar
+  }
+
+  for (int iy = 0; iy < h; iy++) {
+    int i = iy + list.scroll_pos;
+    fill_char(x, y + iy, item_w, 1, ' ');
+    if (0 <= i && i < list.num_items) {
+      auto *mi = list.items[i];
+      if (mi->icon != icon_t::NONE) {
+        draw_icon(x, y + iy, mi->icon);
+      }
+      draw_text(x + 3, y + iy, mi->label, item_w - 3);
+    }
+    if (i == list.sel_index) {
+      fill_palette(x, y + iy, item_w, 1, 1);  // highlight color
+    } else {
+      fill_palette(x, y + iy, item_w, 1, 0);  // normal color
+    }
+  }
+}
+
 static void fill_char(int x, int y, int w, int h, char c) {
   clip_rect(&x, &y, &w, &h);
   for (int iy = 0; iy < h; iy++) {
@@ -4578,8 +5572,9 @@ static void fill_char(int x, int y, int w, int h, char c) {
 static void fill_palette(int x, int y, int w, int h, uint8_t p) {
   clip_rect(&x, &y, &w, &h);
   for (int iy = 0; iy < h; iy++) {
+    int offset = (y + iy) * BUFF_WIDTH + x;
     for (int ix = 0; ix < w; ix++) {
-      palette_buff[(y + iy) * BUFF_WIDTH + (x + ix)] = p;
+      palette_buff[offset + ix] = p;
     }
   }
 }
@@ -4601,64 +5596,12 @@ static void clip_rect(int *x, int *y, int *w, int *h) {
   }
 }
 
-static bool is_root_dir(const char *path) {
-  return find_parent_separator(path) < 0;
-}
-
-static int find_parent_separator(const char *path) {
-  int n = strnlen(path, nes::MAX_PATH_LENGTH);
-  if (n == 0) {
-    return -1;
-  }
-  if (path[n - 1] == '/') {
-    n--;
-  }
-  return find_char_rev(path, n);
-}
-
-static int find_char_rev(const char *path, int start_idx) {
-  if (start_idx < 0) {
-    start_idx = strnlen(path, nes::MAX_PATH_LENGTH);
-  } else if (start_idx == 0) {
-    return -1;
-  }
-  for (int i = start_idx - 1; i >= 0; i--) {
-    if (path[i] == '/') {
-      return i;
-    }
-  }
-  return -1;
-}
-
-static result_t append_separator(char *path) {
-  int len = strnlen(path, nes::MAX_PATH_LENGTH);
-  if (path[len - 1] == '/') {
-    return result_t::SUCCESS;
-  }
-  if (len + 1 >= nes::MAX_PATH_LENGTH) {
-    return result_t::ERR_PATH_TOO_LONG;
-  }
-  path[len++] = '/';
-  path[len] = '\0';
-  return result_t::SUCCESS;
-}
-
-static result_t append_path(char *path, const char *name) {
-  SHAPONES_TRY(append_separator(path));
-  int len = strnlen(path, nes::MAX_PATH_LENGTH);
-  int name_len = strnlen(name, nes::MAX_PATH_LENGTH);
-  if (len + name_len >= nes::MAX_PATH_LENGTH) {
-    return result_t::ERR_PATH_TOO_LONG;
-  }
-
-  strcat(path, name);
-  return result_t::SUCCESS;
-}
-
 }  // namespace nes::menu
 // #include "shapones/ppu.hpp"
 
 // #include "shapones/cpu.hpp"
+
+// #include "shapones/host_intf.hpp"
 
 // #include "shapones/interrupt.hpp"
 
@@ -4670,18 +5613,22 @@ static result_t append_path(char *path, const char *name) {
 
 // #include "shapones/menu.hpp"
 
+// #include "shapones/state.hpp"
+
 
 namespace nes::ppu {
 
-static Registers reg;
+static constexpr uint32_t STATE_HEADER_SIZE = registers_t::STATE_SIZE + 32;
+
+static registers_t reg;
 
 volatile cycle_t cycle_count;
 
-static int focus_x;
-static int focus_y;
+static uint16_t focus_x;
+static uint16_t focus_y;
 
 static volatile uint16_t scroll_counter;
-static int fine_x;
+static uint8_t fine_x_counter;
 
 static uint8_t bus_read_data_latest = 0;
 static uint8_t bus_read_data_delayed = 0;
@@ -4692,17 +5639,9 @@ static bool nmi_level = false;
 
 static uint8_t palette_file[PALETTE_NUM_BANK * PALETTE_SIZE];
 
-static oam_entry_t oam[MAX_SPRITE_COUNT];
+static uint8_t oam[OAM_SIZE];
 static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
-
-// todo: delete
-#if 0
-static volatile bool mmc3_irq_enable = false;
-static volatile bool mmc3_irq_reloading = false;
-static volatile uint8_t mmc3_irq_latch = 255;
-static volatile uint8_t mmc3_irq_counter = 0;
-#endif
 
 static uint8_t bus_read(addr_t addr);
 static void bus_write(addr_t addr, uint8_t data);
@@ -4715,17 +5654,16 @@ static void render_bg(uint8_t *line_buff, int x0, int x1, bool skip_render);
 static void enum_visible_sprites(bool skip_render);
 static void render_sprite(uint8_t *line_buff, int x0, int x1, bool skip_render);
 
-result_t init() { return result_t::SUCCESS; }
+result_t init() {
+  deinit();
+  return result_t::SUCCESS;
+}
 void deinit() {}
 
 result_t reset() {
   // https://www.nesdev.org/wiki/PPU_power_up_state
-  reg.control.raw = 0;
-  reg.mask.raw = 0;
-  reg.oam_addr = 0;
-  reg.scroll = 0;
-  reg.status.raw = 0;
-  reg.fine_x = 0;
+  memset(&reg, 0, sizeof(registers_t));
+  memset(oam, 0, sizeof(oam));
 
   bus_read_data_latest = 0;
   bus_read_data_delayed = 0;
@@ -4752,7 +5690,7 @@ uint8_t reg_read(addr_t addr) {
   uint8_t retval;
   switch (addr) {
     case REG_PPUSTATUS: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       retval = reg.status.raw;
       reg.status.vblank_flag = 0;
       scroll_ppuaddr_high_stored = false;
@@ -4761,7 +5699,7 @@ uint8_t reg_read(addr_t addr) {
     case REG_OAMDATA: retval = oam_read(reg.oam_addr); break;
 
     case REG_PPUDATA: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
@@ -4783,7 +5721,7 @@ uint8_t reg_read(addr_t addr) {
 void reg_write(addr_t addr, uint8_t data) {
   switch (addr) {
     case REG_PPUCTRL: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       // name sel bits
       reg.scroll &= 0xf3ff;
       reg.scroll |= (uint16_t)(data & 0x3) << 10;
@@ -4798,7 +5736,7 @@ void reg_write(addr_t addr, uint8_t data) {
     case REG_OAMDATA: oam_write(reg.oam_addr, data); break;
 
     case REG_PPUSCROLL: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       if (!scroll_ppuaddr_high_stored) {
         reg.scroll &= ~SCROLL_MASK_COARSE_X;
         reg.scroll |= (data >> 3) & SCROLL_MASK_COARSE_X;
@@ -4813,7 +5751,7 @@ void reg_write(addr_t addr, uint8_t data) {
     } break;
 
     case REG_PPUADDR: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       if (!scroll_ppuaddr_high_stored) {
         reg.scroll &= 0x00ffu;
         reg.scroll |= ((uint16_t)data << 8) & 0x3f00u;
@@ -4827,7 +5765,7 @@ void reg_write(addr_t addr, uint8_t data) {
     } break;
 
     case REG_PPUDATA: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       uint_fast16_t scr = scroll_counter;
       addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
       bus_write(addr, data);
@@ -4890,21 +5828,11 @@ static SHAPONES_INLINE void bus_write(addr_t addr, uint8_t data) {
 }
 
 static SHAPONES_INLINE uint8_t oam_read(addr_t addr) {
-  switch (addr & 0x3) {
-    case 0: return oam[addr / 4].y;
-    case 1: return oam[addr / 4].tile;
-    case 2: return oam[addr / 4].attr;
-    default: return oam[addr / 4].x;
-  }
+  return oam[addr % OAM_SIZE];
 }
 
 static SHAPONES_INLINE void oam_write(addr_t addr, uint8_t data) {
-  switch (addr & 0x3) {
-    case 0: oam[addr / 4].y = data; break;
-    case 1: oam[addr / 4].tile = data; break;
-    case 2: oam[addr / 4].attr = data; break;
-    default: oam[addr / 4].x = data; break;
-  }
+  oam[addr % OAM_SIZE] = data;
 }
 
 static SHAPONES_INLINE uint8_t palette_read(addr_t addr) {
@@ -4931,28 +5859,30 @@ static SHAPONES_INLINE void palette_write(addr_t addr, uint8_t data) {
 }
 
 result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
-  bool menu_shown = nes::menu::is_shown();
+  if (!sem_try_take(SEM_PPU)) {
+    status->timing = timing_t::NONE;
+    status->focus_y = focus_y;
+    return result_t::SUCCESS;
+  }
+
   timing_t timing = timing_t::NONE;
   bool irq = false;
 
   while (true) {
-    cycle_t cycle_diff = SCREEN_WIDTH;
-    if (!menu_shown) {
-      cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
-      if (cycle_diff <= 0) {
-        break;
-      }
+    cycle_t cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
+    if (cycle_diff <= 0) {
+      break;
     }
 
     // events
     if (focus_x == 0) {
       if (focus_y == SCREEN_HEIGHT + 1) {
         // vblank flag/interrupt
-        Exclusive lock(LOCK_PPU);
+        LockBlock lock(LOCK_PPU);
         reg.status.vblank_flag = 1;
       } else if (focus_y == SCAN_LINES - 1) {
         // clear flags
-        Exclusive lock(LOCK_PPU);
+        LockBlock lock(LOCK_PPU);
         reg.status.vblank_flag = 0;
         reg.status.sprite0_hit = 0;
       }
@@ -4967,8 +5897,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     nmi_level = nmi_level_new;
 
     // determine step count
-    int step_count;
-    int dist_to_end;
+    uint_fast16_t step_count;
+    uint_fast16_t dist_to_end;
     if (focus_y < SCREEN_HEIGHT && focus_x < SCREEN_WIDTH) {
       // visible area
       dist_to_end = SCREEN_WIDTH - focus_x;
@@ -4980,7 +5910,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     step_count =
         step_count < MAX_DELAY_CYCLES / 2 ? step_count : MAX_DELAY_CYCLES / 2;
 
-    int next_focus_x = focus_x + step_count;
+    uint_fast16_t next_focus_x = focus_x + step_count;
 
     if (focus_x == 0 && focus_y < SCREEN_HEIGHT && reg.mask.sprite_enable) {
       // enumerate visible sprites in current line
@@ -4996,7 +5926,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
       render_sprite(line_buff, focus_x, next_focus_x, skip_render);
     }
 
-    if (focus_y < SCREEN_HEIGHT && !menu_shown) {
+    if (focus_y < SCREEN_HEIGHT) {
       if (focus_x <= SCREEN_WIDTH && SCREEN_WIDTH < next_focus_x) {
         mapper::instance->hblank(reg, focus_y);
       }
@@ -5017,10 +5947,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
       }
     }
 
-    if (!menu_shown) {
-      // step cycle counter
-      cycle_count += step_count;
-    }
+    // step cycle counter
+    cycle_count += step_count;
 
     if (focus_y < SCREEN_HEIGHT) {
       if (focus_x == SCREEN_WIDTH) {
@@ -5040,12 +5968,10 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     }
   }
 
-  if (menu_shown) {
-    if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
+  if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
+    nes::state::auto_screenshot(focus_y, line_buff, skip_render);
+    if (!skip_render) {
       nes::menu::overlay(focus_y, line_buff);
-    }
-    if (!!(timing & timing_t::START_OF_VBLANK_LINE)) {
-      nes::menu::service();
     }
   }
 
@@ -5054,13 +5980,15 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     status->timing = timing;
   }
 
+  sem_give(SEM_PPU);
+
   return result_t::SUCCESS;
 }
 
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
 #if !SHAPONES_MUTEX_FAST
-  Exclusive lock(LOCK_PPU);
+  LockBlock lock(LOCK_PPU);
 #endif
 
   bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
@@ -5087,7 +6015,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
       // determine step count
       x0 = x0_block;
       if (visible_area && bg_enabled) {
-        x1 = x0 + (BLOCK_SIZE - ((scr & 0x1) * TILE_SIZE + fine_x));
+        x1 = x0 + (BLOCK_SIZE - ((scr & 0x1) * TILE_SIZE + fine_x_counter));
       } else {
         x1 = x0 + 64;
       }
@@ -5118,7 +6046,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
             chr = ((uint32_t)chr1 << 16) | (uint32_t)chr0;
 
             // adjust CHR bit pos
-            int chr_shift_size = ((scr << 4) & 0x10) | (fine_x << 1);
+            int chr_shift_size = ((scr << 4) & 0x10) | (fine_x_counter << 1);
             chr >>= chr_shift_size;
 
             // calc attr index
@@ -5162,9 +6090,8 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
       Exclusive lock(LOCK_PPU);
 #endif
       uint_fast16_t scr = scroll_counter;
-      int fy = focus_y;
-      int fx = fine_x;
-      if (fy < SCREEN_HEIGHT) {
+      uint_fast8_t fx = fine_x_counter;
+      if (focus_y < SCREEN_HEIGHT) {
         if (x0 < SCREEN_WIDTH) {
           // step scroll counter for x-axis
           fx += (x1 - x0);
@@ -5202,13 +6129,13 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
           }
 
           // horizontal recovery
-          constexpr uint16_t copy_mask = 0x041fu;
-          scr &= ~copy_mask;
-          scr |= reg.scroll & copy_mask;
+          constexpr uint16_t MASK = 0x041fu;
+          scr &= ~MASK;
+          scr |= reg.scroll & MASK;
           fx = reg.fine_x;
         }
-        fine_x = fx;
-      } else if (fy == SCAN_LINES - 1) {
+        fine_x_counter = fx;
+      } else if (focus_y == SCAN_LINES - 1) {
         if (280 <= x1 && x0 <= 304) {
           // vertical recovery
           constexpr uint16_t copy_mask = 0x7be0u;
@@ -5233,16 +6160,21 @@ static void enum_visible_sprites(bool skip_render) {
   num_visible_sprites = 0;
   uint8_t h = reg.control.sprite_size ? 16 : 8;
   for (int i = 0; i < n; i++) {
+    uint_fast8_t s_y = oam[i * 4 + OAM_ENTRY_OFFSET_Y];
+    uint_fast8_t s_tile = oam[i * 4 + OAM_ENTRY_OFFSET_TILE];
+    uint_fast8_t s_attr = oam[i * 4 + OAM_ENTRY_OFFSET_ATTR];
+    uint_fast8_t s_x = oam[i * 4 + OAM_ENTRY_OFFSET_X];
+
     const auto &s = oam[i];
 
     // vertical hit test
-    int src_y = focus_y - (s.y + SPRITE_Y_OFFSET);
+    int src_y = focus_y - (s_y + SPRITE_Y_OFFSET);
     if (0 <= src_y && src_y < h) {
       int tile_index = 0;
       uint_fast16_t chr = 0xFFFF;
 
       if (!skip_render) {
-        if (s.attr & OAM_ATTR_INVERT_V) {
+        if (s_attr & OAM_ATTR_INVERT_V) {
           // vertical inversion
           if (reg.control.sprite_size) {
             src_y ^= 0xf;
@@ -5255,17 +6187,17 @@ static void enum_visible_sprites(bool skip_render) {
         if (reg.control.sprite_size) {
           // 8x16 sprite
           if (src_y < 8) {
-            tile_index = s.tile & 0xfe;
+            tile_index = s_tile & 0xfe;
           } else {
-            tile_index = s.tile | 0x01;
+            tile_index = s_tile | 0x01;
           }
 
-          if (s.tile & 0x1) {
+          if (s_tile & 0x1) {
             tile_index += 0x1000 / 16;
           }
         } else {
           // 8x8 sprite
-          tile_index = s.tile;
+          tile_index = s_tile;
           if (reg.control.sprite_name_sel) {
             tile_index += 0x1000 / 16;
           }
@@ -5273,16 +6205,16 @@ static void enum_visible_sprites(bool skip_render) {
         // read CHRROM
         int chrrom_index = (tile_index << 4) + (src_y & 0x7);
         chr = memory::chrrom_read_double(chrrom_index,
-                                         s.attr & OAM_ATTR_INVERT_H);
+                                         s_attr & OAM_ATTR_INVERT_H);
       }
 
       // store sprite information
       sprite_line_t &sl = sprite_lines[num_visible_sprites++];
       sl.chr = chr;
-      sl.x = s.x;
-      sl.palette_offset = (4 + (s.attr & OAM_ATTR_PALETTE)) * PALETTE_SIZE;
+      sl.x = s_x;
+      sl.palette_offset = (4 + (s_attr & OAM_ATTR_PALETTE)) * PALETTE_SIZE;
       sl.attr = 0;
-      if (s.attr & OAM_ATTR_PRIORITY) sl.attr |= SL_ATTR_BEHIND;
+      if (s_attr & OAM_ATTR_PRIORITY) sl.attr |= SL_ATTR_BEHIND;
       if (i == 0) sl.attr |= SL_ATTR_ZERO;
 
       if (num_visible_sprites >= MAX_VISIBLE_SPRITES) {
@@ -5324,11 +6256,397 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
   }
 }
 
+uint32_t get_state_size() {
+  return STATE_HEADER_SIZE + sizeof(palette_file) + sizeof(oam);
+}
+
+result_t save_state(void *file_handle) {
+  uint8_t buff[STATE_HEADER_SIZE];
+  memset(buff, 0, sizeof(buff));
+  uint8_t *p = buff;
+  reg.store(p);
+  p += registers_t::STATE_SIZE;
+  BufferWriter writer(p);
+  writer.u64(cycle_count);
+  writer.u16(focus_x);
+  writer.u16(focus_y);
+  writer.u16(scroll_counter);
+  writer.u8(fine_x_counter);
+  writer.u8(bus_read_data_latest);
+  writer.u8(bus_read_data_delayed);
+  writer.b(scroll_ppuaddr_high_stored);
+  writer.b(nmi_level);
+  SHAPONES_TRY(fs_write(file_handle, buff, sizeof(buff)));
+  SHAPONES_TRY(fs_write(file_handle, palette_file, sizeof(palette_file)));
+  SHAPONES_TRY(fs_write(file_handle, oam, sizeof(oam)));
+  return result_t::SUCCESS;
+}
+
+result_t load_state(void *file_handle) {
+  uint8_t buff[STATE_HEADER_SIZE];
+  SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));
+  const uint8_t *p = buff;
+  reg.load(p);
+  p += registers_t::STATE_SIZE;
+  BufferReader reader(p);
+  cycle_count = reader.u64();
+  focus_x = reader.u16();
+  focus_y = reader.u16();
+  scroll_counter = reader.u16();
+  fine_x_counter = reader.u8();
+  bus_read_data_latest = reader.u8();
+  bus_read_data_delayed = reader.u8();
+  scroll_ppuaddr_high_stored = reader.b();
+  nmi_level = reader.b();
+  SHAPONES_TRY(fs_read(file_handle, palette_file, sizeof(palette_file)));
+  SHAPONES_TRY(fs_read(file_handle, oam, sizeof(oam)));
+  return result_t::SUCCESS;
+}
+
 }  // namespace nes::ppu
+// #include "shapones/state.hpp"
+
+// #include "shapones/apu.hpp"
+
+// #include "shapones/cpu.hpp"
+
+// #include "shapones/fs.hpp"
+
+// #include "shapones/host_intf.hpp"
+
+// #include "shapones/input.hpp"
+
+// #include "shapones/interrupt.hpp"
+
+// #include "shapones/lock.hpp"
+
+// #include "shapones/mapper.hpp"
+
+// #include "shapones/memory.hpp"
+
+// #include "shapones/menu.hpp"
+
+// #include "shapones/ppu.hpp"
+
+
+namespace nes::state {
+
+static constexpr int SS_BUFF_DEPTH = 2;
+static constexpr int SS_SCALING = nes::SCREEN_HEIGHT / state::SS_HEIGHT;
+static constexpr int SS_CLIP_LEFT =
+    (nes::SCREEN_WIDTH - state::SS_WIDTH * SS_SCALING) / 2;
+static constexpr int SS_CLIP_TOP =
+    (nes::SCREEN_HEIGHT - state::SS_HEIGHT * SS_SCALING) / 2;
+
+uint8_t ss_buff[SS_SIZE_BYTES * SS_BUFF_DEPTH];
+volatile int ss_wr_index = 0;
+volatile int ss_num_stored = 0;
+int ss_capture_counter = 0;
+
+static uint32_t get_slot_offset(int slot, uint32_t slot_size) {
+  return state_file_header_t::SIZE + state_slot_entry_t::SIZE * MAX_SLOTS +
+         slot * slot_size;
+}
+static result_t write_screenshot(void *file_handle);
+static result_t write_slot_data(void *file_handle);
+static result_t read_slot_data(void *file_handle);
+
+void reset() {
+  ss_wr_index = 0;
+  ss_num_stored = 0;
+  ss_capture_counter = 3 * 60;  // wait 3 seconds before first shot
+  memset(ss_buff, 0, sizeof(ss_buff));
+}
+
+void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render) {
+  if (menu::is_shown()) return;
+  if (focus_y == SCREEN_HEIGHT - 1) {
+    ss_capture_counter--;
+  }
+  if (ss_capture_counter > 0 || skip_render) {
+    return;
+  }
+
+  int sy = focus_y - SS_CLIP_TOP;
+  int dy = sy / SS_SCALING;
+  if (0 <= dy && dy < SS_HEIGHT && sy % SS_SCALING == 0) {
+    LockBlock lock(LOCK_PPU);
+    int wr_index = ss_wr_index;
+    uint8_t *dst = &ss_buff[(wr_index * SS_SIZE_BYTES) + (dy * SS_WIDTH)];
+    for (int dx = 0; dx < SS_WIDTH; dx++) {
+      int sx = SS_CLIP_LEFT + dx * SS_SCALING;
+      uint8_t c01 =
+          blend_colors(line_buff[sx] & 0x3F, line_buff[sx + 1] & 0x3F);
+      uint8_t c23 =
+          blend_colors(line_buff[sx + 2] & 0x3F, line_buff[sx + 3] & 0x3F);
+      dst[dx] = blend_colors(c01, c23);
+    }
+    if (dy == SS_HEIGHT - 1) {
+      ss_wr_index = (wr_index + 1) % SS_BUFF_DEPTH;
+      ss_num_stored++;
+      if (ss_num_stored > SS_BUFF_DEPTH) {
+        ss_num_stored = SS_BUFF_DEPTH;
+      }
+      ss_capture_counter = 3 * 60;  // wait 3 seconds before next shot
+    }
+  }
+}
+
+result_t get_state_path(char *out_path, size_t max_len) {
+  const char *ines_path = get_ines_path();
+  if (ines_path[0] == '\0') {
+    return result_t::ERR_INES_NOT_LOADED;
+  }
+  strncpy(out_path, ines_path, max_len);
+  SHAPONES_TRY(fs::replace_ext(out_path, STATE_FILE_EXT));
+  return result_t::SUCCESS;
+}
+
+uint32_t get_slot_size() {
+  uint32_t size = 0;
+  size += SS_SIZE_BYTES;
+  size += cpu::get_state_size();
+  size += ppu::get_state_size();
+  size += apu::get_state_size();
+  size += interrupt::get_state_size();
+  size += memory::get_state_size();
+  size += mapper::instance->get_state_size();
+  size += input::state_size();
+  return size;
+}
+
+result_t save(const char *path, int slot) {
+  result_t res = result_t::SUCCESS;
+
+  uint32_t slot_size = get_slot_size();
+
+  void *f;
+  SHAPONES_TRY(fs_open(path, true, &f));
+
+  size_t file_size = 0;
+  SHAPONES_TRY(fs_size(f, &file_size));
+  bool create = file_size < sizeof(state_file_header_t) +
+                                sizeof(state_slot_entry_t) * MAX_SLOTS;
+
+  do {
+    if (create) {
+      // write file header
+      {
+        uint8_t buff[state_file_header_t::SIZE];
+        memset(buff, 0, sizeof(buff));
+        state_file_header_t fh;
+        fh.marker = MARKER;
+        fh.version = VERSION;
+        fh.slot_size = slot_size;
+        fh.store(buff);
+
+        res = fs_seek(f, 0);
+        if (res != result_t::SUCCESS) break;
+
+        res = fs_write(f, buff, sizeof(buff));
+        if (res != result_t::SUCCESS) break;
+      }
+
+      // initialize index
+      for (int i = 0; i < MAX_SLOTS; i++) {
+        uint8_t buff[state_slot_entry_t::SIZE];
+        memset(buff, 0, sizeof(buff));
+        res = fs_write(f, buff, sizeof(buff));
+        if (res != result_t::SUCCESS) break;
+      }
+    }
+
+    // write slot data
+    {
+      uint32_t offset = get_slot_offset(slot, slot_size);
+      res = fs_seek(f, offset);
+      if (res != result_t::SUCCESS) break;
+
+      res = write_screenshot(f);
+      if (res != result_t::SUCCESS) break;
+
+      res = write_slot_data(f);
+      if (res != result_t::SUCCESS) break;
+    }
+
+    // update index
+    {
+      uint8_t buff[state_slot_entry_t::SIZE];
+      memset(buff, 0, sizeof(buff));
+      state_slot_entry_t slot_header;
+      slot_header.flags = SLOT_FLAG_USED;
+      slot_header.play_time_sec =
+          cpu::ppu_cycle_count / (cpu::CLOCK_FREQ_NTSC * 3);
+      strncpy(slot_header.name, "No Name", state_slot_entry_t::NAME_LENGTH);
+      slot_header.store(buff);
+
+      int offset = state_file_header_t::SIZE + state_slot_entry_t::SIZE * slot;
+
+      res = fs_seek(f, offset);
+      if (res != result_t::SUCCESS) break;
+
+      res = fs_write(f, buff, sizeof(buff));
+      if (res != result_t::SUCCESS) break;
+    }
+
+    // seek to end
+    fs_seek(f, file_size);
+    
+  } while (0);
+
+  fs_close(f);
+  return res;
+}
+
+result_t load(const char *path, int slot) {
+  result_t res = result_t::SUCCESS;
+
+  uint32_t slot_size = get_slot_size();
+
+  void *f;
+  SHAPONES_TRY(fs_open(path, false, &f));
+
+  do {
+    // header check
+    {
+      uint8_t buff[state_file_header_t::SIZE];
+      SHAPONES_TRY(fs_read(f, buff, sizeof(buff)));
+      state_file_header_t fh;
+      fh.load(buff);
+      if (fh.marker != MARKER) {
+        res = result_t::ERR_INVALID_STATE_FORMAT;
+        break;
+      }
+      if (fh.slot_size != slot_size) {
+        res = result_t::ERR_STATE_SIZE_MISMATCH;
+        break;
+      }
+    }
+
+    // read slot data
+    {
+      uint32_t offset = get_slot_offset(slot, slot_size);
+      res = fs_seek(f, offset);
+      if (res != result_t::SUCCESS) break;
+
+      res = fs_read(f, ss_buff, SS_SIZE_BYTES);
+      if (res != result_t::SUCCESS) break;
+      ss_wr_index = 1;
+      ss_num_stored = 1;
+      ss_capture_counter = 0;
+
+      res = read_slot_data(f);
+      if (res != result_t::SUCCESS) break;
+    }
+  } while (0);
+
+  fs_close(f);
+
+  return res;
+}
+
+result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
+  result_t res = result_t::SUCCESS;
+
+  uint32_t slot_size = get_slot_size();
+
+  void *f;
+  SHAPONES_TRY(fs_open(path, false, &f));
+
+  do {
+    uint32_t offset = get_slot_offset(slot, slot_size);
+    res = fs_seek(f, offset);
+    if (res != result_t::SUCCESS) break;
+
+    res = fs_read(f, out_buff, SS_SIZE_BYTES);
+    if (res != result_t::SUCCESS) break;
+  } while (0);
+
+  fs_close(f);
+
+  return res;
+}
+
+static result_t write_screenshot(void *f) {
+  SemBlock lock(SEM_PPU);
+  int rd_index = (ss_wr_index + SS_BUFF_DEPTH - ss_num_stored) % SS_BUFF_DEPTH;
+  result_t res = fs_write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
+  return res;
+}
+
+static result_t write_slot_data(void *f) {
+  SemBlock ppu_block(SEM_PPU);
+  SemBlock apu_block(SEM_APU);
+  SHAPONES_TRY(cpu::save_state(f));
+  SHAPONES_TRY(ppu::save_state(f));
+  SHAPONES_TRY(apu::save_state(f));
+  SHAPONES_TRY(input::save_state(f));
+  SHAPONES_TRY(interrupt::save_state(f));
+  SHAPONES_TRY(memory::save_state(f));
+  SHAPONES_TRY(mapper::instance->save_state(f));
+  return result_t::SUCCESS;
+}
+
+static result_t read_slot_data(void *f) {
+  SemBlock ppu_block(SEM_PPU);
+  SemBlock apu_block(SEM_APU);
+  SHAPONES_TRY(cpu::load_state(f));
+  SHAPONES_TRY(ppu::load_state(f));
+  SHAPONES_TRY(apu::load_state(f));
+  SHAPONES_TRY(input::load_state(f));
+  SHAPONES_TRY(interrupt::load_state(f));
+  SHAPONES_TRY(memory::load_state(f));
+  SHAPONES_TRY(mapper::instance->load_state(f));
+  return result_t::SUCCESS;
+}
+
+result_t enum_slots(const char *path, enum_slot_cb_t callback) {
+  result_t res = result_t::SUCCESS;
+
+  void *f;
+  SHAPONES_TRY(fs_open(path, false, &f));
+
+  do {
+    // header check
+    {
+      uint8_t buff[state_file_header_t::SIZE];
+      SHAPONES_TRY(fs_read(f, buff, sizeof(buff)));
+      state_file_header_t fh;
+      fh.load(buff);
+      if (fh.marker != MARKER) {
+        res = result_t::ERR_INVALID_STATE_FORMAT;
+        break;
+      }
+    }
+
+    // read slot entries
+    for (int i = 0; i < MAX_SLOTS; i++) {
+      uint8_t buff[state_slot_entry_t::SIZE];
+      SHAPONES_TRY(fs_read(f, buff, sizeof(buff)));
+      state_slot_entry_t slot_entry;
+      slot_entry.index = i;
+      slot_entry.load(buff);
+      if (!callback(slot_entry)) {
+        break;
+      }
+    }
+  } while (0);
+  fs_close(f);
+  return res;
+}
+
+}  // namespace nes::state
 // #include "shapones/shapones.hpp"
+
+// #include "shapones/state.hpp"
 
 
 namespace nes {
+
+char ines_path[MAX_PATH_LENGTH + 1] = "";
+bool ines_mapped = false;
+
+static void build_blend_table();
 
 config_t get_default_config() {
   config_t cfg;
@@ -5336,43 +6654,109 @@ config_t get_default_config() {
   return cfg;
 }
 
+const char *get_ines_path() { return ines_path; }
+
 result_t init(const config_t &cfg) {
+  build_blend_table();
+
   for (int i = 0; i < NUM_LOCKS; i++) {
     SHAPONES_TRY(nes::lock_init(i));
   }
+  for (int i = 0; i < NUM_SEMAPHORES; i++) {
+    SHAPONES_TRY(nes::sem_init(i));
+  }
+  SHAPONES_TRY(interrupt::init());
   SHAPONES_TRY(memory::init());
   SHAPONES_TRY(mapper::init());
   SHAPONES_TRY(cpu::init());
   SHAPONES_TRY(ppu::init());
   SHAPONES_TRY(apu::init());
   SHAPONES_TRY(menu::init());
+  SHAPONES_TRY(input::init());
   apu::set_sampling_rate(cfg.apu_sampling_rate);
   cpu::stop();
   return result_t::SUCCESS;
 }
 
 void deinit() {
+  unmap_ines();
   cpu::deinit();
   ppu::deinit();
   apu::deinit();
   mapper::deinit();
   memory::deinit();
   menu::deinit();
+  input::deinit();
+  interrupt::deinit();
   for (int i = 0; i < NUM_LOCKS; i++) {
     nes::lock_deinit(i);
   }
+  for (int i = 0; i < NUM_SEMAPHORES; i++) {
+    nes::sem_deinit(i);
+  }
 }
 
-result_t map_ines(const uint8_t *ines) {
-  SHAPONES_TRY(memory::map_ines(ines));
-  SHAPONES_TRY(reset());
-  return result_t::SUCCESS;
+result_t map_ines(const uint8_t *ines, const char *path) {
+  unmap_ines();
+
+  result_t res = result_t::SUCCESS;
+  do {
+    SemBlock ppu_block(SEM_PPU);
+    SemBlock apu_block(SEM_APU);
+
+    if (path && strnlen(path, MAX_PATH_LENGTH + 1) == 0) {
+      res = result_t::ERR_PATH_TOO_LONG;
+      break;
+    }
+
+    res = memory::map_ines(ines);
+    if (res != result_t::SUCCESS) break;
+
+    if (path) {
+      strncpy(ines_path, path, MAX_PATH_LENGTH);
+      ines_path[MAX_PATH_LENGTH] = '\0';
+    } else {
+      ines_path[0] = '\0';
+    }
+
+    reset();
+  } while (0);
+
+  if (res == result_t::SUCCESS) {
+    ines_mapped = true;
+  } else {
+    ines_mapped = false;
+    ines_path[0] = '\0';
+  }
+  return res;
+}
+
+void unmap_ines() {
+  if (!ines_mapped) return;
+
+  {
+    SemBlock ppu_block(SEM_PPU);
+    SemBlock apu_block(SEM_APU);
+    stop();
+    memory::unmap_ines();
+    ines_mapped = false;
+  }
+
+  if (ines_path[0] != '\0') {
+    unload_ines();
+  }
+
+  ines_path[0] = '\0';
 }
 
 result_t reset() {
-  SHAPONES_TRY(cpu::reset());
+  nes::state::reset();
+  SHAPONES_TRY(mapper::instance->reset());
   SHAPONES_TRY(ppu::reset());
   SHAPONES_TRY(apu::reset());
+  SHAPONES_TRY(input::reset());
+  SHAPONES_TRY(interrupt::reset());
+  SHAPONES_TRY(cpu::reset());
   return result_t::SUCCESS;
 }
 
@@ -5396,6 +6780,25 @@ result_t vsync(uint8_t *line_buff, bool skip_render) {
     SHAPONES_TRY(ppu::service(line_buff, skip_render, &status));
   } while (!(status.timing & ppu::timing_t::END_OF_FRAME));
   return result_t::SUCCESS;
+}
+
+static void build_blend_table() {
+  for (int i = 0; i < 64; i++) {
+    uint32_t ci = NES_PALETTE_24BPP[i];
+    uint8_t ri = (ci >> 16) & 0xff;
+    uint8_t gi = (ci >> 8) & 0xff;
+    uint8_t bi = ci & 0xff;
+    for (int j = 0; j < 64; j++) {
+      uint32_t cj = NES_PALETTE_24BPP[j];
+      uint8_t rj = (cj >> 16) & 0xff;
+      uint8_t gj = (cj >> 8) & 0xff;
+      uint8_t bj = cj & 0xff;
+      uint8_t r = (ri + rj) / 2;
+      uint8_t g = (gi + gj) / 2;
+      uint8_t b = (bi + bj) / 2;
+      blend_table[(i << 6) | j] = nearest_rgb888(r, g, b);
+    }
+  }
 }
 
 }  // namespace nes

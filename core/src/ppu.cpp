@@ -82,7 +82,7 @@ uint8_t reg_read(addr_t addr) {
   uint8_t retval;
   switch (addr) {
     case REG_PPUSTATUS: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       retval = reg.status.raw;
       reg.status.vblank_flag = 0;
       scroll_ppuaddr_high_stored = false;
@@ -91,7 +91,7 @@ uint8_t reg_read(addr_t addr) {
     case REG_OAMDATA: retval = oam_read(reg.oam_addr); break;
 
     case REG_PPUDATA: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
@@ -113,7 +113,7 @@ uint8_t reg_read(addr_t addr) {
 void reg_write(addr_t addr, uint8_t data) {
   switch (addr) {
     case REG_PPUCTRL: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       // name sel bits
       reg.scroll &= 0xf3ff;
       reg.scroll |= (uint16_t)(data & 0x3) << 10;
@@ -128,7 +128,7 @@ void reg_write(addr_t addr, uint8_t data) {
     case REG_OAMDATA: oam_write(reg.oam_addr, data); break;
 
     case REG_PPUSCROLL: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       if (!scroll_ppuaddr_high_stored) {
         reg.scroll &= ~SCROLL_MASK_COARSE_X;
         reg.scroll |= (data >> 3) & SCROLL_MASK_COARSE_X;
@@ -143,7 +143,7 @@ void reg_write(addr_t addr, uint8_t data) {
     } break;
 
     case REG_PPUADDR: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       if (!scroll_ppuaddr_high_stored) {
         reg.scroll &= 0x00ffu;
         reg.scroll |= ((uint16_t)data << 8) & 0x3f00u;
@@ -157,7 +157,7 @@ void reg_write(addr_t addr, uint8_t data) {
     } break;
 
     case REG_PPUDATA: {
-      Exclusive lock(LOCK_PPU);
+      LockBlock lock(LOCK_PPU);
       uint_fast16_t scr = scroll_counter;
       addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
       bus_write(addr, data);
@@ -251,6 +251,12 @@ static SHAPONES_INLINE void palette_write(addr_t addr, uint8_t data) {
 }
 
 result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
+  if (!sem_try_take(SEM_PPU)) {
+    status->timing = timing_t::NONE;
+    status->focus_y = focus_y;
+    return result_t::SUCCESS;
+  }
+
   timing_t timing = timing_t::NONE;
   bool irq = false;
 
@@ -264,11 +270,11 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     if (focus_x == 0) {
       if (focus_y == SCREEN_HEIGHT + 1) {
         // vblank flag/interrupt
-        Exclusive lock(LOCK_PPU);
+        LockBlock lock(LOCK_PPU);
         reg.status.vblank_flag = 1;
       } else if (focus_y == SCAN_LINES - 1) {
         // clear flags
-        Exclusive lock(LOCK_PPU);
+        LockBlock lock(LOCK_PPU);
         reg.status.vblank_flag = 0;
         reg.status.sprite0_hit = 0;
       }
@@ -366,13 +372,15 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     status->timing = timing;
   }
 
+  sem_give(SEM_PPU);
+
   return result_t::SUCCESS;
 }
 
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
 #if !SHAPONES_MUTEX_FAST
-  Exclusive lock(LOCK_PPU);
+  LockBlock lock(LOCK_PPU);
 #endif
 
   bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);

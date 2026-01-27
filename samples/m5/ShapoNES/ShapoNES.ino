@@ -33,12 +33,12 @@ constexpr int DMA_HEIGHT = 60;
 #endif
 
 static const uint8_t BUTTON_ADC_PINS[] = {
-    5,
-    2,
-    1,
+  5,
+  2,
+  1,
 };
 static constexpr int BUTTON_NUM_PINS =
-    sizeof(BUTTON_ADC_PINS) / sizeof(BUTTON_ADC_PINS[0]);
+  sizeof(BUTTON_ADC_PINS) / sizeof(BUTTON_ADC_PINS[0]);
 
 static constexpr int BUTTON_A = 0;
 static constexpr int BUTTON_B = 1;
@@ -67,10 +67,11 @@ static uint64_t next_vsync_us = 0;
 static bool skip_frame = false;
 
 static spinlock_t locks[nes::NUM_LOCKS];
+static SemaphoreHandle_t sems[nes::NUM_SEMAPHORES];
 
 static adc_button::Pin button_pins[BUTTON_NUM_PINS];
 
-static nes::input::status_t input_state = {0};
+static nes::input::status_t input_state = { 0 };
 
 #ifdef ARDUINO_M5STACK_ATOMS3
 // clang-format off
@@ -117,9 +118,9 @@ static uint32_t stat_pdm_sent_count = 0;
 static uint64_t disp_button_down_ms = 0;
 static bool disp_button_pressed = false;
 
-static char ines_path[nes::MAX_PATH_LENGTH + 1] = "";
-
-static SHAPONES_INLINE void stat_start(stat_t &s) { s.start_us = micros(); }
+static SHAPONES_INLINE void stat_start(stat_t &s) {
+  s.start_us = micros();
+}
 
 static SHAPONES_INLINE void stat_end(stat_t &s) {
   uint32_t elapsed_us = micros() - s.start_us;
@@ -144,9 +145,10 @@ static constexpr uint32_t SAMPLE_SIZE = sizeof(audio_buff[0]);
 static volatile uint32_t audio_wr_ptr = 0;
 static volatile uint32_t audio_rd_ptr = 0;
 
+static File file_handle;
+
 static void read_input();
 static void ppu_loop(void *arg);
-static void load_ines(const char *path);
 static bool wait_vsync();
 static bool dma_busy();
 static void dma_start();
@@ -204,11 +206,6 @@ void loop() {
     }
   }
 
-  if (ines_path[0] != '\0') {
-    load_ines(ines_path);
-    ines_path[0] = '\0';
-  }
-
   stat_start(stat_cpu_service);
   for (int i = 0; i < 100; i++) {
     nes::cpu::service();
@@ -250,7 +247,7 @@ static void ppu_loop(void *arg) {
   uint64_t next_wdt_reset_ms = 0;
   while (true) {
     stat_ppu_delay_clock +=
-        nes::cpu::ppu_cycle_leading() - nes::ppu::cycle_following();
+      nes::cpu::ppu_cycle_leading() - nes::ppu::cycle_following();
     stat_ppu_delay_count += 1;
     nes::ppu::status_t status;
     stat_start(stat_ppu_service);
@@ -258,8 +255,7 @@ static void ppu_loop(void *arg) {
     if (!skip_frame) {
       stat_end(stat_ppu_service);
     }
-    if ((!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) &&
-        !skip_frame) {
+    if ((!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) && !skip_frame) {
 #ifdef ARDUINO_M5STACK_ATOMS3
       if (status.focus_y % 2 == 0) {
         for (int x = 0; x < BUFF_W; x++) {
@@ -304,32 +300,6 @@ static void ppu_loop(void *arg) {
   }
 }
 
-static void load_ines(const char *path) {
-  nes::result_t res;
-
-  if (ines) {
-    delete[] ines;
-    ines = nullptr;
-  }
-
-  File ines_file = SD.open(path, FILE_READ);
-  if (!ines_file) {
-    Serial.printf("Failed to open INES file: %s\n", path);
-    while (1) delay(1000);
-  }
-  size_t ines_size = ines_file.size();
-  Serial.printf("INES file size: %d bytes\n", (int)ines_size);
-  ines = new uint8_t[ines_size];
-  ines_file.read(ines, ines_size);
-  ines_file.close();
-
-  res = nes::map_ines(ines);
-  if (res != nes::result_t::SUCCESS) {
-    Serial.printf("INES Load Error: 0x%x\n", (int)res);
-  }
-  nes::menu::hide();
-}
-
 static bool wait_vsync() {
   constexpr int FRAME_DELAY_US = 1000000 / 60;
   uint64_t now_us = micros();
@@ -344,7 +314,9 @@ static bool wait_vsync() {
   return wait_us <= -5000;
 }
 
-static bool dma_busy() { return (dma_next_y < BUFF_H) || M5.Display.dmaBusy(); }
+static bool dma_busy() {
+  return (dma_next_y < BUFF_H) || M5.Display.dmaBusy();
+}
 
 static void dma_start() {
   if (dma_busy()) return;
@@ -388,11 +360,13 @@ static void meas() {
   fps_frame_count++;
   if (elapsed_ms >= 1000) {
     fps = (float)(fps_frame_count * 1000) / elapsed_ms;
+#if 1
     Serial.printf(
-        "%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc, PDM "
-        "sent:%7.1f)\n",
-        fps, cpu_time_us, ppu_time_us, apu_time_us, ppu_delay_clocks,
-        pdm_sent_bytes);
+      "%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc, PDM "
+      "sent:%7.1f)\n",
+      fps, cpu_time_us, ppu_time_us, apu_time_us, ppu_delay_clocks,
+      pdm_sent_bytes);
+#endif
     fps_last_meas_ms = now_ms;
     fps_frame_count = 0;
   }
@@ -400,29 +374,27 @@ static void meas() {
 
 static void audio_init() {
   i2s_chan_config_t chan_cfg =
-      I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+    I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
 
   ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &audio_i2s_ch, nullptr));
 
   i2s_pdm_tx_clk_config_t clk_cfg =
-      I2S_PDM_TX_CLK_DAC_DEFAULT_CONFIG(AUDIO_SAMPLE_FREQ_HZ);
+    I2S_PDM_TX_CLK_DAC_DEFAULT_CONFIG(AUDIO_SAMPLE_FREQ_HZ);
 
   i2s_pdm_tx_slot_config_t slot_cfg = I2S_PDM_TX_SLOT_DAC_DEFAULT_CONFIG(
-      I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+    I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
 
   i2s_pdm_tx_config_t tx_cfg{
-      .clk_cfg = clk_cfg,
-      .slot_cfg = slot_cfg,
-      .gpio_cfg =
-          {
-              .clk = I2S_GPIO_UNUSED,  //(gpio_num_t)AUDIO_CLK_PIN,
-              .dout = (gpio_num_t)AUDIO_DOUT_PIN,
-              .dout2 = I2S_GPIO_UNUSED,
-              .invert_flags =
-                  {
-                      .clk_inv = false,
-                  },
-          },
+    .clk_cfg = clk_cfg,
+    .slot_cfg = slot_cfg,
+    .gpio_cfg = {
+      .clk = I2S_GPIO_UNUSED,  //(gpio_num_t)AUDIO_CLK_PIN,
+      .dout = (gpio_num_t)AUDIO_DOUT_PIN,
+      .dout2 = I2S_GPIO_UNUSED,
+      .invert_flags = {
+        .clk_inv = false,
+      },
+    },
   };
 
   ESP_ERROR_CHECK(i2s_channel_init_pdm_tx_mode(audio_i2s_ch, &tx_cfg));
@@ -505,8 +477,30 @@ nes::result_t nes::lock_init(int id) {
   return nes::result_t::SUCCESS;
 }
 void nes::lock_deinit(int id) {}
-void nes::lock_get(int id) { taskENTER_CRITICAL(&locks[id]); }
-void nes::lock_release(int id) { taskEXIT_CRITICAL(&locks[id]); }
+void nes::lock_get(int id) {
+  taskENTER_CRITICAL(&locks[id]);
+}
+void nes::lock_release(int id) {
+  taskEXIT_CRITICAL(&locks[id]);
+}
+
+nes::result_t nes::sem_init(int id) {
+  sems[id] = xSemaphoreCreateBinary();
+  xSemaphoreGive(sems[id]);
+  return nes::result_t::SUCCESS;
+}
+void nes::sem_deinit(int id) {}
+bool nes::sem_try_take(int id) {
+  return (xSemaphoreTake(sems[id], 0) == pdTRUE);
+}
+void nes::sem_take(int id) {
+  while (!nes::sem_try_take(id)) {
+    vTaskDelay(1);
+  }
+}
+void nes::sem_give(int id) {
+  xSemaphoreGive(sems[id]);
+}
 
 nes::result_t nes::fs_mount() {
   if (SD.begin(TF_CS_PIN, SPI, 10000000)) {
@@ -518,7 +512,9 @@ nes::result_t nes::fs_mount() {
   }
 }
 
-void nes::fs_unmount() { SD.end(); }
+void nes::fs_unmount() {
+  SD.end();
+}
 
 nes::result_t nes::fs_get_current_dir(char *out_path) {
   strncpy(out_path, "/", nes::MAX_PATH_LENGTH);
@@ -540,11 +536,95 @@ nes::result_t nes::fs_enum_files(const char *path,
     fi.name = (char *)filename.c_str();
     if (!callback(fi)) break;
   }
+  root.close();
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::request_load_nes_file(const char *path) {
-  strncpy(ines_path, path, nes::MAX_PATH_LENGTH);
-  ines_path[nes::MAX_PATH_LENGTH] = '\0';
+bool nes::fs_exists(const char *path) {
+  return SD.exists(path);
+}
+
+nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
+  file_handle = SD.open(path, write ? FILE_WRITE : FILE_READ);
+  if (!file_handle) {
+    Serial.printf("Open failed: %s\n", path);
+    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+  }
+  *handle = &file_handle;
   return nes::result_t::SUCCESS;
+}
+
+void nes::fs_close(void *handle) {
+  File *f = (File *)handle;
+  f->close();
+}
+
+nes::result_t nes::fs_seek(void *handle, size_t offset) {
+  File *f = (File *)handle;
+  if (f->seek(offset)) {
+    return nes::result_t::SUCCESS;
+  } else {
+    return nes::result_t::ERR_FAILED_TO_SEEK_FILE;
+  }
+}
+
+nes::result_t nes::fs_size(void *handle, size_t *out_size) {
+  File *f = (File *)handle;
+  *out_size = f->size();
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
+  File *f = (File *)handle;
+  size_t s = f->read(buff, size);
+  if (s == size) {
+    return nes::result_t::SUCCESS;
+  } else {
+    return nes::result_t::ERR_FAILED_TO_READ_FILE;
+  }
+}
+
+nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
+  File *f = (File *)handle;
+  size_t s = f->write(buff, size);
+  if (s == size) {
+    return nes::result_t::SUCCESS;
+  } else {
+    return nes::result_t::ERR_FAILED_TO_WRITE_FILE;
+  }
+}
+
+nes::result_t nes::fs_delete(const char *path) {
+  if (SD.remove(path)) {
+    return nes::result_t::SUCCESS;
+  } else {
+    return nes::result_t::ERR_FAILED_TO_DELETE_FILE;
+  }
+}
+
+nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
+                             size_t *out_size) {
+  nes::unload_ines();
+  File f = SD.open(path, FILE_READ);
+  if (!f) {
+    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+  }
+  size_t file_size = f.size();
+  ines = new uint8_t[file_size];
+  size_t s = f.read(ines, file_size);
+  f.close();
+  if (s == file_size) {
+    *out_ines = ines;
+    *out_size = file_size;
+    return nes::result_t::SUCCESS;
+  } else {
+    return nes::result_t::ERR_FAILED_TO_READ_FILE;
+  }
+}
+
+void nes::unload_ines() {
+  if (ines != nullptr) {
+    delete[] ines;
+    ines = nullptr;
+  }
 }

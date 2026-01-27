@@ -3,19 +3,28 @@
 #include "shapones/fs.hpp"
 #include "shapones/host_intf.hpp"
 #include "shapones/input.hpp"
+#include "shapones/interrupt.hpp"
 #include "shapones/state.hpp"
 
 namespace nes::menu {
 
 static constexpr int CHAR_WIDTH = 8;
 static constexpr int CHAR_HEIGHT = 16;
+#if SHAPONES_MENU_LARGE_FONT
+static constexpr int BUFF_WIDTH = SCREEN_WIDTH / (CHAR_WIDTH * 2);
+static constexpr int BUFF_HEIGHT = SCREEN_HEIGHT / (CHAR_HEIGHT * 2);
+static constexpr int CLIENT_X = 0;
+static constexpr int CLIENT_Y = 1;
+static constexpr int CLIENT_WIDTH = BUFF_WIDTH - 0;
+static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT - 1;
+#else
 static constexpr int BUFF_WIDTH = SCREEN_WIDTH / CHAR_WIDTH;
 static constexpr int BUFF_HEIGHT = SCREEN_HEIGHT / CHAR_HEIGHT;
-
 static constexpr int CLIENT_X = 1;
 static constexpr int CLIENT_Y = 2;
 static constexpr int CLIENT_WIDTH = BUFF_WIDTH - 2;
 static constexpr int CLIENT_HEIGHT = BUFF_HEIGHT - 3;
+#endif
 
 static constexpr int MENU_MAX_ITEMS = 256;
 
@@ -25,6 +34,13 @@ static constexpr int POPUP_WIDTH = BUFF_WIDTH - 8;
 static constexpr int POPUP_X = (BUFF_WIDTH - POPUP_WIDTH) / 2;
 static constexpr int POPUP_Y = (BUFF_HEIGHT - POPUP_MAX_ITEMS - 3) / 2;
 
+enum class tab_t {
+  NES_LIST,
+  SAVE_LIST,
+  MONITOR,
+  COUNT,
+};
+
 static constexpr int NUM_TABS = (int)tab_t::COUNT;
 
 enum class icon_t {
@@ -33,19 +49,23 @@ enum class icon_t {
   FOLDER,
   FILE,
   ADD,
-  INFO,
+  WARNING,
   ERROR,
   PLAY,
   SAVE,
 };
 
 enum class action_t {
+  NONE,
   OPEN_DIR,
   LOAD_ROM,
   ADD_STATE_SLOT,
   STATE_SELECT,
   LOAD_STATE,
   SAVE_STATE,
+  DELETE_STATE,
+  FORCE_NMI_CONFIRM,
+  FORCE_NMI_TRIGGER,
   CLOSE_POPUP,
 };
 
@@ -193,6 +213,7 @@ bool ss_enable = false;
 static result_t load_tab(tab_t tab, bool force = false);
 static result_t load_file_list_tab();
 static result_t load_state_list_tab();
+static result_t load_monitor_tab();
 static result_t load_state_screenshot();
 
 static int find_empty_slot();
@@ -206,10 +227,12 @@ static result_t on_add_state_slot();
 static result_t on_state_select(ListItem *mi);
 static result_t on_save_state(ListItem *mi);
 static result_t on_load_state(ListItem *mi);
+static result_t on_delete_state();
+static result_t on_force_nmi_trigger();
 
 static result_t show_message(icon_t icon, const char *msg);
-
-static void menu_scroll_to(int index);
+static result_t show_confirm(icon_t icon, const char *msg,
+                             action_t confirm_action);
 
 static void popup_show(icon_t icon, const char *msg);
 static void popup_close();
@@ -221,7 +244,7 @@ static void draw_icon(int x, int y, icon_t icon);
 static void draw_frame(int x, int y, int w, int h, char offset);
 static void draw_list(const ListBox &list);
 static void fill_char(int x, int y, int w, int h, char c = ' ');
-static void fill_palette(int x, int y, int w, int h, uint8_t p = 0x00);
+static void fill_palette(int x, int y, int w, int h, uint8_t p);
 static void clip_rect(int *x, int *y, int *w, int *h);
 
 result_t init() {
@@ -259,14 +282,9 @@ static result_t load_tab(tab_t t, bool force) {
   tab = t;
 
   switch (tab) {
-    case tab_t::NES_LIST:
-      menu.set_bounds(CLIENT_X, CLIENT_Y + 1, CLIENT_WIDTH, CLIENT_HEIGHT - 1);
-      SHAPONES_TRY(load_file_list_tab());
-      break;
-    case tab_t::SAVE_LIST:
-      menu.set_bounds(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, CLIENT_HEIGHT);
-      SHAPONES_TRY(load_state_list_tab());
-      break;
+    case tab_t::NES_LIST: SHAPONES_TRY(load_file_list_tab()); break;
+    case tab_t::SAVE_LIST: SHAPONES_TRY(load_state_list_tab()); break;
+    case tab_t::MONITOR: SHAPONES_TRY(load_monitor_tab()); break;
   }
 
   int i = last_menu_index[static_cast<int>(tab)];
@@ -274,10 +292,14 @@ static result_t load_tab(tab_t t, bool force) {
     menu.sel_index = i;
   }
 
+  request_redraw();
+
   return result_t::SUCCESS;
 }
 
 static result_t load_file_list_tab() {
+  menu.set_bounds(CLIENT_X, CLIENT_Y + 1, CLIENT_WIDTH, CLIENT_HEIGHT - 1);
+
   menu.clear();
 
   if (!disk_mounted) {
@@ -343,35 +365,63 @@ static result_t load_file_list_tab() {
 }
 
 static result_t load_state_list_tab() {
+  result_t res = result_t::SUCCESS;
+
+  menu.set_bounds(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, CLIENT_HEIGHT);
+
   menu.clear();
   char state_path[nes::MAX_PATH_LENGTH + 1];
   strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
   SHAPONES_TRY(fs::replace_ext(state_path, state::STATE_FILE_EXT));
 
-  if (nes::fs_exists(state_path)) {
-    state::enum_slots(state_path, [](const state::state_slot_entry_t &entry) {
-      if (!entry.is_used()) return true;
-      char label[nes::MAX_FILENAME_LENGTH + 1];
-      uint32_t t = entry.play_time_sec;
-      if (t < 60) {
-        snprintf(label, sizeof(label), "#%02d %ds", entry.index, t);
-      } else if (t < 3600) {
-        snprintf(label, sizeof(label), "#%02d %dm", entry.index, t / 60);
-      } else {
-        snprintf(label, sizeof(label), "#%02d %.1fh", entry.index,
-                 (float)t / 3600);
+  do {
+    if (nes::fs_exists(state_path)) {
+      res = state::enum_slots(
+          state_path, [](const state::state_slot_entry_t &entry) {
+            if (!entry.is_used()) return true;
+            char label[nes::MAX_FILENAME_LENGTH + 1];
+            uint32_t t = entry.play_time_sec;
+            if (t < 60) {
+              snprintf(label, sizeof(label), "#%02d %ds", entry.index, t);
+            } else if (t < 3600) {
+              snprintf(label, sizeof(label), "#%02d %dm", entry.index, t / 60);
+            } else {
+              snprintf(label, sizeof(label), "#%02d %.1fh", entry.index,
+                       (float)t / 3600);
+            }
+            menu.add_item(icon_t::FILE, action_t::STATE_SELECT, label,
+                          entry.index);
+            return (menu.num_items < menu.capacity);
+          });
+      if (res != result_t::SUCCESS) {
+        break;
       }
-      menu.add_item(icon_t::FILE, action_t::STATE_SELECT, label, entry.index);
-      return (menu.num_items < menu.capacity);
-    });
+    }
+
+    if (menu.num_items < state::MAX_SLOTS) {
+      menu.add_item(icon_t::ADD, action_t::ADD_STATE_SLOT, "New Slot", -1);
+    }
+
+    load_state_screenshot();
+  } while (0);
+
+  if (res != result_t::SUCCESS) {
+    menu.clear();
+    popup_close();
+    popup_list.add_item(icon_t::NONE, action_t::DELETE_STATE, "DELETE FILE");
+    popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+    popup_list.sel_index = 1;
+    popup_show(icon_t::ERROR, "Data Broken.");
   }
 
-  if (menu.num_items < state::MAX_SLOTS) {
-    menu.add_item(icon_t::ADD, action_t::ADD_STATE_SLOT, "New Slot", -1);
-  }
+  request_redraw();
 
-  load_state_screenshot();
+  return res;
+}
 
+static result_t load_monitor_tab() {
+  menu.clear();
+  menu.add_item(icon_t::NONE, action_t::FORCE_NMI_CONFIRM, "Force NMI");
   request_redraw();
   return result_t::SUCCESS;
 }
@@ -465,6 +515,11 @@ static result_t on_menu_selected(ListItem *mi) {
     case action_t::STATE_SELECT: res = on_state_select(mi); break;
     case action_t::LOAD_STATE: res = on_load_state(mi); break;
     case action_t::SAVE_STATE: res = on_save_state(mi); break;
+    case action_t::DELETE_STATE: res = on_delete_state(); break;
+    case action_t::FORCE_NMI_CONFIRM:
+      show_confirm(icon_t::WARNING, "Force NMI?", action_t::FORCE_NMI_TRIGGER);
+      break;
+    case action_t::FORCE_NMI_TRIGGER: res = on_force_nmi_trigger(); break;
     case action_t::CLOSE_POPUP: popup_close(); break;
   }
 
@@ -495,7 +550,11 @@ static result_t on_load_rom(ListItem *mi) {
   char path[nes::MAX_PATH_LENGTH + 1];
   strncpy(path, current_dir, nes::MAX_PATH_LENGTH);
   SHAPONES_TRY(fs::append_path(path, mi->label));
-  SHAPONES_TRY(request_load_nes_file(path));
+  const uint8_t *ines = nullptr;
+  size_t ines_size = 0;
+  SHAPONES_TRY(load_ines(path, &ines, &ines_size));
+  SHAPONES_TRY(map_ines(ines, path));
+  hide();
   return result_t::SUCCESS;
 }
 
@@ -524,6 +583,7 @@ static result_t on_save_state(ListItem *mi) {
   SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
   SHAPONES_TRY(state::save(path, mi->tag));
   popup_close();
+  load_state_list_tab();
   return result_t::SUCCESS;
 }
 
@@ -536,9 +596,34 @@ static result_t on_load_state(ListItem *mi) {
   return result_t::SUCCESS;
 }
 
+static result_t on_delete_state() {
+  char path[nes::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  SHAPONES_TRY(nes::fs_delete(path));
+  popup_close();
+  load_state_list_tab();
+  return result_t::SUCCESS;
+}
+
+static result_t on_force_nmi_trigger() {
+  interrupt::assert_nmi();
+  popup_close();
+  hide();
+  return result_t::SUCCESS;
+}
+
 static result_t show_message(icon_t icon, const char *msg) {
   popup_list.clear();
   popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Close");
+  popup_show(icon, msg);
+  return result_t::SUCCESS;
+}
+
+static result_t show_confirm(icon_t icon, const char *msg,
+                             action_t confirm_action) {
+  popup_list.clear();
+  popup_list.add_item(icon_t::NONE, confirm_action, "OK");
+  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
   popup_show(icon, msg);
   return result_t::SUCCESS;
 }
@@ -550,7 +635,13 @@ result_t overlay(int y, uint8_t *line_buff) {
 
   if (!shown) return result_t::SUCCESS;
 
+#if SHAPONES_MENU_LARGE_FONT
+  int iy = (y / 2) / CHAR_HEIGHT;
+  int sy = (y / 2) % CHAR_HEIGHT;
+#else
   int iy = y / CHAR_HEIGHT;
+  int sy = y % CHAR_HEIGHT;
+#endif
   if (iy < 0 || iy >= BUFF_HEIGHT) {
     return result_t::SUCCESS;
   }
@@ -562,14 +653,18 @@ result_t overlay(int y, uint8_t *line_buff) {
     if (c < FONT8X16_CODE_FIRST || FONT8X16_CODE_LAST < c) {
       continue;
     }
-
-    uint16_t word = FONT8X16_DATA[((int)c - FONT8X16_CODE_FIRST) * CHAR_HEIGHT +
-                                  (y % CHAR_HEIGHT)];
+    uint16_t word =
+        FONT8X16_DATA[((int)c - FONT8X16_CODE_FIRST) * CHAR_HEIGHT + sy];
     for (int ipix = 0; ipix < CHAR_WIDTH; ipix++) {
       int color_index = word & 0x03;
       word >>= 2;
-      uint8_t color = PALETTE_FILE[p * 4 + color_index];
-      if (color < 0x40) line_buff[x + ipix] = color;
+#if SHAPONES_MENU_LARGE_FONT
+      int dx = (x + ipix) * 2;
+      line_buff[dx + 0] = PALETTE_FILE[p * 4 + color_index];
+      line_buff[dx + 1] = PALETTE_FILE[p * 4 + color_index];
+#else
+      line_buff[x + ipix] = PALETTE_FILE[p * 4 + color_index];
+#endif
     }
   }
 
@@ -624,17 +719,18 @@ static void request_redraw() { redraw_requested = true; }
 
 static void perform_redraw() {
   fill_char(0, 0, BUFF_WIDTH, 1, ' ');
-  draw_frame(0, 1, BUFF_WIDTH, BUFF_HEIGHT - 1, '\x80');
+  draw_frame(CLIENT_X - 1, CLIENT_Y - 1, CLIENT_WIDTH + 2, CLIENT_HEIGHT + 2,
+             '\x80');
 
   // tab bar
-  draw_text(1, 1, "\x88\x89");
+  draw_text(CLIENT_X, CLIENT_Y - 1, "\x88\x89");
   for (int itab = 0; itab < NUM_TABS; itab++) {
     for (int i = 0; i < 3; i++) {
       char c = '\xA0' + itab * 3 + i;
       if (itab == (int)tab) {
         c += 0x10;
       }
-      draw_char(3 + itab * 3 + i, 1, c);
+      draw_char(CLIENT_X + 2 + itab * 3 + i, CLIENT_Y - 1, c);
     }
   }
 
@@ -735,7 +831,7 @@ static void draw_list(const ListBox &list) {
       int n = (list.num_items - h);
       button_pos = (list.scroll_pos * (h - 3) + (n - 1)) / n;
     }
-    fill_palette(list_right, y, h, 0);
+    fill_palette(list_right, y, 1, h, 0);
     draw_char(list_right, y, '\x8C');          // up arrow
     draw_char(list_right, y + h - 1, '\x8D');  // down arrow
     fill_char(list_right, y + 1, 1, h - 2, '\x8E');
@@ -772,8 +868,9 @@ static void fill_char(int x, int y, int w, int h, char c) {
 static void fill_palette(int x, int y, int w, int h, uint8_t p) {
   clip_rect(&x, &y, &w, &h);
   for (int iy = 0; iy < h; iy++) {
+    int offset = (y + iy) * BUFF_WIDTH + x;
     for (int ix = 0; ix < w; ix++) {
-      palette_buff[(y + iy) * BUFF_WIDTH + (x + ix)] = p;
+      palette_buff[offset + ix] = p;
     }
   }
 }

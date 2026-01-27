@@ -1,6 +1,7 @@
 #include "shapones/state.hpp"
 #include "shapones/apu.hpp"
 #include "shapones/cpu.hpp"
+#include "shapones/fs.hpp"
 #include "shapones/host_intf.hpp"
 #include "shapones/input.hpp"
 #include "shapones/interrupt.hpp"
@@ -9,7 +10,6 @@
 #include "shapones/memory.hpp"
 #include "shapones/menu.hpp"
 #include "shapones/ppu.hpp"
-#include "shapones/fs.hpp"
 
 namespace nes::state {
 
@@ -34,7 +34,6 @@ static result_t write_slot_data(void *file_handle);
 static result_t read_slot_data(void *file_handle);
 
 void reset() {
-  Exclusive lock(LOCK_PPU);
   ss_wr_index = 0;
   ss_num_stored = 0;
   ss_capture_counter = 3 * 60;  // wait 3 seconds before first shot
@@ -53,7 +52,7 @@ void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render) {
   int sy = focus_y - SS_CLIP_TOP;
   int dy = sy / SS_SCALING;
   if (0 <= dy && dy < SS_HEIGHT && sy % SS_SCALING == 0) {
-    Exclusive lock(LOCK_PPU);
+    LockBlock lock(LOCK_PPU);
     int wr_index = ss_wr_index;
     uint8_t *dst = &ss_buff[(wr_index * SS_SIZE_BYTES) + (dy * SS_WIDTH)];
     for (int dx = 0; dx < SS_WIDTH; dx++) {
@@ -75,7 +74,7 @@ void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render) {
   }
 }
 
- result_t get_state_path(char *out_path, size_t max_len) {
+result_t get_state_path(char *out_path, size_t max_len) {
   const char *ines_path = get_ines_path();
   if (ines_path[0] == '\0') {
     return result_t::ERR_INES_NOT_LOADED;
@@ -125,6 +124,7 @@ result_t save(const char *path, int slot) {
 
         res = fs_seek(f, 0);
         if (res != result_t::SUCCESS) break;
+
         res = fs_write(f, buff, sizeof(buff));
         if (res != result_t::SUCCESS) break;
       }
@@ -135,23 +135,6 @@ result_t save(const char *path, int slot) {
         memset(buff, 0, sizeof(buff));
         res = fs_write(f, buff, sizeof(buff));
         if (res != result_t::SUCCESS) break;
-      }
-    } else {
-      // verify header
-      uint8_t buff[state_file_header_t::SIZE];
-      res = fs_seek(f, 0);
-      if (res != result_t::SUCCESS) break;
-      res = fs_read(f, buff, sizeof(buff));
-      if (res != result_t::SUCCESS) break;
-      state_file_header_t fh;
-      fh.load(buff);
-      if (fh.marker != MARKER) {
-        res = result_t::ERR_INVALID_STATE_FORMAT;
-        break;
-      }
-      if (fh.slot_size != slot_size) {
-        res = result_t::ERR_STATE_SIZE_MISMATCH;
-        break;
       }
     }
 
@@ -180,12 +163,17 @@ result_t save(const char *path, int slot) {
       slot_header.store(buff);
 
       int offset = state_file_header_t::SIZE + state_slot_entry_t::SIZE * slot;
+
       res = fs_seek(f, offset);
       if (res != result_t::SUCCESS) break;
+
       res = fs_write(f, buff, sizeof(buff));
       if (res != result_t::SUCCESS) break;
     }
 
+    // seek to end
+    fs_seek(f, file_size);
+    
   } while (0);
 
   fs_close(f);
@@ -262,14 +250,15 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
 }
 
 static result_t write_screenshot(void *f) {
-  Exclusive lock(LOCK_PPU);
+  SemBlock lock(SEM_PPU);
   int rd_index = (ss_wr_index + SS_BUFF_DEPTH - ss_num_stored) % SS_BUFF_DEPTH;
-  return fs_write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
+  result_t res = fs_write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
+  return res;
 }
 
 static result_t write_slot_data(void *f) {
-  Exclusive lock_ppu(LOCK_PPU);
-  Exclusive lock_apu(LOCK_APU);
+  SemBlock ppu_block(SEM_PPU);
+  SemBlock apu_block(SEM_APU);
   SHAPONES_TRY(cpu::save_state(f));
   SHAPONES_TRY(ppu::save_state(f));
   SHAPONES_TRY(apu::save_state(f));
@@ -281,8 +270,8 @@ static result_t write_slot_data(void *f) {
 }
 
 static result_t read_slot_data(void *f) {
-  Exclusive lock_ppu(LOCK_PPU);
-  Exclusive lock_apu(LOCK_APU);
+  SemBlock ppu_block(SEM_PPU);
+  SemBlock apu_block(SEM_APU);
   SHAPONES_TRY(cpu::load_state(f));
   SHAPONES_TRY(ppu::load_state(f));
   SHAPONES_TRY(apu::load_state(f));

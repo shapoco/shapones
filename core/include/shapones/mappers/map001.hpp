@@ -21,8 +21,20 @@ class Map001 : public Mapper {
 
   Map001() : Mapper(1, "MMC1") {}
 
+  result_t reset() override {
+    shift_reg = 0b10000;
+    ctrl_reg = 0x0C;
+    chr_bank0 = 0;
+    chr_bank1 = 0;
+    prg_bank = 0x00;
+    perform_remap();
+    return result_t::SUCCESS;
+  }
+
   void write(addr_t addr, uint8_t value) override {
     bool remap = false;
+    SHAPONES_PRINTF("Map001: write addr=0x%04X value=0x%02X\n", (int)addr,
+                    (int)value);
     if (value & 0x80) {
       shift_reg = 0b10000;
       ctrl_reg |= 0x0C;
@@ -62,19 +74,23 @@ class Map001 : public Mapper {
       case 2:
         set_nametable_arrangement(nametable_arrangement_t::HORIZONTAL);
         break;
-      case 3: set_nametable_arrangement(nametable_arrangement_t::VERTICAL); break;
+      case 3:
+        set_nametable_arrangement(nametable_arrangement_t::VERTICAL);
+        break;
     }
 
     switch (ctrl_reg & 0x0C) {
       default:
       case 0x00:
-      case 0x04: prgrom_remap(0x8000, (prg_bank & 0x0E) << 14, 0x8000); break;
+      case 0x04:
+        prgrom_remap(0x8000, (prg_bank & 0xFE) * 0x4000, 0x8000);
+        break;
       case 0x08:
-        prgrom_remap(0x8000, 0, 0x4000);
-        prgrom_remap(0xC000, (prg_bank & 0x0F) << 14, 0x4000);
+        prgrom_remap(0x8000, 0 * 0x4000, 0x4000);
+        prgrom_remap(0xC000, (prg_bank & 0x0F) * 0x4000, 0x4000);
         break;
       case 0x0C:
-        prgrom_remap(0x8000, (prg_bank & 0x0F) << 14, 0x4000);
+        prgrom_remap(0x8000, (prg_bank & 0x0F) * 0x4000, 0x4000);
         prgrom_remap(0xC000, prgrom_phys_size - 0x4000, 0x4000);
         break;
     }

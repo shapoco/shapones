@@ -4,6 +4,7 @@
 namespace nes {
 
 char ines_path[MAX_PATH_LENGTH + 1] = "";
+bool ines_mapped = false;
 
 static void build_blend_table();
 
@@ -21,6 +22,9 @@ result_t init(const config_t &cfg) {
   for (int i = 0; i < NUM_LOCKS; i++) {
     SHAPONES_TRY(nes::lock_init(i));
   }
+  for (int i = 0; i < NUM_SEMAPHORES; i++) {
+    SHAPONES_TRY(nes::sem_init(i));
+  }
   SHAPONES_TRY(interrupt::init());
   SHAPONES_TRY(memory::init());
   SHAPONES_TRY(mapper::init());
@@ -35,6 +39,7 @@ result_t init(const config_t &cfg) {
 }
 
 void deinit() {
+  unmap_ines();
   cpu::deinit();
   ppu::deinit();
   apu::deinit();
@@ -46,23 +51,72 @@ void deinit() {
   for (int i = 0; i < NUM_LOCKS; i++) {
     nes::lock_deinit(i);
   }
+  for (int i = 0; i < NUM_SEMAPHORES; i++) {
+    nes::sem_deinit(i);
+  }
 }
 
 result_t map_ines(const uint8_t *ines, const char *path) {
-  SHAPONES_TRY(memory::map_ines(ines));
-  SHAPONES_TRY(reset());
-  strncpy(ines_path, path, MAX_PATH_LENGTH);
-  return result_t::SUCCESS;
+  unmap_ines();
+
+  result_t res = result_t::SUCCESS;
+  do {
+    SemBlock ppu_block(SEM_PPU);
+    SemBlock apu_block(SEM_APU);
+
+    if (path && strnlen(path, MAX_PATH_LENGTH + 1) == 0) {
+      res = result_t::ERR_PATH_TOO_LONG;
+      break;
+    }
+
+    res = memory::map_ines(ines);
+    if (res != result_t::SUCCESS) break;
+
+    if (path) {
+      strncpy(ines_path, path, MAX_PATH_LENGTH);
+      ines_path[MAX_PATH_LENGTH] = '\0';
+    } else {
+      ines_path[0] = '\0';
+    }
+
+    reset();
+  } while (0);
+
+  if (res == result_t::SUCCESS) {
+    ines_mapped = true;
+  } else {
+    ines_mapped = false;
+    ines_path[0] = '\0';
+  }
+  return res;
+}
+
+void unmap_ines() {
+  if (!ines_mapped) return;
+
+  {
+    SemBlock ppu_block(SEM_PPU);
+    SemBlock apu_block(SEM_APU);
+    stop();
+    memory::unmap_ines();
+    ines_mapped = false;
+  }
+
+  if (ines_path[0] != '\0') {
+    unload_ines();
+  }
+
+  ines_path[0] = '\0';
 }
 
 result_t reset() {
   nes::state::reset();
-  SHAPONES_TRY(interrupt::reset());
-  SHAPONES_TRY(cpu::reset());
+  SHAPONES_TRY(mapper::instance->reset());
   SHAPONES_TRY(ppu::reset());
   SHAPONES_TRY(apu::reset());
-  SHAPONES_TRY(mapper::instance->reset());
   SHAPONES_TRY(input::reset());
+  SHAPONES_TRY(interrupt::reset());
+  SHAPONES_TRY(cpu::reset());
   return result_t::SUCCESS;
 }
 

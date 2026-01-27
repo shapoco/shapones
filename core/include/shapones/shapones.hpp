@@ -20,7 +20,6 @@ config_t get_default_config();
 result_t init(const config_t &cfg);
 void deinit();
 
-result_t map_ines(const uint8_t *ines, const char *path);
 result_t reset();
 
 result_t render_next_line(uint8_t *line_buff, bool skip_render = false,

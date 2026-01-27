@@ -177,7 +177,7 @@ result_t set_sampling_rate(uint32_t rate_hz) {
 }
 
 static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   // duty pattern
   switch ((value >> 6) & 0x3) {
     default:
@@ -199,7 +199,7 @@ static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
 }
 
 static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.sweep.period = (value >> 4) & 0x7;
   s.sweep.shift = value & 0x7;
   s.sweep.flags = 0;
@@ -209,13 +209,13 @@ static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
 }
 
 static void pulse_write_reg2(pulse_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.timer_period &= ~(0xff << TIMER_PREC);
   s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
 static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.timer_period &= ~(0x700 << TIMER_PREC);
   s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s.timer = 0;
@@ -224,7 +224,7 @@ static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
 }
 
 static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.linear.reload_value = value & 0x7f;
   if (value & 0x80) {
     s.linear.flags |= LIN_FLAG_CONTROL;
@@ -234,13 +234,13 @@ static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
 }
 
 static void triangle_write_reg2(triangle_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.timer_period &= ~(0xff << TIMER_PREC);
   s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
 static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.timer_period &= ~(0x700 << TIMER_PREC);
   s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s.timer = 0;
@@ -250,7 +250,7 @@ static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg0(noise_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.envelope.flags = 0;
   if (value & 0x10) s.envelope.flags |= ENV_FLAG_CONSTANT;
   if (value & 0x20) s.envelope.flags |= ENV_FLAG_HALT_LOOP;
@@ -263,7 +263,7 @@ static void noise_write_reg0(noise_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg2(noise_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   if (value & 0x80) {
     s.flags |= NOISE_FLAG_FB_MODE;
   } else {
@@ -273,7 +273,7 @@ static void noise_write_reg2(noise_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg3(noise_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
 }
 
@@ -284,7 +284,7 @@ static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
     interrupt::deassert_irq(interrupt::source_t::APU_DMC);
   }
   {
-    Exclusive lock(LOCK_APU);
+    LockBlock lock(LOCK_APU);
     s.flags = 0;
     if (irq_ena_new) s.flags |= DMC_FLAG_IRQ_ENABLE;
     if (value & 0x40) s.flags |= DMC_FLAG_LOOP;
@@ -293,17 +293,17 @@ static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
 }
 
 static void dmc_write_reg1(dmc_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.out_level = value & 0x7f;
 }
 
 static void dmc_write_reg2(dmc_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.sample_addr = 0xc000 + ((addr_t)value << 6);
 }
 
 static void dmc_write_reg3(dmc_state_t &s, uint8_t value) {
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
   s.sample_length = ((int)value << 4) + 1;
 }
 
@@ -577,8 +577,9 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
 }
 
 result_t service(uint8_t *buff, int len) {
+  SemBlock sem(SEM_APU);
 #if !SHAPONES_MUTEX_FAST
-  Exclusive lock(LOCK_APU);
+  LockBlock lock(LOCK_APU);
 #endif
   for (int i = 0; i < len; i++) {
     quarter_frame_phase += quarter_frame_phase_step;

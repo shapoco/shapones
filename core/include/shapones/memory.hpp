@@ -101,7 +101,7 @@ result_t init();
 void deinit();
 
 result_t map_ines(const uint8_t *ines);
-void unmap();
+void unmap_ines();
 
 static SHAPONES_INLINE uint8_t vram_read(addr_t addr) {
   return vram[(addr & vram_addr_and) | vram_addr_or];
@@ -118,6 +118,9 @@ static SHAPONES_INLINE void prgrom_remap(addr_t cpu_base, uint32_t phys_base,
   uint32_t num_blocks = size >> PRGROM_BLOCK_ADDR_BITS;
   for (int i = 0; i < num_blocks; i++) {
     prgrom_remap_table[cpu_block + i] = phys_block + i;
+    SHAPONES_PRINTF("PRGROM Remap: CPU 0x%04X -> PHYS 0x%04X\n",
+                    (unsigned int)(PRGROM_BASE + ((cpu_block + i) << PRGROM_BLOCK_ADDR_BITS)),
+                    (unsigned int)((phys_block + i) << PRGROM_BLOCK_ADDR_BITS));
   }
 }
 

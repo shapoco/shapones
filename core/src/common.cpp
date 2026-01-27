@@ -26,8 +26,10 @@ const char* result_to_string(result_t res) {
     case result_t::ERR_PATH_TOO_LONG: return "Path Too Long";
     case result_t::ERR_FAILED_TO_OPEN_FILE: return "Open Failed";
     case result_t::ERR_FILE_NOT_OPEN: return "File Not Open";
+    case result_t::ERR_FAILED_TO_SEEK_FILE: return "Seek Failed";
     case result_t::ERR_FAILED_TO_READ_FILE: return "Read Failed";
     case result_t::ERR_FAILED_TO_WRITE_FILE: return "Write Failed";
+    case result_t::ERR_FAILED_TO_DELETE_FILE: return "Delete Failed";
     case result_t::ERR_INES_TOO_LARGE: return "iNES Too Large";
     case result_t::ERR_INVALID_STATE_FORMAT: return "Bad State Format";
     case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";

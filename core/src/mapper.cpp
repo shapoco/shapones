@@ -31,7 +31,6 @@ result_t map_ines(const uint8_t *ines) {
   uint8_t flags7 = ines[7];
 
   int id = (flags7 & 0xf0) | ((flags6 >> 4) & 0xf);
-  SHAPONES_PRINTF("Mapper No.%d\n", id);
 
   Mapper *old = instance;
   switch (id) {
@@ -47,6 +46,8 @@ result_t map_ines(const uint8_t *ines) {
   }
 
   SHAPONES_TRY(instance->init());
+
+  SHAPONES_PRINTF("Mapper No.%d (%s) initialized.\n", id, instance->name);
 
   if (old) {
     delete old;

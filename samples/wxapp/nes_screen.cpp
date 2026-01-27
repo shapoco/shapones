@@ -3,7 +3,6 @@
 
 #include "shapones/shapones.hpp"
 
-#include "nes_load.hpp"
 #include "nes_screen.hpp"
 
 static const uint32_t colors[] = {
@@ -44,11 +43,6 @@ END_EVENT_TABLE();
 
 void FcScreen::Render() {
   nes::result_t res;
-
-  if (nes_path[0] != '\0') {
-    res = load_nes_file(nes_path);
-    nes_path[0] = '\0';
-  }
 
   static int itvl = 0;
   bool upd = (((itvl++) & 0x3) == 0);

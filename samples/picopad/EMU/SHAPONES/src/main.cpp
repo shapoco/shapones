@@ -331,7 +331,7 @@ nes::result_t nes::lock_init(int id) {
   return nes::result_t::SUCCESS;
 }
 void nes::lock_deinit(int id) { SpinUnclaim(LOCK_ID_BASE + id); }
-void nes::lock_get(int id) { SpinLock(LOCK_ID_BASE + id); }
+void nes::lock_get(int id) { LockBlock(LOCK_ID_BASE + id); }
 void nes::lock_release(int id) { SpinUnlock(LOCK_ID_BASE + id); }
 
 nes::result_t nes::fs_mount() {

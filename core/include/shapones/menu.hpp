@@ -5,12 +5,6 @@
 
 namespace nes::menu {
 
-enum class tab_t {
-  NES_LIST,
-  SAVE_LIST,
-  COUNT,
-};
-
 extern bool shown;
 
 static SHAPONES_INLINE bool is_shown() { return shown; }

@@ -15,18 +15,18 @@ result_t init() {
 void deinit() {}
 
 result_t reset() {
-  Exclusive lock(LOCK_INTERRUPTS);
+  LockBlock lock(LOCK_INTERRUPTS);
   irq = static_cast<source_t>(0);
   nmi = false;
   return result_t::SUCCESS;
 }
 
 void assert_irq(source_t src) {
-  Exclusive lock(LOCK_INTERRUPTS);
+  LockBlock lock(LOCK_INTERRUPTS);
   irq = irq | src;
 }
 void deassert_irq(source_t src) {
-  Exclusive lock(LOCK_INTERRUPTS);
+  LockBlock lock(LOCK_INTERRUPTS);
   irq = irq & ~src;
 }
 source_t get_irq() { return irq; }

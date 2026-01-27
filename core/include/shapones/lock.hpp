@@ -5,11 +5,18 @@
 
 namespace nes {
 
-class Exclusive {
+class LockBlock {
  public:
   const int id;
-  SHAPONES_INLINE Exclusive(int id) : id(id) { lock_get(id); }
-  SHAPONES_INLINE ~Exclusive() { lock_release(id); }
+  SHAPONES_INLINE LockBlock(int id) : id(id) { lock_get(id); }
+  SHAPONES_INLINE ~LockBlock() { lock_release(id); }
+};
+
+class SemBlock {
+ public:
+  const int id;
+  SHAPONES_INLINE SemBlock(int id) : id(id) { sem_take(id); }
+  SHAPONES_INLINE ~SemBlock() { sem_give(id); }
 };
 
 }  // namespace nes

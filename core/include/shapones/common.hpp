@@ -43,6 +43,26 @@ using int_fast32_t = int32_t;
 
 #if SHAPONES_ENABLE_LOG
 
+#ifdef ARDUINO
+
+#include <Arduino.h>
+
+#define SHAPONES_PRINTF(fmt, ...)                       \
+  do {                                                  \
+    Serial.printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
+    Serial.printf((fmt), ##__VA_ARGS__);                \
+  } while (0)
+
+#define SHAPONES_ERRORF(fmt, ...)                       \
+  do {                                                  \
+    Serial.printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
+    Serial.printf("*ERROR: ");                          \
+    Serial.printf(fmt, ##__VA_ARGS__);                  \
+    nes::stop();                                        \
+  } while (0)
+
+#else
+
 #if !(SHAPONES_NO_STDLIB)
 #include <stdlib.h>
 #endif
@@ -63,6 +83,8 @@ using int_fast32_t = int32_t;
     nes::stop();                                 \
   } while (0)
 
+#endif
+
 #else
 
 #define SHAPONES_PRINTF(fmt, ...) \
@@ -76,13 +98,14 @@ using int_fast32_t = int32_t;
 
 #endif
 
-#define SHAPONES_TRY(expr)                           \
-  do {                                               \
-    ::nes::result_t res = (expr);                    \
-    if (res != nes::result_t::SUCCESS) {             \
-      SHAPONES_PRINTF("Error Code: %d\n", (int)res); \
-      return res;                                    \
-    }                                                \
+#define SHAPONES_TRY(expr)                               \
+  do {                                                   \
+    ::nes::result_t res = (expr);                        \
+    if (res != ::nes::result_t::SUCCESS) {               \
+      SHAPONES_PRINTF("Error Code: %d (%s)\n", (int)res, \
+                      ::nes::result_to_string(res));     \
+      return res;                                        \
+    }                                                    \
   } while (false)
 
 #define SHAPONES_INLINE inline __attribute__((always_inline))
@@ -107,6 +130,10 @@ static constexpr int LOCK_PPU = 0;
 static constexpr int LOCK_APU = 1;
 static constexpr int LOCK_INTERRUPTS = 2;
 
+static constexpr int NUM_SEMAPHORES = 2;
+static constexpr int SEM_PPU = 0;
+static constexpr int SEM_APU = 1;
+
 static constexpr int MAX_FILENAME_LENGTH = SHAPONES_MAX_FILENAME_LEN;
 static constexpr int MAX_PATH_LENGTH = SHAPONES_MAX_PATH_LEN;
 
@@ -118,8 +145,10 @@ enum class result_t {
   ERR_PATH_TOO_LONG,
   ERR_FAILED_TO_OPEN_FILE,
   ERR_FILE_NOT_OPEN,
+  ERR_FAILED_TO_SEEK_FILE,
   ERR_FAILED_TO_READ_FILE,
   ERR_FAILED_TO_WRITE_FILE,
+  ERR_FAILED_TO_DELETE_FILE,
   ERR_INES_TOO_LARGE,
   ERR_INVALID_STATE_FORMAT,
   ERR_STATE_SIZE_MISMATCH,
@@ -227,8 +256,11 @@ extern uint8_t blend_table[64 * 64];
 
 const char* result_to_string(result_t res);
 
-void stop();
+result_t map_ines(const uint8_t* ines, const char* path);
+void unmap_ines();
+
 const char* get_ines_path();
+void stop();
 
 uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b);
 

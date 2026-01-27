@@ -7,12 +7,13 @@
 #include "shapones/shapones.hpp"
 
 #include "nes_audio.hpp"
-#include "nes_load.hpp"
 #include "nes_screen.hpp"
 
 namespace fs = std::filesystem;
 
 enum { ID_FCFRAME = wxID_HIGHEST, ID_FCSCREEN, ID_TIMER };
+
+std::vector<uint8_t> ines_image;
 
 class FcFrame : public wxFrame {
  public:
@@ -70,18 +71,34 @@ class FcApp : public wxApp {
 };
 
 bool FcApp::OnInit() {
+  nes::result_t res = nes::result_t::SUCCESS;
+
   frame = new FcFrame(wxT("ShapoNES"));
 
   auto cfg = nes::get_default_config();
   cfg.apu_sampling_rate = nes_audio::FREQ_HZ;
   nes::init(cfg);
 
+  bool loaded = false;
   if (wxApp::argc >= 2) {
-    nes::result_t res = load_nes_file(wxApp::argv[1]);
-    if (res != nes::result_t::SUCCESS) {
-      wxMessageBox("Failed to load NES file.", "Error", wxOK | wxICON_ERROR);
-    }
-  } else {
+    do {
+      const uint8_t *ines_data = nullptr;
+      size_t ines_size = 0;
+      res = nes::load_ines(wxApp::argv[1], &ines_data, &ines_size);
+      if (res != nes::result_t::SUCCESS) {
+        break;
+      }
+
+      res = nes::map_ines(ines_data, wxApp::argv[1]);
+      if (res != nes::result_t::SUCCESS) {
+        break;
+      }
+
+      loaded = true;
+    } while (0);
+  }
+
+  if (!loaded) {
     nes::menu::show();
   }
 
@@ -98,6 +115,12 @@ nes::result_t nes::lock_init(int id) { return nes::result_t::SUCCESS; }
 void nes::lock_deinit(int id) {}
 void nes::lock_get(int id) {}
 void nes::lock_release(int id) {}
+
+nes::result_t nes::sem_init(int id) { return nes::result_t::SUCCESS; }
+void nes::sem_deinit(int id) {}
+bool nes::sem_try_take(int id) { return true; }
+void nes::sem_take(int id) {}
+void nes::sem_give(int id) {}
 
 nes::result_t nes::fs_mount() { return nes::result_t::SUCCESS; }
 void nes::fs_unmount() {}
@@ -159,7 +182,7 @@ void nes::fs_close(void *handle) {
   }
 }
 
-nes::result_t nes::fs_seek(void *handle, int offset) {
+nes::result_t nes::fs_seek(void *handle, size_t offset) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
     return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
@@ -182,7 +205,7 @@ nes::result_t nes::fs_size(void *handle, size_t *out_size) {
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_read(void *handle, uint8_t *buff, int size) {
+nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
     return nes::result_t::ERR_FILE_NOT_OPEN;
@@ -191,7 +214,7 @@ nes::result_t nes::fs_read(void *handle, uint8_t *buff, int size) {
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_write(void *handle, const uint8_t *buff, int size) {
+nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
     return nes::result_t::ERR_FILE_NOT_OPEN;
@@ -203,8 +226,42 @@ nes::result_t nes::fs_write(void *handle, const uint8_t *buff, int size) {
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::request_load_nes_file(const char *path) {
-  strncpy(nes_path, path, nes::MAX_PATH_LENGTH);
-  nes_path[nes::MAX_PATH_LENGTH] = '\0';
+nes::result_t nes::fs_delete(const char *path) {
+  try {
+    fs::remove(path);
+  } catch (...) {
+    return nes::result_t::ERR_FAILED_TO_DELETE_FILE;
+  }
   return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
+                             size_t *out_size) {
+  try {
+    std::ifstream ifs(path, std::ios::binary);
+
+    ifs.seekg(0, std::ios::end);
+    auto size = ifs.tellg();
+    ifs.seekg(0);
+    SHAPONES_PRINTF("Loading iNES file: %s (size: %zu bytes)\n", path,
+                    (size_t)size);
+
+    std::vector<uint8_t> vec(size);
+    ifs.read((char *)&vec[0], size);
+    ines_image = std::move(vec);
+
+    *out_ines = &ines_image[0];
+    *out_size = ines_image.size();
+
+    SHAPONES_PRINTF("iNES file loaded\n");
+  } catch (...) {
+    SHAPONES_PRINTF("Failed to load iNES file\n");
+    return nes::result_t::ERR_FAILED_TO_READ_FILE;
+  }
+  return nes::result_t::SUCCESS;
+}
+
+void nes::unload_ines() {
+  SHAPONES_PRINTF("Unloading iNES file\n");
+  ines_image.clear();
 }

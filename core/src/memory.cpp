@@ -32,7 +32,7 @@ uint32_t chrram_size = 0;
 
 result_t init() {
   deinit();
-  unmap();
+  unmap_ines();
   if (prgram) prgram = new uint8_t[1];
   if (chrram == nullptr) chrram = new uint8_t[1];
   return result_t::SUCCESS;
@@ -53,7 +53,7 @@ result_t map_ines(const uint8_t *ines) {
   // iNES file format
   // https://www.nesdev.org/wiki/INES
 
-  unmap();
+  unmap_ines();
 
   // marker
   if (ines[0] != 0x4e && ines[1] != 0x45 && ines[2] != 0x53 &&
@@ -140,7 +140,7 @@ result_t map_ines(const uint8_t *ines) {
   prgram_addr_mask = prgram_size - 1;
 
   // 512-byte trainer at $7000-$71FF (stored before PRG data)
-  bool has_trainer = (flags6 & 0x2) != 0;
+  bool has_trainer = (flags6 & 0x4) != 0;
 
   int start_of_prg_rom = 0x10;
   if (has_trainer) start_of_prg_rom += 0x200;
@@ -165,7 +165,7 @@ result_t map_ines(const uint8_t *ines) {
   return result_t::SUCCESS;
 }
 
-void unmap() {
+void unmap_ines() {
   prgrom = &dummy_memory;
   chrrom = &dummy_memory;
   prgram_addr_mask = 0;

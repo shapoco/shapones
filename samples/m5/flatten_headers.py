@@ -39,6 +39,7 @@ with open(OUTPUT_HPP, "w") as out_f:
     out_f.write("\n")
     
     out_f.write("#define SHAPONES_MENU_LARGE_FONT (1)\n\n")
+    out_f.write("#define SHAPONES_ENABLE_LOG (1)\n\n")
     
     out_f.write("#pragma GCC optimize (\"O2\")\n\n")
     
@@ -46,15 +47,17 @@ with open(OUTPUT_HPP, "w") as out_f:
 
     out_f.write("#ifdef SHAPONES_IMPLEMENTATION\n")
 
+    include_file("../src/common.cpp")
     include_file("../src/apu.cpp")
     include_file("../src/cpu.cpp")
-    include_file("../src/dma.cpp")
+    include_file("../src/fs.cpp")
     include_file("../src/input.cpp")
     include_file("../src/interrupt.cpp")
     include_file("../src/mapper.cpp")
     include_file("../src/memory.cpp")
     include_file("../src/menu.cpp")
     include_file("../src/ppu.cpp")
+    include_file("../src/state.cpp")
     include_file("../src/shapones.cpp")
 
     out_f.write("#endif\n")

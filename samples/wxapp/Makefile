@@ -10,7 +10,9 @@ BIN = $(BIN_DIR)/$(BIN_NAME)
 
 CORE_DIR=../../core
 CORE_BUILD_DIR = $(BUILD_DIR)/core
-CORE_HPP_LIST = $(wildcard $(CORE_DIR)/include/shapones/*.hpp)
+CORE_HPP_LIST = \
+	$(wildcard $(CORE_DIR)/include/shapones/*.hpp) \
+	$(wildcard $(CORE_DIR)/include/shapones/mappers/*.hpp)
 CORE_CPP_LIST = $(wildcard $(CORE_DIR)/src/*.cpp)
 CORE_OBJ_LIST = $(patsubst $(CORE_DIR)/src/%.cpp,$(CORE_BUILD_DIR)/%.o,$(CORE_CPP_LIST))
 
