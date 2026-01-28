@@ -173,6 +173,9 @@ enum class result_t {
   ERR_STATE_SIZE_MISMATCH,
   ERR_INES_NOT_LOADED,
   ERR_STATE_SLOT_FULL,
+  ERR_FLASH_ERASE_FAILED,
+  ERR_FLASH_PROGRAM_FAILED,
+  ERR_MMAP_FAILED,
 };
 
 struct config_t {
@@ -1248,9 +1251,6 @@ static SHAPONES_INLINE void prgrom_remap(addr_t cpu_base, uint32_t phys_base,
   uint32_t num_blocks = size >> PRGROM_BLOCK_ADDR_BITS;
   for (int i = 0; i < num_blocks; i++) {
     prgrom_remap_table[cpu_block + i] = phys_block + i;
-    SHAPONES_PRINTF("PRGROM Remap: CPU 0x%04X -> PHYS 0x%04X\n",
-                    (unsigned int)(PRGROM_BASE + ((cpu_block + i) << PRGROM_BLOCK_ADDR_BITS)),
-                    (unsigned int)((phys_block + i) << PRGROM_BLOCK_ADDR_BITS));
   }
 }
 
@@ -1405,6 +1405,9 @@ const char* result_to_string(result_t res) {
     case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
     case result_t::ERR_INES_NOT_LOADED: return "iNES Not Loaded";
     case result_t::ERR_STATE_SLOT_FULL: return "State Slot Full";
+    case result_t::ERR_FLASH_ERASE_FAILED: return "Erase Failed";
+    case result_t::ERR_FLASH_PROGRAM_FAILED: return "Flash Failed";
+    case result_t::ERR_MMAP_FAILED: return "MMap Failed";
     default: return "Unknown Error";
   }
 }
@@ -5254,6 +5257,7 @@ static result_t on_load_rom(ListItem *mi) {
   char path[nes::MAX_PATH_LENGTH + 1];
   strncpy(path, current_dir, nes::MAX_PATH_LENGTH);
   SHAPONES_TRY(fs::append_path(path, mi->label));
+  unmap_ines();
   const uint8_t *ines = nullptr;
   size_t ines_size = 0;
   SHAPONES_TRY(load_ines(path, &ines, &ines_size));

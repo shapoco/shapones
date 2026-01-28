@@ -35,6 +35,9 @@ const char* result_to_string(result_t res) {
     case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
     case result_t::ERR_INES_NOT_LOADED: return "iNES Not Loaded";
     case result_t::ERR_STATE_SLOT_FULL: return "State Slot Full";
+    case result_t::ERR_FLASH_ERASE_FAILED: return "Erase Failed";
+    case result_t::ERR_FLASH_PROGRAM_FAILED: return "Flash Failed";
+    case result_t::ERR_MMAP_FAILED: return "MMap Failed";
     default: return "Unknown Error";
   }
 }

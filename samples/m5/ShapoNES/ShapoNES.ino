@@ -2,6 +2,8 @@
 #include <driver/i2s_pdm.h>
 #include "FS.h"
 #include "SD.h"
+#include <esp_partition.h>
+#include <spi_flash_mmap.h>
 
 #include "shapones_core.h"
 
@@ -61,7 +63,12 @@ static constexpr int AUDIO_CLK_PIN = 39;
 static uint16_t frame_buff[BUFF_W * BUFF_H];
 static int dma_next_y = nes::SCREEN_HEIGHT;
 
-static uint8_t *ines = nullptr;
+static bool ines_load_inprog = false;
+static const esp_partition_t *ines_partition = nullptr;
+static spi_flash_mmap_handle_t mmap_handle = 0;
+static uint8_t *ines_ptr = nullptr;
+static bool ines_in_ram = false;
+
 static uint8_t line_buff[nes::SCREEN_WIDTH];
 static uint64_t next_vsync_us = 0;
 static bool skip_frame = false;
@@ -147,6 +154,7 @@ static volatile uint32_t audio_rd_ptr = 0;
 
 static File file_handle;
 
+static void input_init();
 static void read_input();
 static void ppu_loop(void *arg);
 static bool wait_vsync();
@@ -164,7 +172,15 @@ void setup() {
   M5.begin(cfg);
   delay(500);
 
-  Serial.printf("ESP-IDF Version: %s\n", esp_get_idf_version());
+  SHAPONES_PRINTF("ESP-IDF Version: %s\n", esp_get_idf_version());
+
+  ines_partition = esp_partition_find_first(
+    ESP_PARTITION_TYPE_DATA,
+    ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+    "spiffs");
+  if (!ines_partition) {
+    SHAPONES_PRINTF("*Warning: SPIFFS Partition Not Found.");
+  }
 
   pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLUP);
 
@@ -179,14 +195,7 @@ void setup() {
   xTaskCreatePinnedToCore(ppu_loop, "PPULoop", 8192, NULL, 10, NULL,
                           PRO_CPU_NUM);
 
-  for (int i = 0; i < BUTTON_NUM_PINS; i++) {
-    pinMode(BUTTON_ADC_PINS[i], INPUT);
-  }
-  analogContinuousSetWidth(12);
-  if (!analogContinuous(BUTTON_ADC_PINS, BUTTON_NUM_PINS, 3, 1000, nullptr)) {
-    Serial.println("adc init failed");
-  }
-  analogContinuousStart();
+  input_init();
 
 #if SHAPONES_ENABLE_AUDIO
   audio_init();
@@ -215,6 +224,18 @@ void loop() {
 #if SHAPONES_ENABLE_AUDIO
   speaker_fill_buff(false);
 #endif
+}
+
+static void input_init() {
+  analogContinuousStop();
+  for (int i = 0; i < BUTTON_NUM_PINS; i++) {
+    pinMode(BUTTON_ADC_PINS[i], INPUT);
+  }
+  analogContinuousSetWidth(12);
+  if (!analogContinuous(BUTTON_ADC_PINS, BUTTON_NUM_PINS, 3, 1000, nullptr)) {
+    Serial.println("adc init failed");
+  }
+  analogContinuousStart();
 }
 
 static void read_input() {
@@ -319,7 +340,7 @@ static bool dma_busy() {
 }
 
 static void dma_start() {
-  if (dma_busy()) return;
+  if (dma_busy() || ines_load_inprog) return;
 
   dma_next_y = 0;
   dma_maintain();
@@ -358,8 +379,8 @@ static void meas() {
   stat_pdm_sent_count = 0;
 
   fps_frame_count++;
-  if (elapsed_ms >= 1000) {
-    fps = (float)(fps_frame_count * 1000) / elapsed_ms;
+  if (elapsed_ms >= 5000) {
+    fps = (float)(fps_frame_count * 5000) / elapsed_ms;
 #if 1
     Serial.printf(
       "%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc, PDM "
@@ -604,27 +625,103 @@ nes::result_t nes::fs_delete(const char *path) {
 
 nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
                              size_t *out_size) {
+  nes::result_t res = nes::result_t::SUCCESS;
+  esp_err_t esp_err;
+  uint8_t *buff = nullptr;
+
   nes::unload_ines();
+
+  SHAPONES_PRINTF("Loading iNES: %s\n", path);
   File f = SD.open(path, FILE_READ);
   if (!f) {
     return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
   }
+
+  ines_load_inprog = true;
+
   size_t file_size = f.size();
-  ines = new uint8_t[file_size];
-  size_t s = f.read(ines, file_size);
+  SHAPONES_PRINTF("size: %d\n", (int)file_size);
+
+  do {
+
+    if (file_size < 130 * 1024) {
+      // Load to RAM
+      ines_ptr = new uint8_t[file_size];
+      ines_in_ram = true;
+      size_t s = f.read(ines_ptr, file_size);
+      if (s != file_size) {
+        res = nes::result_t::ERR_FAILED_TO_READ_FILE;
+        break;
+      }
+    } else {
+      // Load to Flash
+      int bar_w = M5.Display.width() * 3 / 4;
+      int bar_h = bar_w / 8;
+      int bar_x = (M5.Display.width() - bar_w) / 2;
+      int bar_y = (M5.Display.height() - bar_h) / 2;
+      M5.Display.fillRect(bar_x - 2, bar_y - 2, bar_w + 4, bar_h + 4, 0x0000);
+      M5.Display.fillRect(bar_x, bar_y, 1, bar_h, 0xFFFF);
+
+      constexpr int CHUNK_SIZE = 4096;
+      buff = new uint8_t[CHUNK_SIZE];
+      SHAPONES_PRINTF("Loading iNES to Flash...\n");
+      SHAPONES_PRINTF("  Erasing...\n");
+      size_t erase_size = (file_size + SPI_FLASH_SEC_SIZE - 1) & ~(SPI_FLASH_SEC_SIZE - 1);
+      esp_err = esp_partition_erase_range(ines_partition, 0, erase_size);
+      if (esp_err != ESP_OK) {
+        res = nes::result_t::ERR_FLASH_ERASE_FAILED;
+        break;
+      }
+
+      SHAPONES_PRINTF("  Programming...\n");
+      size_t offset = 0;
+      while (f.available()) {
+        size_t bytes_read = f.read(buff, CHUNK_SIZE);
+        esp_err = esp_partition_write(ines_partition, offset, buff, bytes_read);
+        if (esp_err != ESP_OK) {
+          res = nes::result_t::ERR_FLASH_PROGRAM_FAILED;
+          break;
+        }
+        offset += bytes_read;
+        M5.Display.fillRect(bar_x, bar_y, (int)(bar_w * offset / file_size), bar_h, 0xFFFF);
+      }
+      if (res != nes::result_t::SUCCESS) break;
+
+      SHAPONES_PRINTF("  Mapping to Memory...\n");
+      esp_err = esp_partition_mmap(
+        ines_partition, 0, ines_partition->size,
+        ESP_PARTITION_MMAP_DATA, (const void **)&ines_ptr, &mmap_handle);
+      if (esp_err != ESP_OK) {
+        res = nes::result_t::ERR_MMAP_FAILED;
+        break;
+      }
+    }
+  } while (0);
+
   f.close();
-  if (s == file_size) {
-    *out_ines = ines;
-    *out_size = file_size;
-    return nes::result_t::SUCCESS;
-  } else {
-    return nes::result_t::ERR_FAILED_TO_READ_FILE;
+
+  if (buff) {
+    delete[] buff;
   }
+
+  *out_ines = ines_ptr;
+  *out_size = file_size;
+
+  ines_load_inprog = false;
+
+  input_init();
+
+  return res;
 }
 
 void nes::unload_ines() {
-  if (ines != nullptr) {
-    delete[] ines;
-    ines = nullptr;
+  if (ines_in_ram && ines_ptr) {
+    delete[] ines_ptr;
   }
+  if (mmap_handle) {
+    spi_flash_munmap(mmap_handle);
+    mmap_handle = 0;
+  }
+  ines_in_ram = false;
+  ines_ptr = nullptr;
 }

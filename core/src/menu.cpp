@@ -290,6 +290,7 @@ static result_t load_tab(tab_t t, bool force) {
   int i = last_menu_index[static_cast<int>(tab)];
   if (0 <= i && i < menu.num_items) {
     menu.sel_index = i;
+    menu.scroll_to(i);
   }
 
   request_redraw();
@@ -550,6 +551,7 @@ static result_t on_load_rom(ListItem *mi) {
   char path[nes::MAX_PATH_LENGTH + 1];
   strncpy(path, current_dir, nes::MAX_PATH_LENGTH);
   SHAPONES_TRY(fs::append_path(path, mi->label));
+  unmap_ines();
   const uint8_t *ines = nullptr;
   size_t ines_size = 0;
   SHAPONES_TRY(load_ines(path, &ines, &ines_size));
