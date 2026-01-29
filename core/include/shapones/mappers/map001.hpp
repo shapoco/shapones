@@ -33,8 +33,6 @@ class Map001 : public Mapper {
 
   void write(addr_t addr, uint8_t value) override {
     bool remap = false;
-    SHAPONES_PRINTF("Map001: write addr=0x%04X value=0x%02X\n", (int)addr,
-                    (int)value);
     if (value & 0x80) {
       shift_reg = 0b10000;
       ctrl_reg |= 0x0C;
