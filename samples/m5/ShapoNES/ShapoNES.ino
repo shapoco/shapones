@@ -536,7 +536,11 @@ static int audio_fill_buffer(int16_t *buff, int offset, int size) {
   nes::apu::service(apu_out_buff, size);
   for (int i = 0; i < size; i++) {
     int16_t val = (int16_t)apu_out_buff[i] - 128;
+#if SHAPONES_ENABLE_PDM_AUDIO
+    audio_buff[offset] = val * 256;
+#else
     audio_buff[offset] = val * 16;
+#endif
     offset = (offset + 1) & (AUDIO_BUFF_LEN - 1);
   }
   stat_end(stat_apu_service);
