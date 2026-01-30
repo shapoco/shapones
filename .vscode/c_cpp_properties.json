@@ -90,6 +90,7 @@
             ],
             "defines": [
                 "USE_PICOPAD=1",
+                "USE_PICOPAD20=1",
                 "SHAPOFONT_INCLUDE_GFXFONT",
                 "PICO_ROOT_PATH=\"${PICOLIBSDK_PATH}\"",
                 "PICOLIBSDK_DISPLAY_DIR=\"${PICOLIBSDK_DISPLAY_DIR}\"",

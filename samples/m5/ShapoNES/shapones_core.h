@@ -20,11 +20,18 @@
 #ifndef SHAPONES_COMMON_HPP
 #define SHAPONES_COMMON_HPP
 
-#if !(SHAPONES_NO_STDLIB)
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#if USE_PICOPAD
+#define SHAPONES_NO_STDLIB (1)
+#define SHAPONES_PICOLIBSDK (1)
+#define SHAPONES_DEFINE_FAST_INT (1)
+#endif
+
+#ifndef SHAPONES_NO_STDLIB
+#define SHAPONES_NO_STDLIB (0)
+#endif
+
+#ifndef SHAPONES_PICOLIBSDK
+#define SHAPONES_PICOLIBSDK (0)
 #endif
 
 #ifndef SHAPONES_DEFINE_FAST_INT
@@ -47,8 +54,19 @@
 #define SHAPONES_MENU_LARGE_FONT (0)
 #endif
 
-#ifndef SHAPONES_MUTEX_FAST
-#define SHAPONES_MUTEX_FAST (0)
+#ifndef SHAPONES_LOCK_FAST
+#define SHAPONES_LOCK_FAST (0)
+#endif
+
+#if SHAPONES_PICOLIBSDK
+// #include "../include.h"
+
+#endif
+#if !(SHAPONES_NO_STDLIB)
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #endif
 
 #if SHAPONES_DEFINE_FAST_INT
@@ -144,14 +162,12 @@ static constexpr addr_t PRGROM_RANGE = 32 * 1024;
 static constexpr addr_t PRGRAM_RANGE = 8 * 1024;
 static constexpr addr_t CHRROM_RANGE = 8 * 1024;
 
-static constexpr int NUM_LOCKS = 3;
-static constexpr int LOCK_PPU = 0;
-static constexpr int LOCK_APU = 1;
-static constexpr int LOCK_INTERRUPTS = 2;
-
-static constexpr int NUM_SEMAPHORES = 2;
-static constexpr int SEM_PPU = 0;
-static constexpr int SEM_APU = 1;
+static constexpr int NUM_LOCKS = 5;
+static constexpr int LOCK_INTERRUPTS = 0;
+static constexpr int LOCK_REGS_PPU = 1;
+static constexpr int LOCK_REGS_APU = 2;
+static constexpr int LOCK_STATE_PPU = 3;
+static constexpr int LOCK_STATE_APU = 4;
 
 static constexpr int MAX_FILENAME_LENGTH = SHAPONES_MAX_FILENAME_LEN;
 static constexpr int MAX_PATH_LENGTH = SHAPONES_MAX_PATH_LEN;
@@ -704,13 +720,8 @@ using fs_enum_files_cb_t = bool (*)(const file_info_t &info);
 result_t lock_init(int id);
 void lock_deinit(int id);
 void lock_get(int id);
+bool lock_try_get(int id);
 void lock_release(int id);
-
-result_t sem_init(int id);
-void sem_deinit(int id);
-bool sem_try_take(int id);
-void sem_take(int id);
-void sem_give(int id);
 
 result_t load_ines(const char *path, const uint8_t **out_ines,
                    size_t *out_size);
@@ -867,13 +878,6 @@ class LockBlock {
   const int id;
   SHAPONES_INLINE LockBlock(int id) : id(id) { lock_get(id); }
   SHAPONES_INLINE ~LockBlock() { lock_release(id); }
-};
-
-class SemBlock {
- public:
-  const int id;
-  SHAPONES_INLINE SemBlock(int id) : id(id) { sem_take(id); }
-  SHAPONES_INLINE ~SemBlock() { sem_give(id); }
 };
 
 }  // namespace nes
@@ -1621,7 +1625,7 @@ result_t set_sampling_rate(uint32_t rate_hz) {
 }
 
 static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   // duty pattern
   switch ((value >> 6) & 0x3) {
     default:
@@ -1643,7 +1647,7 @@ static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
 }
 
 static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.sweep.period = (value >> 4) & 0x7;
   s.sweep.shift = value & 0x7;
   s.sweep.flags = 0;
@@ -1653,13 +1657,13 @@ static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
 }
 
 static void pulse_write_reg2(pulse_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.timer_period &= ~(0xff << TIMER_PREC);
   s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
 static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.timer_period &= ~(0x700 << TIMER_PREC);
   s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s.timer = 0;
@@ -1668,7 +1672,7 @@ static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
 }
 
 static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.linear.reload_value = value & 0x7f;
   if (value & 0x80) {
     s.linear.flags |= LIN_FLAG_CONTROL;
@@ -1678,13 +1682,13 @@ static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
 }
 
 static void triangle_write_reg2(triangle_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.timer_period &= ~(0xff << TIMER_PREC);
   s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
 static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.timer_period &= ~(0x700 << TIMER_PREC);
   s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s.timer = 0;
@@ -1694,7 +1698,7 @@ static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg0(noise_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.envelope.flags = 0;
   if (value & 0x10) s.envelope.flags |= ENV_FLAG_CONSTANT;
   if (value & 0x20) s.envelope.flags |= ENV_FLAG_HALT_LOOP;
@@ -1707,7 +1711,7 @@ static void noise_write_reg0(noise_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg2(noise_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   if (value & 0x80) {
     s.flags |= NOISE_FLAG_FB_MODE;
   } else {
@@ -1717,7 +1721,7 @@ static void noise_write_reg2(noise_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg3(noise_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
 }
 
@@ -1728,7 +1732,7 @@ static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
     interrupt::deassert_irq(interrupt::source_t::APU_DMC);
   }
   {
-    LockBlock lock(LOCK_APU);
+    LockBlock lock(LOCK_REGS_APU);
     s.flags = 0;
     if (irq_ena_new) s.flags |= DMC_FLAG_IRQ_ENABLE;
     if (value & 0x40) s.flags |= DMC_FLAG_LOOP;
@@ -1737,17 +1741,17 @@ static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
 }
 
 static void dmc_write_reg1(dmc_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.out_level = value & 0x7f;
 }
 
 static void dmc_write_reg2(dmc_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.sample_addr = 0xc000 + ((addr_t)value << 6);
 }
 
 static void dmc_write_reg3(dmc_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_APU);
+  LockBlock lock(LOCK_REGS_APU);
   s.sample_length = ((int)value << 4) + 1;
 }
 
@@ -1799,8 +1803,8 @@ static SHAPONES_INLINE int step_sweep(pulse_state_t &s) {
           gate = 0;
         }
         {
-#if SHAPONES_MUTEX_FAST
-          Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+          Exclusive lock(LOCK_REGS_APU);
 #endif
           s.timer_period = target;
         }
@@ -1821,8 +1825,8 @@ static SHAPONES_INLINE int step_linear_counter(linear_counter_t &c) {
     }
 
     if (!(c.flags & LIN_FLAG_CONTROL)) {
-#if SHAPONES_MUTEX_FAST
-      Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+      Exclusive lock(LOCK_REGS_APU);
 #endif
       c.flags &= ~LIN_FLAG_RELOAD;  // clear reload flag
     }
@@ -1842,8 +1846,8 @@ static SHAPONES_INLINE int sample_pulse(pulse_state_t &s) {
   if ((frame_step_flags & STEP_FLAG_HALF) &&
       !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
     if (s.length > 0) {
-#if SHAPONES_MUTEX_FAST
-      Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+      Exclusive lock(LOCK_REGS_APU);
 #endif
       s.length--;
     }
@@ -1856,8 +1860,8 @@ static SHAPONES_INLINE int sample_pulse(pulse_state_t &s) {
   // sequencer
   uint32_t phase;
   {
-#if SHAPONES_MUTEX_FAST
-    Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+    Exclusive lock(LOCK_REGS_APU);
 #endif
     s.timer += pulse_timer_step;
     int step = 0;
@@ -1881,8 +1885,8 @@ static SHAPONES_INLINE int sample_triangle(triangle_state_t &s) {
   if ((frame_step_flags & STEP_FLAG_HALF) &&
       !(s.linear.flags & LIN_FLAG_CONTROL)) {
     if (s.length > 0) {
-#if SHAPONES_MUTEX_FAST
-      Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+      Exclusive lock(LOCK_REGS_APU);
 #endif
       s.length--;
     }
@@ -1894,8 +1898,8 @@ static SHAPONES_INLINE int sample_triangle(triangle_state_t &s) {
   // phase counter
   uint32_t phase;
   {
-#if SHAPONES_MUTEX_FAST
-    Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+    Exclusive lock(LOCK_REGS_APU);
 #endif
     s.timer += triangle_timer_step;
     int step = 0;
@@ -1928,8 +1932,8 @@ static SHAPONES_INLINE int sample_noise(noise_state_t &s) {
   if ((frame_step_flags & STEP_FLAG_HALF) &&
       !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
     if (s.length > 0) {
-#if SHAPONES_MUTEX_FAST
-      Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+      Exclusive lock(LOCK_REGS_APU);
 #endif
       s.length--;
     }
@@ -1963,8 +1967,8 @@ static SHAPONES_INLINE int sample_noise(noise_state_t &s) {
 static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
   int step;
   {
-#if SHAPONES_MUTEX_FAST
-    Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+    Exclusive lock(LOCK_REGS_APU);
 #endif
     s.timer += s.timer_step;
     step = s.timer >> TIMER_PREC;
@@ -1973,8 +1977,8 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
 
   for (int i = 0; i < step; i++) {
     if (s.bits_remaining == 0) {
-#if SHAPONES_MUTEX_FAST
-      Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+      Exclusive lock(LOCK_REGS_APU);
 #endif
       if (s.bytes_remaining > 0) {
         s.shift_reg = cpu::bus_read(s.addr_counter | 0x8000);
@@ -1997,15 +2001,15 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
     if (s.bits_remaining > 0) {
       if (status.dmc_enable) {
         if (s.shift_reg & 1) {
-#if SHAPONES_MUTEX_FAST
-          Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+          Exclusive lock(LOCK_REGS_APU);
 #endif
           if (s.out_level <= 125) {
             s.out_level += 2;
           }
         } else {
-#if SHAPONES_MUTEX_FAST
-          Exclusive lock(LOCK_APU);
+#if SHAPONES_LOCK_FAST
+          Exclusive lock(LOCK_REGS_APU);
 #endif
           if (s.out_level >= 2) {
             s.out_level -= 2;
@@ -2021,10 +2025,17 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
 }
 
 result_t service(uint8_t *buff, int len) {
-  SemBlock sem(SEM_APU);
-#if !SHAPONES_MUTEX_FAST
-  LockBlock lock(LOCK_APU);
+  if (!lock_try_get(LOCK_STATE_APU)) {
+    for (int i = 0; i < len; i++) {
+      buff[i] = 0;
+    }
+    return result_t::SUCCESS;
+  }
+
+#if !SHAPONES_LOCK_FAST
+  LockBlock lock(LOCK_REGS_APU);
 #endif
+
   for (int i = 0; i < len; i++) {
     quarter_frame_phase += quarter_frame_phase_step;
     if (quarter_frame_phase >= QUARTER_FRAME_PHASE_PERIOD) {
@@ -2052,6 +2063,9 @@ result_t service(uint8_t *buff, int len) {
     sample += sample_dmc(dmc);
     buff[i] = sample;
   }
+
+  lock_release(LOCK_STATE_APU);
+
   return result_t::SUCCESS;
 }
 
@@ -4160,7 +4174,10 @@ result_t load_state(void *file_handle) {
 #ifndef SHAPONES_FONT8X16_HPP
 #define SHAPONES_FONT8X16_HPP
 
-#include <stdint.h>
+#if !(SHAPONES_NO_STDLIB)
+// #include "shapones/common.hpp"
+
+#endif
 
 namespace nes::menu {
 
@@ -5084,7 +5101,12 @@ static result_t load_state_list_tab() {
     if (nes::fs_exists(state_path)) {
       res = state::enum_slots(
           state_path, [](const state::state_slot_entry_t &entry) {
-            if (!entry.is_used()) return true;
+            if (!entry.is_used()) {
+              // In PicoLibSDK, true/false are defined as int,
+              // so a cast to bool is required.
+              return (bool)true;
+            }
+
             char label[nes::MAX_FILENAME_LENGTH + 1];
             uint32_t t = entry.play_time_sec;
             if (t < 60) {
@@ -5693,7 +5715,7 @@ uint8_t reg_read(addr_t addr) {
   uint8_t retval;
   switch (addr) {
     case REG_PPUSTATUS: {
-      LockBlock lock(LOCK_PPU);
+      LockBlock lock(LOCK_REGS_PPU);
       retval = reg.status.raw;
       reg.status.vblank_flag = 0;
       scroll_ppuaddr_high_stored = false;
@@ -5702,7 +5724,7 @@ uint8_t reg_read(addr_t addr) {
     case REG_OAMDATA: retval = oam_read(reg.oam_addr); break;
 
     case REG_PPUDATA: {
-      LockBlock lock(LOCK_PPU);
+      LockBlock lock(LOCK_REGS_PPU);
       addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
@@ -5724,7 +5746,7 @@ uint8_t reg_read(addr_t addr) {
 void reg_write(addr_t addr, uint8_t data) {
   switch (addr) {
     case REG_PPUCTRL: {
-      LockBlock lock(LOCK_PPU);
+      LockBlock lock(LOCK_REGS_PPU);
       // name sel bits
       reg.scroll &= 0xf3ff;
       reg.scroll |= (uint16_t)(data & 0x3) << 10;
@@ -5739,7 +5761,7 @@ void reg_write(addr_t addr, uint8_t data) {
     case REG_OAMDATA: oam_write(reg.oam_addr, data); break;
 
     case REG_PPUSCROLL: {
-      LockBlock lock(LOCK_PPU);
+      LockBlock lock(LOCK_REGS_PPU);
       if (!scroll_ppuaddr_high_stored) {
         reg.scroll &= ~SCROLL_MASK_COARSE_X;
         reg.scroll |= (data >> 3) & SCROLL_MASK_COARSE_X;
@@ -5754,7 +5776,7 @@ void reg_write(addr_t addr, uint8_t data) {
     } break;
 
     case REG_PPUADDR: {
-      LockBlock lock(LOCK_PPU);
+      LockBlock lock(LOCK_REGS_PPU);
       if (!scroll_ppuaddr_high_stored) {
         reg.scroll &= 0x00ffu;
         reg.scroll |= ((uint16_t)data << 8) & 0x3f00u;
@@ -5768,7 +5790,7 @@ void reg_write(addr_t addr, uint8_t data) {
     } break;
 
     case REG_PPUDATA: {
-      LockBlock lock(LOCK_PPU);
+      LockBlock lock(LOCK_REGS_PPU);
       uint_fast16_t scr = scroll_counter;
       addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
       bus_write(addr, data);
@@ -5862,7 +5884,7 @@ static SHAPONES_INLINE void palette_write(addr_t addr, uint8_t data) {
 }
 
 result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
-  if (!sem_try_take(SEM_PPU)) {
+  if (!lock_try_get(LOCK_STATE_PPU)) {
     status->timing = timing_t::NONE;
     status->focus_y = focus_y;
     return result_t::SUCCESS;
@@ -5881,11 +5903,11 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     if (focus_x == 0) {
       if (focus_y == SCREEN_HEIGHT + 1) {
         // vblank flag/interrupt
-        LockBlock lock(LOCK_PPU);
+        LockBlock lock(LOCK_REGS_PPU);
         reg.status.vblank_flag = 1;
       } else if (focus_y == SCAN_LINES - 1) {
         // clear flags
-        LockBlock lock(LOCK_PPU);
+        LockBlock lock(LOCK_REGS_PPU);
         reg.status.vblank_flag = 0;
         reg.status.sprite0_hit = 0;
       }
@@ -5983,15 +6005,15 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     status->timing = timing;
   }
 
-  sem_give(SEM_PPU);
+  lock_release(LOCK_STATE_PPU);
 
   return result_t::SUCCESS;
 }
 
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
-#if !SHAPONES_MUTEX_FAST
-  LockBlock lock(LOCK_PPU);
+#if !SHAPONES_LOCK_FAST
+  LockBlock lock(LOCK_REGS_PPU);
 #endif
 
   bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
@@ -6009,8 +6031,8 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
     {
       uint_fast16_t scr;
       {
-#if SHAPONES_MUTEX_FAST
-        Exclusive lock(LOCK_PPU);
+#if SHAPONES_LOCK_FAST
+        Exclusive lock(LOCK_REGS_PPU);
 #endif
         scr = scroll_counter;
       }
@@ -6089,8 +6111,8 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
     // update scroll counter
     // see: https://www.nesdev.org/wiki/PPU_scrolling
     if (reg.mask.bg_enable || reg.mask.sprite_enable) {
-#if SHAPONES_MUTEX_FAST
-      Exclusive lock(LOCK_PPU);
+#if SHAPONES_LOCK_FAST
+      Exclusive lock(LOCK_REGS_PPU);
 #endif
       uint_fast16_t scr = scroll_counter;
       uint_fast8_t fx = fine_x_counter;
@@ -6373,7 +6395,7 @@ void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render) {
   int sy = focus_y - SS_CLIP_TOP;
   int dy = sy / SS_SCALING;
   if (0 <= dy && dy < SS_HEIGHT && sy % SS_SCALING == 0) {
-    LockBlock lock(LOCK_PPU);
+    LockBlock lock(LOCK_REGS_PPU);
     int wr_index = ss_wr_index;
     uint8_t *dst = &ss_buff[(wr_index * SS_SIZE_BYTES) + (dy * SS_WIDTH)];
     for (int dx = 0; dx < SS_WIDTH; dx++) {
@@ -6494,7 +6516,7 @@ result_t save(const char *path, int slot) {
 
     // seek to end
     fs_seek(f, file_size);
-    
+
   } while (0);
 
   fs_close(f);
@@ -6571,15 +6593,15 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
 }
 
 static result_t write_screenshot(void *f) {
-  SemBlock lock(SEM_PPU);
+  LockBlock lock(LOCK_STATE_PPU);
   int rd_index = (ss_wr_index + SS_BUFF_DEPTH - ss_num_stored) % SS_BUFF_DEPTH;
   result_t res = fs_write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
   return res;
 }
 
 static result_t write_slot_data(void *f) {
-  SemBlock ppu_block(SEM_PPU);
-  SemBlock apu_block(SEM_APU);
+  LockBlock ppu_block(LOCK_STATE_PPU);
+  LockBlock apu_block(LOCK_STATE_APU);
   SHAPONES_TRY(cpu::save_state(f));
   SHAPONES_TRY(ppu::save_state(f));
   SHAPONES_TRY(apu::save_state(f));
@@ -6591,8 +6613,8 @@ static result_t write_slot_data(void *f) {
 }
 
 static result_t read_slot_data(void *f) {
-  SemBlock ppu_block(SEM_PPU);
-  SemBlock apu_block(SEM_APU);
+  LockBlock ppu_block(LOCK_STATE_PPU);
+  LockBlock apu_block(LOCK_STATE_APU);
   SHAPONES_TRY(cpu::load_state(f));
   SHAPONES_TRY(ppu::load_state(f));
   SHAPONES_TRY(apu::load_state(f));
@@ -6665,9 +6687,6 @@ result_t init(const config_t &cfg) {
   for (int i = 0; i < NUM_LOCKS; i++) {
     SHAPONES_TRY(nes::lock_init(i));
   }
-  for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    SHAPONES_TRY(nes::sem_init(i));
-  }
   SHAPONES_TRY(interrupt::init());
   SHAPONES_TRY(memory::init());
   SHAPONES_TRY(mapper::init());
@@ -6694,9 +6713,6 @@ void deinit() {
   for (int i = 0; i < NUM_LOCKS; i++) {
     nes::lock_deinit(i);
   }
-  for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    nes::sem_deinit(i);
-  }
 }
 
 result_t map_ines(const uint8_t *ines, const char *path) {
@@ -6704,8 +6720,8 @@ result_t map_ines(const uint8_t *ines, const char *path) {
 
   result_t res = result_t::SUCCESS;
   do {
-    SemBlock ppu_block(SEM_PPU);
-    SemBlock apu_block(SEM_APU);
+    LockBlock ppu_block(LOCK_STATE_PPU);
+    LockBlock apu_block(LOCK_STATE_APU);
 
     if (path && strnlen(path, MAX_PATH_LENGTH + 1) == 0) {
       res = result_t::ERR_PATH_TOO_LONG;
@@ -6738,8 +6754,8 @@ void unmap_ines() {
   if (!ines_mapped) return;
 
   {
-    SemBlock ppu_block(SEM_PPU);
-    SemBlock apu_block(SEM_APU);
+    LockBlock ppu_block(LOCK_STATE_PPU);
+    LockBlock apu_block(LOCK_STATE_APU);
     stop();
     memory::unmap_ines();
     ines_mapped = false;

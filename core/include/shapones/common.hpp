@@ -1,11 +1,18 @@
 #ifndef SHAPONES_COMMON_HPP
 #define SHAPONES_COMMON_HPP
 
-#if !(SHAPONES_NO_STDLIB)
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#if USE_PICOPAD
+#define SHAPONES_NO_STDLIB (1)
+#define SHAPONES_PICOLIBSDK (1)
+#define SHAPONES_DEFINE_FAST_INT (1)
+#endif
+
+#ifndef SHAPONES_NO_STDLIB
+#define SHAPONES_NO_STDLIB (0)
+#endif
+
+#ifndef SHAPONES_PICOLIBSDK
+#define SHAPONES_PICOLIBSDK (0)
 #endif
 
 #ifndef SHAPONES_DEFINE_FAST_INT
@@ -28,8 +35,18 @@
 #define SHAPONES_MENU_LARGE_FONT (0)
 #endif
 
-#ifndef SHAPONES_MUTEX_FAST
-#define SHAPONES_MUTEX_FAST (0)
+#ifndef SHAPONES_LOCK_FAST
+#define SHAPONES_LOCK_FAST (0)
+#endif
+
+#if SHAPONES_PICOLIBSDK
+#include "../include.h"
+#endif
+#if !(SHAPONES_NO_STDLIB)
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #endif
 
 #if SHAPONES_DEFINE_FAST_INT
@@ -125,14 +142,12 @@ static constexpr addr_t PRGROM_RANGE = 32 * 1024;
 static constexpr addr_t PRGRAM_RANGE = 8 * 1024;
 static constexpr addr_t CHRROM_RANGE = 8 * 1024;
 
-static constexpr int NUM_LOCKS = 3;
-static constexpr int LOCK_PPU = 0;
-static constexpr int LOCK_APU = 1;
-static constexpr int LOCK_INTERRUPTS = 2;
-
-static constexpr int NUM_SEMAPHORES = 2;
-static constexpr int SEM_PPU = 0;
-static constexpr int SEM_APU = 1;
+static constexpr int NUM_LOCKS = 5;
+static constexpr int LOCK_INTERRUPTS = 0;
+static constexpr int LOCK_REGS_PPU = 1;
+static constexpr int LOCK_REGS_APU = 2;
+static constexpr int LOCK_STATE_PPU = 3;
+static constexpr int LOCK_STATE_APU = 4;
 
 static constexpr int MAX_FILENAME_LENGTH = SHAPONES_MAX_FILENAME_LEN;
 static constexpr int MAX_PATH_LENGTH = SHAPONES_MAX_PATH_LEN;

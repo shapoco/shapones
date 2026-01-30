@@ -36,6 +36,7 @@ PALETTE = [
     0xFFFFFF,  # White
 ]
 
+
 def nearest_index(r, g, b):
     min_dist = None
     best_index = None
@@ -56,7 +57,9 @@ def nearest_index(r, g, b):
 with open(options.output, "w") as f:
     f.write("#ifndef SHAPONES_FONT8X16_HPP\n")
     f.write("#define SHAPONES_FONT8X16_HPP\n\n")
-    f.write("#include <stdint.h>\n\n")
+    f.write("#if !(SHAPONES_NO_STDLIB)\n")
+    f.write("#include \"shapones/common.hpp\"\n")
+    f.write("#endif\n\n")
     f.write("namespace nes::menu {\n\n")
     f.write("const uint16_t FONT8X16_CODE_FIRST = 0x%02X;\n" % CODE_FIRST)
     f.write("const uint16_t FONT8X16_CODE_LAST = 0x%02X;\n" % CODE_LAST)

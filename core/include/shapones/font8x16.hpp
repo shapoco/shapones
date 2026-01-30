@@ -1,7 +1,9 @@
 #ifndef SHAPONES_FONT8X16_HPP
 #define SHAPONES_FONT8X16_HPP
 
-#include <stdint.h>
+#if !(SHAPONES_NO_STDLIB)
+#include "shapones/common.hpp"
+#endif
 
 namespace nes::menu {
 

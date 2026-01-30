@@ -15,13 +15,8 @@ using fs_enum_files_cb_t = bool (*)(const file_info_t &info);
 result_t lock_init(int id);
 void lock_deinit(int id);
 void lock_get(int id);
+bool lock_try_get(int id);
 void lock_release(int id);
-
-result_t sem_init(int id);
-void sem_deinit(int id);
-bool sem_try_take(int id);
-void sem_take(int id);
-void sem_give(int id);
 
 result_t load_ines(const char *path, const uint8_t **out_ines,
                    size_t *out_size);

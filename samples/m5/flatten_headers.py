@@ -13,6 +13,10 @@ RE_PRAGMA_GCC_OPTIMIZE = re.compile(r'#pragma\s+GCC\s+optimize\s*\(\s*".*"\s*\)'
 included_files = set()
 
 def include_file(inc_path):
+    if inc_path == '../include.h':
+        # PicoLibSDK
+        return
+    
     path = os.path.join(INCLUDE_DIR, inc_path)
     
     if path in included_files:

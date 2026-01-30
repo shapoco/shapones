@@ -22,9 +22,6 @@ result_t init(const config_t &cfg) {
   for (int i = 0; i < NUM_LOCKS; i++) {
     SHAPONES_TRY(nes::lock_init(i));
   }
-  for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    SHAPONES_TRY(nes::sem_init(i));
-  }
   SHAPONES_TRY(interrupt::init());
   SHAPONES_TRY(memory::init());
   SHAPONES_TRY(mapper::init());
@@ -51,9 +48,6 @@ void deinit() {
   for (int i = 0; i < NUM_LOCKS; i++) {
     nes::lock_deinit(i);
   }
-  for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    nes::sem_deinit(i);
-  }
 }
 
 result_t map_ines(const uint8_t *ines, const char *path) {
@@ -61,8 +55,8 @@ result_t map_ines(const uint8_t *ines, const char *path) {
 
   result_t res = result_t::SUCCESS;
   do {
-    SemBlock ppu_block(SEM_PPU);
-    SemBlock apu_block(SEM_APU);
+    LockBlock ppu_block(LOCK_STATE_PPU);
+    LockBlock apu_block(LOCK_STATE_APU);
 
     if (path && strnlen(path, MAX_PATH_LENGTH + 1) == 0) {
       res = result_t::ERR_PATH_TOO_LONG;
@@ -95,8 +89,8 @@ void unmap_ines() {
   if (!ines_mapped) return;
 
   {
-    SemBlock ppu_block(SEM_PPU);
-    SemBlock apu_block(SEM_APU);
+    LockBlock ppu_block(LOCK_STATE_PPU);
+    LockBlock apu_block(LOCK_STATE_APU);
     stop();
     memory::unmap_ines();
     ines_mapped = false;

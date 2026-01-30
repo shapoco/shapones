@@ -111,8 +111,7 @@ static uint8_t line_buff[nes::SCREEN_WIDTH];
 static uint64_t next_vsync_us = 0;
 static bool skip_frame = false;
 
-static spinlock_t locks[nes::NUM_LOCKS];
-static SemaphoreHandle_t sems[nes::NUM_SEMAPHORES];
+static SemaphoreHandle_t sems[nes::NUM_LOCKS];
 
 static adc_button::Pin button_pins[BUTTON_NUM_PINS];
 
@@ -563,32 +562,18 @@ static bool disp_button_down() {
 }
 
 nes::result_t nes::lock_init(int id) {
-  spinlock_initialize(&locks[id]);
-  return nes::result_t::SUCCESS;
-}
-void nes::lock_deinit(int id) {}
-void nes::lock_get(int id) {
-  taskENTER_CRITICAL(&locks[id]);
-}
-void nes::lock_release(int id) {
-  taskEXIT_CRITICAL(&locks[id]);
-}
-
-nes::result_t nes::sem_init(int id) {
   sems[id] = xSemaphoreCreateBinary();
   xSemaphoreGive(sems[id]);
   return nes::result_t::SUCCESS;
 }
-void nes::sem_deinit(int id) {}
-bool nes::sem_try_take(int id) {
+void nes::lock_deinit(int id) {}
+bool nes::lock_try_get(int id) {
   return (xSemaphoreTake(sems[id], 0) == pdTRUE);
 }
-void nes::sem_take(int id) {
-  while (!nes::sem_try_take(id)) {
-    vTaskDelay(1);
-  }
+void nes::lock_get(int id) {
+  while (xSemaphoreTake(sems[id], 0) == pdFALSE) {}
 }
-void nes::sem_give(int id) {
+void nes::lock_release(int id) {
   xSemaphoreGive(sems[id]);
 }
 

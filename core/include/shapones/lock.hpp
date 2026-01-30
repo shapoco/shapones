@@ -12,13 +12,6 @@ class LockBlock {
   SHAPONES_INLINE ~LockBlock() { lock_release(id); }
 };
 
-class SemBlock {
- public:
-  const int id;
-  SHAPONES_INLINE SemBlock(int id) : id(id) { sem_take(id); }
-  SHAPONES_INLINE ~SemBlock() { sem_give(id); }
-};
-
 }  // namespace nes
 
 #endif

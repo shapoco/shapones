@@ -114,13 +114,8 @@ IMPLEMENT_APP(FcApp)
 nes::result_t nes::lock_init(int id) { return nes::result_t::SUCCESS; }
 void nes::lock_deinit(int id) {}
 void nes::lock_get(int id) {}
+bool nes::lock_try_get(int id) { return true; }
 void nes::lock_release(int id) {}
-
-nes::result_t nes::sem_init(int id) { return nes::result_t::SUCCESS; }
-void nes::sem_deinit(int id) {}
-bool nes::sem_try_take(int id) { return true; }
-void nes::sem_take(int id) {}
-void nes::sem_give(int id) {}
 
 nes::result_t nes::fs_mount() { return nes::result_t::SUCCESS; }
 void nes::fs_unmount() {}

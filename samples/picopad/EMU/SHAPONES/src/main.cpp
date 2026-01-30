@@ -1,6 +1,5 @@
 #include "../include.h"
 
-#include "mono8x16.hpp"
 #include "shapones/shapones.hpp"
 
 static constexpr int FRAME_BUFF_STRIDE = nes::SCREEN_WIDTH * 3 / 2;
@@ -40,13 +39,13 @@ static dma_channel_hw_t *disp_dma_hw = nullptr;
 
 uint64_t disp_next_vsync_us = 0;
 
-static char ines_path[nes::MAX_PATH_LENGTH] = "";
-
 static const uint8_t *sound_refill();
 
 static constexpr int LOCK_ID_BASE = 0;
 
-static nes::result_t ines_load(const char *path);
+nes::input::status_t input_status;
+
+sFile file_handle;
 
 static void core0_main();
 static void core1_main();
@@ -60,7 +59,7 @@ static void disp_dma_complete();
 static bool disp_wait_vsync();
 
 int main() {
-#if USE_PICOPAD10 || USE_PICOPAD20
+#if USE_PICOPAD
   vreg_set_voltage(VREG_VOLTAGE_1_30);
   WaitMs(100);
   set_sys_clock_khz(250000, true);
@@ -98,22 +97,29 @@ static void core0_main() {
   while (true) {
     uint64_t now_ms = Time64() / 1000;
 
-    nes::input::status_t is;
-    is.raw = 0;
-    if (KeyPressedFast(KEY_LEFT)) is.left = 1;
-    if (KeyPressedFast(KEY_RIGHT)) is.right = 1;
-    if (KeyPressedFast(KEY_UP)) is.up = 1;
-    if (KeyPressedFast(KEY_DOWN)) is.down = 1;
-    if (KeyPressedFast(KEY_A)) is.A = 1;
-    if (KeyPressedFast(KEY_B)) is.start = 1;
-    if (KeyPressedFast(KEY_X)) is.B = 1;
-    if (KeyPressedFast(KEY_Y)) is.select = 1;
-    nes::input::set_status(0, is);
+    bool menu_pressed_last = input_status.select && input_status.down;
 
-    if (ines_path[0] != '\0') {
-      ines_load(ines_path);
-      ines_path[0] = '\0';
+    input_status.raw = 0;
+    if (KeyPressedFast(KEY_LEFT)) input_status.left = 1;
+    if (KeyPressedFast(KEY_RIGHT)) input_status.right = 1;
+    if (KeyPressedFast(KEY_UP)) input_status.up = 1;
+    if (KeyPressedFast(KEY_DOWN)) input_status.down = 1;
+    if (KeyPressedFast(KEY_A)) input_status.A = 1;
+    if (KeyPressedFast(KEY_B)) input_status.start = 1;
+    if (KeyPressedFast(KEY_X)) input_status.B = 1;
+    if (KeyPressedFast(KEY_Y)) input_status.select = 1;
+
+    bool menu_pressed_now = input_status.select && input_status.down;
+
+    if (menu_pressed_now && !menu_pressed_last) {
+      if (nes::menu::is_shown()) {
+        nes::menu::hide();
+      } else {
+        nes::menu::show();
+      }
     }
+
+    nes::input::set_status(0, input_status);
 
     nes::cpu::service();
 
@@ -157,71 +163,6 @@ static void core1_main() {
   }
 }
 
-static nes::result_t ines_load(const char *path) {
-  nes::result_t res = nes::result_t::SUCCESS;
-
-  if (ines_allocated) {
-    delete[] ines_rom;
-  }
-  ines_rom = nullptr;
-  ines_allocated = false;
-
-  // Load NES file
-  sFile ines_file;
-  if (!FileOpen(&ines_file, ines_path)) {
-    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
-  }
-  int ines_size = ines_file.size;
-  if (ines_size < (128 + 1) * 1024) {
-    // Load to RAM
-    ines_rom = new uint8_t[ines_size];
-    ines_allocated = true;
-    int ret = FileRead(&ines_file, ines_rom, ines_size);
-    if (ret < ines_size) {
-      res = nes::result_t::ERR_FAILED_TO_READ_FILE;
-    }
-  } else if (ines_size < (1024 + 1) * 1024) {
-    // Load to Flash
-    constexpr int CHUNK_SIZE = 4096;
-
-    uint8_t *buff = new uint8_t[CHUNK_SIZE];
-
-    LockoutStart();
-    FlashErase(ROM_OFFSET, ines_size);
-    int remaining = ines_size;
-    while (remaining > 0) {
-      int to_read = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
-      int ret = FileRead(&ines_file, buff, to_read);
-      if (ret <= 0) {
-        res = nes::result_t::ERR_FAILED_TO_READ_FILE;
-        break;
-      }
-      FlashProgram(ROM_OFFSET + (ines_size - remaining), buff, ret);
-      remaining -= ret;
-    }
-    LockoutStop();
-    delete[] buff;
-    if (res != nes::result_t::SUCCESS) {
-      return nes::result_t::ERR_FAILED_TO_READ_FILE;
-    }
-    ines_rom = (uint8_t *)ROM_OFFSET;
-    ines_allocated = false;
-  } else {
-    res = nes::result_t::ERR_INES_TOO_LARGE;
-  }
-  FileClose(&ines_file);
-
-  if (res != nes::result_t::SUCCESS) {
-    return res;
-  }
-
-  // Map NES file to memory
-  SHAPONES_TRY(nes::map_ines(ines_rom));
-  nes::menu::hide();
-
-  return nes::result_t::SUCCESS;
-}
-
 static void disp_clear(uint16_t color) {
   disp_fill_rect(0, 0, WIDTH, HEIGHT, color);
 }
@@ -257,9 +198,6 @@ static void disp_flip() {
     fps_last_meas_ms = now_ms;
     fps_frame_count = 0;
   }
-
-  mono8x16::draw_string_rgb444(frame_buff, FRAME_BUFF_STRIDE, nes::SCREEN_WIDTH,
-                               nes::SCREEN_HEIGHT, 0, 0, fps_str, 0xFFF);
 
   // complete previous DMA
   disp_dma_complete();
@@ -331,7 +269,8 @@ nes::result_t nes::lock_init(int id) {
   return nes::result_t::SUCCESS;
 }
 void nes::lock_deinit(int id) { SpinUnclaim(LOCK_ID_BASE + id); }
-void nes::lock_get(int id) { LockBlock(LOCK_ID_BASE + id); }
+void nes::lock_get(int id) { SpinLock(LOCK_ID_BASE + id); }
+bool nes::lock_try_get(int id) { return SpinTryLock(LOCK_ID_BASE + id); }
 void nes::lock_release(int id) { SpinUnlock(LOCK_ID_BASE + id); }
 
 nes::result_t nes::fs_mount() {
@@ -371,8 +310,134 @@ nes::result_t nes::fs_enum_files(const char *path,
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::request_load_nes_file(const char *path) {
-  strncpy(ines_path, path, nes::MAX_PATH_LENGTH);
-  ines_path[nes::MAX_PATH_LENGTH - 1] = '\0';
+bool nes::fs_exists(char const *path) { return FileExist(path); }
+
+nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
+  if (!FileExist(path)) {
+    if (!FileCreate(&file_handle, path)) {
+      return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+    }
+  } else {
+    if (!FileOpen(&file_handle, path)) {
+      return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+    }
+  }
+  *handle = &file_handle;
   return nes::result_t::SUCCESS;
+}
+
+void nes::fs_close(void *handle) {
+  sFile *f = (sFile *)handle;
+  FileClose(f);
+}
+
+nes::result_t nes::fs_seek(void *handle, size_t offset) {
+  sFile *f = (sFile *)handle;
+  if (!FileSeek(f, offset)) {
+    return nes::result_t::ERR_FAILED_TO_SEEK_FILE;
+  }
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::fs_size(void *handle, size_t *out_size) {
+  sFile *f = (sFile *)handle;
+  *out_size = FileSize(f);
+  return nes::result_t::SUCCESS;
+}
+
+nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
+  sFile *f = (sFile *)handle;
+  int s = FileRead(f, buff, size);
+  if (s == (int)size) {
+    return nes::result_t::SUCCESS;
+  } else {
+    return nes::result_t::ERR_FAILED_TO_READ_FILE;
+  }
+}
+
+nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
+  sFile *f = (sFile *)handle;
+  int s = FileWrite(f, buff, size);
+  if (s == (int)size) {
+    return nes::result_t::SUCCESS;
+  } else {
+    return nes::result_t::ERR_FAILED_TO_WRITE_FILE;
+  }
+}
+
+nes::result_t nes::fs_delete(const char *path) {
+  if (FileDelete(path)) {
+    return nes::result_t::SUCCESS;
+  } else {
+    return nes::result_t::ERR_FAILED_TO_DELETE_FILE;
+  }
+}
+
+nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
+                             size_t *out_size) {
+  nes::result_t res = nes::result_t::SUCCESS;
+
+  nes::unload_ines();
+
+  // Load NES file
+  sFile ines_file;
+  if (!FileOpen(&ines_file, path)) {
+    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+  }
+  int ines_size = ines_file.size;
+  if (ines_size < (128 + 1) * 1024) {
+    // Load to RAM
+    ines_rom = new uint8_t[ines_size];
+    ines_allocated = true;
+    int ret = FileRead(&ines_file, ines_rom, ines_size);
+    if (ret != ines_size) {
+      res = nes::result_t::ERR_FAILED_TO_READ_FILE;
+    }
+  } else if (ines_size < (1024 + 1) * 1024) {
+    // Load to Flash
+    constexpr int CHUNK_SIZE = 4096;
+
+    uint8_t *buff = new uint8_t[CHUNK_SIZE];
+
+    LockoutStart();
+    FlashErase(ROM_OFFSET, ines_size);
+    int remaining = ines_size;
+    while (remaining > 0) {
+      int to_read = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
+      int ret = FileRead(&ines_file, buff, to_read);
+      if (ret <= 0) {
+        res = nes::result_t::ERR_FAILED_TO_READ_FILE;
+        break;
+      }
+      FlashProgram(ROM_OFFSET + (ines_size - remaining), buff, ret);
+      remaining -= ret;
+    }
+    LockoutStop();
+    delete[] buff;
+    if (res != nes::result_t::SUCCESS) {
+      return nes::result_t::ERR_FAILED_TO_READ_FILE;
+    }
+    ines_rom = (uint8_t *)ROM_OFFSET;
+    ines_allocated = false;
+  } else {
+    res = nes::result_t::ERR_INES_TOO_LARGE;
+  }
+  FileClose(&ines_file);
+
+  if (res != nes::result_t::SUCCESS) {
+    return res;
+  }
+
+  *out_ines = ines_rom;
+  *out_size = ines_size;
+
+  return nes::result_t::SUCCESS;
+}
+
+void nes::unload_ines() {
+  if (ines_allocated) {
+    delete[] ines_rom;
+  }
+  ines_rom = nullptr;
+  ines_allocated = false;
 }

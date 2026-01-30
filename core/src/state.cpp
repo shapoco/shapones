@@ -52,7 +52,7 @@ void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render) {
   int sy = focus_y - SS_CLIP_TOP;
   int dy = sy / SS_SCALING;
   if (0 <= dy && dy < SS_HEIGHT && sy % SS_SCALING == 0) {
-    LockBlock lock(LOCK_PPU);
+    LockBlock lock(LOCK_REGS_PPU);
     int wr_index = ss_wr_index;
     uint8_t *dst = &ss_buff[(wr_index * SS_SIZE_BYTES) + (dy * SS_WIDTH)];
     for (int dx = 0; dx < SS_WIDTH; dx++) {
@@ -173,7 +173,7 @@ result_t save(const char *path, int slot) {
 
     // seek to end
     fs_seek(f, file_size);
-    
+
   } while (0);
 
   fs_close(f);
@@ -250,15 +250,15 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
 }
 
 static result_t write_screenshot(void *f) {
-  SemBlock lock(SEM_PPU);
+  LockBlock lock(LOCK_STATE_PPU);
   int rd_index = (ss_wr_index + SS_BUFF_DEPTH - ss_num_stored) % SS_BUFF_DEPTH;
   result_t res = fs_write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
   return res;
 }
 
 static result_t write_slot_data(void *f) {
-  SemBlock ppu_block(SEM_PPU);
-  SemBlock apu_block(SEM_APU);
+  LockBlock ppu_block(LOCK_STATE_PPU);
+  LockBlock apu_block(LOCK_STATE_APU);
   SHAPONES_TRY(cpu::save_state(f));
   SHAPONES_TRY(ppu::save_state(f));
   SHAPONES_TRY(apu::save_state(f));
@@ -270,8 +270,8 @@ static result_t write_slot_data(void *f) {
 }
 
 static result_t read_slot_data(void *f) {
-  SemBlock ppu_block(SEM_PPU);
-  SemBlock apu_block(SEM_APU);
+  LockBlock ppu_block(LOCK_STATE_PPU);
+  LockBlock apu_block(LOCK_STATE_APU);
   SHAPONES_TRY(cpu::load_state(f));
   SHAPONES_TRY(ppu::load_state(f));
   SHAPONES_TRY(apu::load_state(f));

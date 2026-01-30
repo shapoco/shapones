@@ -191,6 +191,7 @@ static constexpr int NUM_PALETTES = sizeof(PALETTE_FILE) / 4;
 uint8_t text_buff[BUFF_WIDTH * BUFF_HEIGHT];
 uint8_t palette_buff[BUFF_WIDTH * BUFF_HEIGHT];
 
+bool key_release_waiting = false;
 input::status_t key_pressed;
 input::status_t key_down;
 input::status_t key_up;
@@ -218,6 +219,7 @@ static result_t load_state_screenshot();
 
 static int find_empty_slot();
 
+static void read_input();
 static result_t process_input();
 static result_t on_menu_selected(ListItem *item);
 
@@ -266,6 +268,9 @@ void deinit() { menu.clear(); }
 void show() {
   if (shown) return;
   shown = true;
+  key_release_waiting = true;
+  read_input();
+  read_input();
   load_tab(tab, true);
 }
 
@@ -379,7 +384,12 @@ static result_t load_state_list_tab() {
     if (nes::fs_exists(state_path)) {
       res = state::enum_slots(
           state_path, [](const state::state_slot_entry_t &entry) {
-            if (!entry.is_used()) return true;
+            if (!entry.is_used()) {
+              // In PicoLibSDK, true/false are defined as int,
+              // so a cast to bool is required.
+              return (bool)true;
+            }
+
             char label[nes::MAX_FILENAME_LENGTH + 1];
             uint32_t t = entry.play_time_sec;
             if (t < 60) {
@@ -447,12 +457,9 @@ result_t service() {
 
   if (!shown) return result_t::SUCCESS;
 
-  input::status_t prev_pressed = key_pressed;
-  key_pressed = input::get_status(0);
-  key_down.raw = key_pressed.raw & ~prev_pressed.raw;
-  key_up.raw = ~key_pressed.raw & prev_pressed.raw;
-
+  read_input();
   process_input();
+
   if (redraw_requested) {
     redraw_requested = false;
     perform_redraw();
@@ -476,7 +483,22 @@ static int find_empty_slot() {
   return -1;
 }
 
+static void read_input() {
+  input::status_t prev_pressed = key_pressed;
+  key_pressed = input::get_status(0);
+  key_down.raw = key_pressed.raw & ~prev_pressed.raw;
+  key_up.raw = ~key_pressed.raw & prev_pressed.raw;
+}
+
 static result_t process_input() {
+  if (key_release_waiting) {
+    if (key_pressed.raw != 0 || key_up.raw != 0) {
+      return result_t::SUCCESS;
+    } else {
+      key_release_waiting = false;
+    }
+  }
+
   if (key_up.A) {
     ListItem *mi = nullptr;
     if (popup_shown) {
