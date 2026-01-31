@@ -35,7 +35,7 @@ result_t append_separator(char *path) {
     return result_t::SUCCESS;
   }
   if (len + 1 >= nes::MAX_PATH_LENGTH) {
-    return result_t::ERR_PATH_TOO_LONG;
+    return result_t::ERR_FS_PATH_TOO_LONG;
   }
   path[len++] = '/';
   path[len] = '\0';
@@ -47,7 +47,7 @@ result_t append_path(char *path, const char *name) {
   int len = strnlen(path, nes::MAX_PATH_LENGTH);
   int name_len = strnlen(name, nes::MAX_PATH_LENGTH);
   if (len + name_len >= nes::MAX_PATH_LENGTH) {
-    return result_t::ERR_PATH_TOO_LONG;
+    return result_t::ERR_FS_PATH_TOO_LONG;
   }
 
   strcat(path, name);
@@ -73,12 +73,12 @@ result_t replace_ext(char *path, const char *new_ext) {
 
   int new_path_len = old_path_len - old_ext_len + new_ext_len;
   if (new_path_len >= nes::MAX_PATH_LENGTH) {
-    return result_t::ERR_PATH_TOO_LONG;
+    return result_t::ERR_FS_PATH_TOO_LONG;
   }
 
   int new_name_len = old_name_len - old_ext_len + new_ext_len;
   if (new_name_len >= nes::MAX_FILENAME_LENGTH) {
-    return result_t::ERR_PATH_TOO_LONG;
+    return result_t::ERR_FS_PATH_TOO_LONG;
   }
 
   path[dot_idx] = '.';

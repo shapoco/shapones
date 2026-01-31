@@ -123,10 +123,10 @@ If you use the `load_ines_file` function described below, add `SHAPONES_SUPPORT_
 
 Implement the following function. The argument `id` takes values ​​from 0 to `nes::NUM_LOCKS - 1`.
 
-- `void nes::lock_init(int id)`: Initializes the mutex or spinlock corresponding to `id`.
-- `void nes::lock_deinit(int id)`: Destroys the mutex or spinlock corresponding to `id`.
-- `void nes::lock_get(int id)`: Acquires the lock on the mutex or spinlock corresponding to `id`.
-- `void nes::lock_release(int id)`: Releases the lock on the mutex or spinlock corresponding to `id`.
+- `void nes::spinlock_init(int id)`: Initializes the mutex or spinlock corresponding to `id`.
+- `void nes::spinlock_deinit(int id)`: Destroys the mutex or spinlock corresponding to `id`.
+- `void nes::spinlock_get(int id)`: Acquires the lock on the mutex or spinlock corresponding to `id`.
+- `void nes::spinlock_release(int id)`: Releases the lock on the mutex or spinlock corresponding to `id`.
 
 If you want the entire emulator to run single-threaded, the function body can be empty.
 

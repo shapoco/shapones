@@ -391,14 +391,15 @@ static result_t load_state_list_tab() {
             }
 
             char label[nes::MAX_FILENAME_LENGTH + 1];
-            uint32_t t = entry.play_time_sec;
+            float t = (float)entry.frame_count / 60;
             if (t < 60) {
-              snprintf(label, sizeof(label), "#%02d %ds", entry.index, t);
+              snprintf(label, sizeof(label), "#%02d %.2fs", entry.index, t);
             } else if (t < 3600) {
-              snprintf(label, sizeof(label), "#%02d %dm", entry.index, t / 60);
+              snprintf(label, sizeof(label), "#%02d %.2fm", entry.index,
+                       t / 60);
             } else {
-              snprintf(label, sizeof(label), "#%02d %.1fh", entry.index,
-                       (float)t / 3600);
+              snprintf(label, sizeof(label), "#%02d %.2fh", entry.index,
+                       t / 3600);
             }
             menu.add_item(icon_t::FILE, action_t::STATE_SELECT, label,
                           entry.index);

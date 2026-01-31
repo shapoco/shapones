@@ -12,11 +12,19 @@ struct file_info_t {
 
 using fs_enum_files_cb_t = bool (*)(const file_info_t &info);
 
-result_t lock_init(int id);
-void lock_deinit(int id);
-void lock_get(int id);
-bool lock_try_get(int id);
-void lock_release(int id);
+result_t ram_alloc(size_t size, void **out_ptr);
+void ram_free(void *ptr);
+
+result_t spinlock_init(int id);
+void spinlock_deinit(int id);
+void spinlock_get(int id);
+void spinlock_release(int id);
+
+result_t semaphore_init(int id);
+void semaphore_deinit(int id);
+void semaphore_take(int id);
+bool semaphore_try_take(int id);
+void semaphore_give(int id);
 
 result_t load_ines(const char *path, const uint8_t **out_ines,
                    size_t *out_size);

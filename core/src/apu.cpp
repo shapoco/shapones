@@ -177,7 +177,7 @@ result_t set_sampling_rate(uint32_t rate_hz) {
 }
 
 static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   // duty pattern
   switch ((value >> 6) & 0x3) {
     default:
@@ -199,7 +199,7 @@ static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
 }
 
 static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.sweep.period = (value >> 4) & 0x7;
   s.sweep.shift = value & 0x7;
   s.sweep.flags = 0;
@@ -209,13 +209,13 @@ static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
 }
 
 static void pulse_write_reg2(pulse_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.timer_period &= ~(0xff << TIMER_PREC);
   s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
 static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.timer_period &= ~(0x700 << TIMER_PREC);
   s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s.timer = 0;
@@ -224,7 +224,7 @@ static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
 }
 
 static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.linear.reload_value = value & 0x7f;
   if (value & 0x80) {
     s.linear.flags |= LIN_FLAG_CONTROL;
@@ -234,13 +234,13 @@ static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
 }
 
 static void triangle_write_reg2(triangle_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.timer_period &= ~(0xff << TIMER_PREC);
   s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
 static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.timer_period &= ~(0x700 << TIMER_PREC);
   s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s.timer = 0;
@@ -250,7 +250,7 @@ static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg0(noise_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.envelope.flags = 0;
   if (value & 0x10) s.envelope.flags |= ENV_FLAG_CONSTANT;
   if (value & 0x20) s.envelope.flags |= ENV_FLAG_HALT_LOOP;
@@ -263,7 +263,7 @@ static void noise_write_reg0(noise_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg2(noise_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   if (value & 0x80) {
     s.flags |= NOISE_FLAG_FB_MODE;
   } else {
@@ -273,7 +273,7 @@ static void noise_write_reg2(noise_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg3(noise_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
 }
 
@@ -284,7 +284,7 @@ static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
     interrupt::deassert_irq(interrupt::source_t::APU_DMC);
   }
   {
-    LockBlock lock(LOCK_REGS_APU);
+    SpinLockBlock lock(SPINLOCK_APU);
     s.flags = 0;
     if (irq_ena_new) s.flags |= DMC_FLAG_IRQ_ENABLE;
     if (value & 0x40) s.flags |= DMC_FLAG_LOOP;
@@ -293,17 +293,17 @@ static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
 }
 
 static void dmc_write_reg1(dmc_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.out_level = value & 0x7f;
 }
 
 static void dmc_write_reg2(dmc_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.sample_addr = 0xc000 + ((addr_t)value << 6);
 }
 
 static void dmc_write_reg3(dmc_state_t &s, uint8_t value) {
-  LockBlock lock(LOCK_REGS_APU);
+  SpinLockBlock lock(SPINLOCK_APU);
   s.sample_length = ((int)value << 4) + 1;
 }
 
@@ -356,7 +356,7 @@ static SHAPONES_INLINE int step_sweep(pulse_state_t &s) {
         }
         {
 #if SHAPONES_LOCK_FAST
-          Exclusive lock(LOCK_REGS_APU);
+          SpinLockBlock lock(SPINLOCK_APU);
 #endif
           s.timer_period = target;
         }
@@ -378,7 +378,7 @@ static SHAPONES_INLINE int step_linear_counter(linear_counter_t &c) {
 
     if (!(c.flags & LIN_FLAG_CONTROL)) {
 #if SHAPONES_LOCK_FAST
-      Exclusive lock(LOCK_REGS_APU);
+      SpinLockBlock(SPINLOCK_APU);
 #endif
       c.flags &= ~LIN_FLAG_RELOAD;  // clear reload flag
     }
@@ -399,7 +399,7 @@ static SHAPONES_INLINE int sample_pulse(pulse_state_t &s) {
       !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
     if (s.length > 0) {
 #if SHAPONES_LOCK_FAST
-      Exclusive lock(LOCK_REGS_APU);
+      SpinLockBlock(SPINLOCK_APU);
 #endif
       s.length--;
     }
@@ -413,7 +413,7 @@ static SHAPONES_INLINE int sample_pulse(pulse_state_t &s) {
   uint32_t phase;
   {
 #if SHAPONES_LOCK_FAST
-    Exclusive lock(LOCK_REGS_APU);
+    SpinLockBlock(SPINLOCK_APU);
 #endif
     s.timer += pulse_timer_step;
     int step = 0;
@@ -438,7 +438,7 @@ static SHAPONES_INLINE int sample_triangle(triangle_state_t &s) {
       !(s.linear.flags & LIN_FLAG_CONTROL)) {
     if (s.length > 0) {
 #if SHAPONES_LOCK_FAST
-      Exclusive lock(LOCK_REGS_APU);
+      SpinLockBlock(SPINLOCK_APU);
 #endif
       s.length--;
     }
@@ -451,7 +451,7 @@ static SHAPONES_INLINE int sample_triangle(triangle_state_t &s) {
   uint32_t phase;
   {
 #if SHAPONES_LOCK_FAST
-    Exclusive lock(LOCK_REGS_APU);
+    SpinLockBlock(SPINLOCK_APU);
 #endif
     s.timer += triangle_timer_step;
     int step = 0;
@@ -485,7 +485,7 @@ static SHAPONES_INLINE int sample_noise(noise_state_t &s) {
       !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
     if (s.length > 0) {
 #if SHAPONES_LOCK_FAST
-      Exclusive lock(LOCK_REGS_APU);
+      SpinLockBlock(SPINLOCK_APU);
 #endif
       s.length--;
     }
@@ -520,7 +520,7 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
   int step;
   {
 #if SHAPONES_LOCK_FAST
-    Exclusive lock(LOCK_REGS_APU);
+    SpinLockBlock(SPINLOCK_APU);
 #endif
     s.timer += s.timer_step;
     step = s.timer >> TIMER_PREC;
@@ -530,7 +530,7 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
   for (int i = 0; i < step; i++) {
     if (s.bits_remaining == 0) {
 #if SHAPONES_LOCK_FAST
-      Exclusive lock(LOCK_REGS_APU);
+      SpinLockBlock(SPINLOCK_APU);
 #endif
       if (s.bytes_remaining > 0) {
         s.shift_reg = cpu::bus_read(s.addr_counter | 0x8000);
@@ -554,14 +554,14 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
       if (status.dmc_enable) {
         if (s.shift_reg & 1) {
 #if SHAPONES_LOCK_FAST
-          Exclusive lock(LOCK_REGS_APU);
+          SpinLockBlock(SPINLOCK_APU);
 #endif
           if (s.out_level <= 125) {
             s.out_level += 2;
           }
         } else {
 #if SHAPONES_LOCK_FAST
-          Exclusive lock(LOCK_REGS_APU);
+          SpinLockBlock(SPINLOCK_APU);
 #endif
           if (s.out_level >= 2) {
             s.out_level -= 2;
@@ -577,46 +577,47 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
 }
 
 result_t service(uint8_t *buff, int len) {
-  if (!lock_try_get(LOCK_STATE_APU)) {
+  if (!semaphore_try_take(SEMAPHORE_APU)) {
     for (int i = 0; i < len; i++) {
       buff[i] = 0;
     }
     return result_t::SUCCESS;
   }
 
+  {
 #if !SHAPONES_LOCK_FAST
-  LockBlock lock(LOCK_REGS_APU);
+    SpinLockBlock lock(SPINLOCK_APU);
 #endif
 
-  for (int i = 0; i < len; i++) {
-    quarter_frame_phase += quarter_frame_phase_step;
-    if (quarter_frame_phase >= QUARTER_FRAME_PHASE_PERIOD) {
-      quarter_frame_phase -= QUARTER_FRAME_PHASE_PERIOD;
+    for (int i = 0; i < len; i++) {
+      quarter_frame_phase += quarter_frame_phase_step;
+      if (quarter_frame_phase >= QUARTER_FRAME_PHASE_PERIOD) {
+        quarter_frame_phase -= QUARTER_FRAME_PHASE_PERIOD;
 
-      frame_step_flags = 0;
-      if ((quarter_frame_count & 3) == 3) {
-        frame_step_flags |= STEP_FLAG_FRAME;
+        frame_step_flags = 0;
+        if ((quarter_frame_count & 3) == 3) {
+          frame_step_flags |= STEP_FLAG_FRAME;
+        }
+        if ((quarter_frame_count & 1) == 1) {
+          frame_step_flags |= STEP_FLAG_HALF;
+        }
+        frame_step_flags |= STEP_FLAG_QUARTER;
+        quarter_frame_count = (quarter_frame_count + 1) & 0x3;
+      } else {
+        frame_step_flags = 0;
       }
-      if ((quarter_frame_count & 1) == 1) {
-        frame_step_flags |= STEP_FLAG_HALF;
-      }
-      frame_step_flags |= STEP_FLAG_QUARTER;
-      quarter_frame_count = (quarter_frame_count + 1) & 0x3;
-    } else {
-      frame_step_flags = 0;
+
+      uint8_t sample = 0;
+      sample += sample_pulse(pulse[0]);
+      sample += sample_pulse(pulse[1]);
+      sample += sample_triangle(triangle);
+      sample += sample_noise(noise);
+      sample *= 2;
+      sample += sample_dmc(dmc);
+      buff[i] = sample;
     }
-
-    uint8_t sample = 0;
-    sample += sample_pulse(pulse[0]);
-    sample += sample_pulse(pulse[1]);
-    sample += sample_triangle(triangle);
-    sample += sample_noise(noise);
-    sample *= 2;
-    sample += sample_dmc(dmc);
-    buff[i] = sample;
   }
-
-  lock_release(LOCK_STATE_APU);
+  semaphore_give(SEMAPHORE_APU);
 
   return result_t::SUCCESS;
 }

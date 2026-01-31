@@ -19,8 +19,11 @@ const char *get_ines_path() { return ines_path; }
 result_t init(const config_t &cfg) {
   build_blend_table();
 
-  for (int i = 0; i < NUM_LOCKS; i++) {
-    SHAPONES_TRY(nes::lock_init(i));
+  for (int i = 0; i < NUM_SPINLOCKS; i++) {
+    SHAPONES_TRY(nes::spinlock_init(i));
+  }
+  for (int i = 0; i < NUM_SEMAPHORES; i++) {
+    SHAPONES_TRY(nes::semaphore_init(i));
   }
   SHAPONES_TRY(interrupt::init());
   SHAPONES_TRY(memory::init());
@@ -45,8 +48,11 @@ void deinit() {
   menu::deinit();
   input::deinit();
   interrupt::deinit();
-  for (int i = 0; i < NUM_LOCKS; i++) {
-    nes::lock_deinit(i);
+  for (int i = 0; i < NUM_SPINLOCKS; i++) {
+    nes::spinlock_deinit(i);
+  }
+  for (int i = 0; i < NUM_SEMAPHORES; i++) {
+    nes::semaphore_deinit(i);
   }
 }
 
@@ -55,11 +61,11 @@ result_t map_ines(const uint8_t *ines, const char *path) {
 
   result_t res = result_t::SUCCESS;
   do {
-    LockBlock ppu_block(LOCK_STATE_PPU);
-    LockBlock apu_block(LOCK_STATE_APU);
+    SemaphoreBlock ppu_block(SEMAPHORE_PPU);
+    SemaphoreBlock apu_block(SEMAPHORE_APU);
 
     if (path && strnlen(path, MAX_PATH_LENGTH + 1) == 0) {
-      res = result_t::ERR_PATH_TOO_LONG;
+      res = result_t::ERR_FS_PATH_TOO_LONG;
       break;
     }
 
@@ -89,8 +95,8 @@ void unmap_ines() {
   if (!ines_mapped) return;
 
   {
-    LockBlock ppu_block(LOCK_STATE_PPU);
-    LockBlock apu_block(LOCK_STATE_APU);
+    SemaphoreBlock ppu_block(SEMAPHORE_PPU);
+    SemaphoreBlock apu_block(SEMAPHORE_APU);
     stop();
     memory::unmap_ines();
     ines_mapped = false;

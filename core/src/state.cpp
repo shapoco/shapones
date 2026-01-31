@@ -25,6 +25,8 @@ volatile int ss_wr_index = 0;
 volatile int ss_num_stored = 0;
 int ss_capture_counter = 0;
 
+uint32_t frame_count = 0;
+
 static uint32_t get_slot_offset(int slot, uint32_t slot_size) {
   return state_file_header_t::SIZE + state_slot_entry_t::SIZE * MAX_SLOTS +
          slot * slot_size;
@@ -40,7 +42,11 @@ void reset() {
   memset(ss_buff, 0, sizeof(ss_buff));
 }
 
-void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render) {
+void hsync(int focus_y, const uint8_t *line_buff, bool skip_render) {
+  if (focus_y == SCREEN_HEIGHT - 1) {
+    frame_count++;
+  }
+
   if (menu::is_shown()) return;
   if (focus_y == SCREEN_HEIGHT - 1) {
     ss_capture_counter--;
@@ -52,7 +58,6 @@ void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render) {
   int sy = focus_y - SS_CLIP_TOP;
   int dy = sy / SS_SCALING;
   if (0 <= dy && dy < SS_HEIGHT && sy % SS_SCALING == 0) {
-    LockBlock lock(LOCK_REGS_PPU);
     int wr_index = ss_wr_index;
     uint8_t *dst = &ss_buff[(wr_index * SS_SIZE_BYTES) + (dy * SS_WIDTH)];
     for (int dx = 0; dx < SS_WIDTH; dx++) {
@@ -157,8 +162,7 @@ result_t save(const char *path, int slot) {
       memset(buff, 0, sizeof(buff));
       state_slot_entry_t slot_header;
       slot_header.flags = SLOT_FLAG_USED;
-      slot_header.play_time_sec =
-          cpu::ppu_cycle_count / (cpu::CLOCK_FREQ_NTSC * 3);
+      slot_header.frame_count = frame_count;
       strncpy(slot_header.name, "No Name", state_slot_entry_t::NAME_LENGTH);
       slot_header.store(buff);
 
@@ -196,13 +200,29 @@ result_t load(const char *path, int slot) {
       state_file_header_t fh;
       fh.load(buff);
       if (fh.marker != MARKER) {
-        res = result_t::ERR_INVALID_STATE_FORMAT;
+        res = result_t::ERR_STATE_INVALID_FORMAT;
         break;
       }
       if (fh.slot_size != slot_size) {
         res = result_t::ERR_STATE_SIZE_MISMATCH;
         break;
       }
+    }
+
+    // read slot entry
+    {
+      SHAPONES_TRY(fs_seek(
+          f, state_file_header_t::SIZE + state_slot_entry_t::SIZE * slot));
+      uint8_t buff[state_slot_entry_t::SIZE];
+      SHAPONES_TRY(fs_read(f, buff, sizeof(buff)));
+      state_slot_entry_t slot_entry;
+      slot_entry.index = slot;
+      slot_entry.load(buff);
+      if (!slot_entry.is_used()) {
+        res = result_t::ERR_STATE_NO_SLOT_DATA;
+        break;
+      }
+      frame_count = slot_entry.frame_count;
     }
 
     // read slot data
@@ -250,15 +270,15 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
 }
 
 static result_t write_screenshot(void *f) {
-  LockBlock lock(LOCK_STATE_PPU);
+  SemaphoreBlock lock(SEMAPHORE_PPU);
   int rd_index = (ss_wr_index + SS_BUFF_DEPTH - ss_num_stored) % SS_BUFF_DEPTH;
   result_t res = fs_write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
   return res;
 }
 
 static result_t write_slot_data(void *f) {
-  LockBlock ppu_block(LOCK_STATE_PPU);
-  LockBlock apu_block(LOCK_STATE_APU);
+  SemaphoreBlock ppu_block(SEMAPHORE_PPU);
+  SemaphoreBlock apu_block(SEMAPHORE_APU);
   SHAPONES_TRY(cpu::save_state(f));
   SHAPONES_TRY(ppu::save_state(f));
   SHAPONES_TRY(apu::save_state(f));
@@ -270,8 +290,8 @@ static result_t write_slot_data(void *f) {
 }
 
 static result_t read_slot_data(void *f) {
-  LockBlock ppu_block(LOCK_STATE_PPU);
-  LockBlock apu_block(LOCK_STATE_APU);
+  SemaphoreBlock ppu_block(SEMAPHORE_PPU);
+  SemaphoreBlock apu_block(SEMAPHORE_APU);
   SHAPONES_TRY(cpu::load_state(f));
   SHAPONES_TRY(ppu::load_state(f));
   SHAPONES_TRY(apu::load_state(f));
@@ -296,7 +316,7 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
       state_file_header_t fh;
       fh.load(buff);
       if (fh.marker != MARKER) {
-        res = result_t::ERR_INVALID_STATE_FORMAT;
+        res = result_t::ERR_STATE_INVALID_FORMAT;
         break;
       }
     }

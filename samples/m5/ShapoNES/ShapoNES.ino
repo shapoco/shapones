@@ -1,8 +1,6 @@
 #include <M5Unified.h>
 #include "FS.h"
 #include "SD.h"
-#include <esp_partition.h>
-#include <spi_flash_mmap.h>
 #include <driver/i2s.h>
 
 #include "shapones_core.h"
@@ -67,6 +65,10 @@ static constexpr int DISPLAY_BUTTON_PIN = 11;
 #define SHAPONES_ENABLE_HALF_SCREEN (0)
 #endif
 
+#ifndef SHAPONES_FORCE_USE_PSRAM
+#define SHAPONES_FORCE_USE_PSRAM (0)
+#endif
+
 #if SHAPONES_ENABLE_HALF_SCREEN
 static constexpr int BUFF_W = nes::SCREEN_WIDTH / 2;
 static constexpr int BUFF_H = nes::SCREEN_HEIGHT / 2;
@@ -101,17 +103,14 @@ static constexpr int AUDIO_BUFF_LEN = 256;
 static uint16_t frame_buff[BUFF_W * BUFF_H];
 static int dma_next_y = nes::SCREEN_HEIGHT;
 
-static bool ines_load_inprog = false;
-static const esp_partition_t *ines_partition = nullptr;
-static spi_flash_mmap_handle_t mmap_handle = 0;
 static uint8_t *ines_ptr = nullptr;
-static bool ines_in_ram = false;
 
 static uint8_t line_buff[nes::SCREEN_WIDTH];
 static uint64_t next_vsync_us = 0;
 static bool skip_frame = false;
 
-static SemaphoreHandle_t sems[nes::NUM_LOCKS];
+static spinlock_t spinlocks[nes::NUM_SPINLOCKS];
+static SemaphoreHandle_t semaphores[nes::NUM_SEMAPHORES];
 
 static adc_button::Pin button_pins[BUTTON_NUM_PINS];
 
@@ -211,14 +210,6 @@ void setup() {
   delay(500);
 
   SHAPONES_PRINTF("ESP-IDF Version: %s\n", esp_get_idf_version());
-
-  ines_partition = esp_partition_find_first(
-    ESP_PARTITION_TYPE_DATA,
-    ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
-    "spiffs");
-  if (!ines_partition) {
-    SHAPONES_PRINTF("*Warning: SPIFFS Partition Not Found.");
-  }
 
   pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLUP);
 
@@ -374,8 +365,7 @@ static bool dma_busy() {
 }
 
 static void dma_start() {
-  if (dma_busy() || ines_load_inprog) return;
-
+  if (dma_busy()) return;
   dma_next_y = 0;
   dma_maintain();
 }
@@ -414,8 +404,8 @@ static void meas() {
 
   fps_frame_count++;
   if (elapsed_ms >= 5000) {
-    fps = (float)(fps_frame_count * 5000) / elapsed_ms;
-#if 0
+    fps = (float)(fps_frame_count * 1000) / elapsed_ms;
+#if 1
     Serial.printf(
       "%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc, PDM "
       "sent:%7.1f)\n",
@@ -561,20 +551,49 @@ static bool disp_button_down() {
   return ret;
 }
 
-nes::result_t nes::lock_init(int id) {
-  sems[id] = xSemaphoreCreateBinary();
-  xSemaphoreGive(sems[id]);
+nes::result_t nes::ram_alloc(size_t size, void **out_ptr) {
+  #if SHAPONES_FORCE_USE_PSRAM
+    void *ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+  #else
+    void *ptr = heap_caps_malloc(size, MALLOC_CAP_DMA);
+  #endif
+    if (!ptr) {
+      return nes::result_t::ERR_RAM_ALLOC_FAILED;
+    }
+    *out_ptr = ptr;
   return nes::result_t::SUCCESS;
 }
-void nes::lock_deinit(int id) {}
-bool nes::lock_try_get(int id) {
-  return (xSemaphoreTake(sems[id], 0) == pdTRUE);
+
+void nes::ram_free(void *ptr) {
+  heap_caps_free(ptr);
 }
-void nes::lock_get(int id) {
-  while (xSemaphoreTake(sems[id], 0) == pdFALSE) {}
+
+nes::result_t nes::spinlock_init(int id) {
+  spinlock_initialize(&spinlocks[id]);
+  return nes::result_t::SUCCESS;
 }
-void nes::lock_release(int id) {
-  xSemaphoreGive(sems[id]);
+void nes::spinlock_deinit(int id) {}
+void nes::spinlock_get(int id) {
+  taskENTER_CRITICAL(&spinlocks[id]);
+}
+void nes::spinlock_release(int id) {
+  taskEXIT_CRITICAL(&spinlocks[id]);
+}
+
+nes::result_t nes::semaphore_init(int id) {
+  semaphores[id] = xSemaphoreCreateBinary();
+  xSemaphoreGive(semaphores[id]);
+  return nes::result_t::SUCCESS;
+}
+void nes::semaphore_deinit(int id) {}
+void nes::semaphore_take(int id) {
+  while (xSemaphoreTake(semaphores[id], 0) == pdFALSE) {}
+}
+bool nes::semaphore_try_take(int id) {
+  return (xSemaphoreTake(semaphores[id], 0) == pdTRUE);
+}
+void nes::semaphore_give(int id) {
+  xSemaphoreGive(semaphores[id]);
 }
 
 nes::result_t nes::fs_mount() {
@@ -583,7 +602,7 @@ nes::result_t nes::fs_mount() {
   } else {
     Serial.printf("No Disk.\n");
     vTaskDelay(1000);
-    return nes::result_t::ERR_NO_DISK;
+    return nes::result_t::ERR_FS_NO_DISK;
   }
 }
 
@@ -623,7 +642,7 @@ nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
   file_handle = SD.open(path, write ? FILE_WRITE : FILE_READ);
   if (!file_handle) {
     Serial.printf("Open failed: %s\n", path);
-    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+    return nes::result_t::ERR_FS_OPEN_FAILED;
   }
   *handle = &file_handle;
   return nes::result_t::SUCCESS;
@@ -639,7 +658,7 @@ nes::result_t nes::fs_seek(void *handle, size_t offset) {
   if (f->seek(offset)) {
     return nes::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FAILED_TO_SEEK_FILE;
+    return nes::result_t::ERR_FS_SEEK_FAILED;
   }
 }
 
@@ -655,7 +674,7 @@ nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
   if (s == size) {
     return nes::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FAILED_TO_READ_FILE;
+    return nes::result_t::ERR_FS_READ_FAILED;
   }
 }
 
@@ -665,7 +684,7 @@ nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
   if (s == size) {
     return nes::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FAILED_TO_WRITE_FILE;
+    return nes::result_t::ERR_FS_WRITE_FAILED;
   }
 }
 
@@ -673,7 +692,7 @@ nes::result_t nes::fs_delete(const char *path) {
   if (SD.remove(path)) {
     return nes::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FAILED_TO_DELETE_FILE;
+    return nes::result_t::ERR_FS_DELETE_FAILED;
   }
 }
 
@@ -688,67 +707,32 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
   SHAPONES_PRINTF("Loading iNES: %s\n", path);
   File f = SD.open(path, FILE_READ);
   if (!f) {
-    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+    return nes::result_t::ERR_FS_OPEN_FAILED;
   }
-
-  ines_load_inprog = true;
 
   size_t file_size = f.size();
   SHAPONES_PRINTF("size: %d\n", (int)file_size);
 
   do {
 
-    if (file_size < 130 * 1024) {
-      // Load to RAM
-      ines_ptr = new uint8_t[file_size];
-      ines_in_ram = true;
-      size_t s = f.read(ines_ptr, file_size);
-      if (s != file_size) {
-        res = nes::result_t::ERR_FAILED_TO_READ_FILE;
-        break;
-      }
-    } else {
-      // Load to Flash
-      int bar_w = M5.Display.width() * 3 / 4;
-      int bar_h = bar_w / 8;
-      int bar_x = (M5.Display.width() - bar_w) / 2;
-      int bar_y = (M5.Display.height() - bar_h) / 2;
-      M5.Display.fillRect(bar_x - 2, bar_y - 2, bar_w + 4, bar_h + 4, 0x0000);
-      M5.Display.fillRect(bar_x, bar_y, 1, bar_h, 0xFFFF);
+    if (file_size < 130 * 1024 && !SHAPONES_FORCE_USE_PSRAM) {
+      // Load to SRAM
+      ines_ptr = (uint8_t *)heap_caps_malloc(file_size, MALLOC_CAP_DMA);
+    }
 
-      constexpr int CHUNK_SIZE = 4096;
-      buff = new uint8_t[CHUNK_SIZE];
-      SHAPONES_PRINTF("Loading iNES to Flash...\n");
-      SHAPONES_PRINTF("  Erasing...\n");
-      size_t erase_size = (file_size + SPI_FLASH_SEC_SIZE - 1) & ~(SPI_FLASH_SEC_SIZE - 1);
-      esp_err = esp_partition_erase_range(ines_partition, 0, erase_size);
-      if (esp_err != ESP_OK) {
-        res = nes::result_t::ERR_FLASH_ERASE_FAILED;
-        break;
-      }
+    if (!ines_ptr) {
+      // Load to PSRAM
+      ines_ptr = (uint8_t *)heap_caps_malloc(file_size, MALLOC_CAP_SPIRAM);
+    }
 
-      SHAPONES_PRINTF("  Programming...\n");
-      size_t offset = 0;
-      while (f.available()) {
-        size_t bytes_read = f.read(buff, CHUNK_SIZE);
-        esp_err = esp_partition_write(ines_partition, offset, buff, bytes_read);
-        if (esp_err != ESP_OK) {
-          res = nes::result_t::ERR_FLASH_PROGRAM_FAILED;
-          break;
-        }
-        offset += bytes_read;
-        M5.Display.fillRect(bar_x, bar_y, (int)(bar_w * offset / file_size), bar_h, 0xFFFF);
-      }
-      if (res != nes::result_t::SUCCESS) break;
+    if (!ines_ptr) {
+      return nes::result_t::ERR_RAM_ALLOC_FAILED;
+    }
 
-      SHAPONES_PRINTF("  Mapping to Memory...\n");
-      esp_err = esp_partition_mmap(
-        ines_partition, 0, ines_partition->size,
-        ESP_PARTITION_MMAP_DATA, (const void **)&ines_ptr, &mmap_handle);
-      if (esp_err != ESP_OK) {
-        res = nes::result_t::ERR_MMAP_FAILED;
-        break;
-      }
+    size_t s = f.read(ines_ptr, file_size);
+    if (s != file_size) {
+      res = nes::result_t::ERR_FS_READ_FAILED;
+      break;
     }
   } while (0);
 
@@ -761,21 +745,14 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
   *out_ines = ines_ptr;
   *out_size = file_size;
 
-  ines_load_inprog = false;
-
   input_init();
 
   return res;
 }
 
 void nes::unload_ines() {
-  if (ines_in_ram && ines_ptr) {
-    delete[] ines_ptr;
+  if (ines_ptr) {
+    heap_caps_free(ines_ptr);
   }
-  if (mmap_handle) {
-    spi_flash_munmap(mmap_handle);
-    mmap_handle = 0;
-  }
-  ines_in_ram = false;
   ines_ptr = nullptr;
 }

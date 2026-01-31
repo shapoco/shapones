@@ -45,7 +45,7 @@ struct state_slot_entry_t {
 
   int index;
   uint32_t flags;
-  uint32_t play_time_sec;
+  uint32_t frame_count;
   char name[NAME_LENGTH];
 
   bool is_used() const { return (flags & SLOT_FLAG_USED) != 0; }
@@ -53,7 +53,7 @@ struct state_slot_entry_t {
   void store(uint8_t *buff) const {
     BufferWriter writer(buff);
     writer.u32(flags);
-    writer.u32(play_time_sec);
+    writer.u32(frame_count);
     for (int i = 0; i < NAME_LENGTH; i++) {
       writer.u8(name[i]);
     }
@@ -62,7 +62,7 @@ struct state_slot_entry_t {
   void load(const uint8_t *buff) {
     BufferReader reader(buff);
     flags = reader.u32();
-    play_time_sec = reader.u32();
+    frame_count = reader.u32();
     for (int i = 0; i < NAME_LENGTH; i++) {
       name[i] = (char)reader.u8();
     }
@@ -72,7 +72,7 @@ struct state_slot_entry_t {
 using enum_slot_cb_t = bool (*)(const state_slot_entry_t &entry);
 
 void reset();
-void auto_screenshot(int focus_y, const uint8_t *line_buff, bool skip_render);
+void hsync(int focus_y, const uint8_t *line_buff, bool skip_render);
 
 result_t get_state_path(char *out_path, size_t max_len);
 

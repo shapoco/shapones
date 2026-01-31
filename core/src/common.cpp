@@ -20,23 +20,25 @@ uint8_t blend_table[64 * 64];
 const char* result_to_string(result_t res) {
   switch (res) {
     case result_t::SUCCESS: return "Ok";
-    case result_t::ERR_INVALID_NES_FORMAT: return "Bad iNES";
-    case result_t::ERR_NO_DISK: return "No Disk";
-    case result_t::ERR_DIR_NOT_FOUND: return "Dir Not Found";
-    case result_t::ERR_PATH_TOO_LONG: return "Path Too Long";
-    case result_t::ERR_FAILED_TO_OPEN_FILE: return "Open Failed";
-    case result_t::ERR_FILE_NOT_OPEN: return "File Not Open";
-    case result_t::ERR_FAILED_TO_SEEK_FILE: return "Seek Failed";
-    case result_t::ERR_FAILED_TO_READ_FILE: return "Read Failed";
-    case result_t::ERR_FAILED_TO_WRITE_FILE: return "Write Failed";
-    case result_t::ERR_FAILED_TO_DELETE_FILE: return "Delete Failed";
+    case result_t::ERR_RAM_ALLOC_FAILED: return "No RAM";
+    case result_t::ERR_INES_INVALID_FORMAT: return "Bad iNES";
     case result_t::ERR_INES_TOO_LARGE: return "iNES Too Large";
-    case result_t::ERR_INVALID_STATE_FORMAT: return "Bad State Format";
-    case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
     case result_t::ERR_INES_NOT_LOADED: return "iNES Not Loaded";
+    case result_t::ERR_FS_NO_DISK: return "No Disk";
+    case result_t::ERR_FS_DIR_NOT_FOUND: return "Dir Not Found";
+    case result_t::ERR_FS_PATH_TOO_LONG: return "Path Too Long";
+    case result_t::ERR_FS_OPEN_FAILED: return "Open Failed";
+    case result_t::ERR_FS_FILE_NOT_OPEN: return "File Not Open";
+    case result_t::ERR_FS_SEEK_FAILED: return "Seek Failed";
+    case result_t::ERR_FS_READ_FAILED: return "Read Failed";
+    case result_t::ERR_FS_WRITE_FAILED: return "Write Failed";
+    case result_t::ERR_FS_DELETE_FAILED: return "Delete Failed";
+    case result_t::ERR_STATE_INVALID_FORMAT: return "Bad State Format";
+    case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
     case result_t::ERR_STATE_SLOT_FULL: return "State Slot Full";
     case result_t::ERR_FLASH_ERASE_FAILED: return "Erase Failed";
     case result_t::ERR_FLASH_PROGRAM_FAILED: return "Flash Failed";
+    case result_t::ERR_STATE_NO_SLOT_DATA: return "No Slot Data";
     case result_t::ERR_MMAP_FAILED: return "MMap Failed";
     default: return "Unknown Error";
   }

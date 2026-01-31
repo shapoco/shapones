@@ -5,11 +5,18 @@
 
 namespace nes {
 
-class LockBlock {
+class SpinLockBlock {
  public:
   const int id;
-  SHAPONES_INLINE LockBlock(int id) : id(id) { lock_get(id); }
-  SHAPONES_INLINE ~LockBlock() { lock_release(id); }
+  SHAPONES_INLINE SpinLockBlock(int id) : id(id) { spinlock_get(id); }
+  SHAPONES_INLINE ~SpinLockBlock() { spinlock_release(id); }
+};
+
+class SemaphoreBlock {
+ public:
+  const int id;
+  SHAPONES_INLINE SemaphoreBlock(int id) : id(id) { semaphore_take(id); }
+  SHAPONES_INLINE ~SemaphoreBlock() { semaphore_give(id); }
 };
 
 }  // namespace nes

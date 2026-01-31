@@ -33,18 +33,18 @@ uint32_t chrram_size = 0;
 result_t init() {
   deinit();
   unmap_ines();
-  if (prgram) prgram = new uint8_t[1];
-  if (chrram == nullptr) chrram = new uint8_t[1];
+  SHAPONES_TRY(nes::ram_alloc(1, (void **)&prgram));
+  SHAPONES_TRY(nes::ram_alloc(1, (void **)&chrram));
   return result_t::SUCCESS;
 }
 
 void deinit() {
   if (prgram) {
-    delete[] prgram;
+    nes::ram_free(prgram);
     prgram = nullptr;
   }
   if (chrram) {
-    delete[] chrram;
+    nes::ram_free(chrram);
     chrram = nullptr;
   }
 }
@@ -58,7 +58,7 @@ result_t map_ines(const uint8_t *ines) {
   // marker
   if (ines[0] != 0x4e && ines[1] != 0x45 && ines[2] != 0x53 &&
       ines[3] != 0x1a) {
-    return result_t::ERR_INVALID_NES_FORMAT;
+    return result_t::ERR_INES_INVALID_FORMAT;
   }
 
   // Size of PRG ROM in 16 KB units
@@ -134,9 +134,9 @@ result_t map_ines(const uint8_t *ines) {
   }
   SHAPONES_PRINTF("PRG RAM size = %d kB\n", prgram_size / 1024);
   if (prgram) {
-    delete[] prgram;
+    nes::ram_free(prgram);
   }
-  prgram = new uint8_t[prgram_size];
+  SHAPONES_TRY(nes::ram_alloc(prgram_size, (void **)&prgram));
   prgram_addr_mask = prgram_size - 1;
 
   // 512-byte trainer at $7000-$71FF (stored before PRG data)
@@ -145,17 +145,17 @@ result_t map_ines(const uint8_t *ines) {
   int start_of_prg_rom = 0x10;
   if (has_trainer) start_of_prg_rom += 0x200;
   prgrom = ines + start_of_prg_rom;
-
+  
   if (chrram) {
-    delete[] chrram;
+    nes::ram_free(chrram);
   }
   if (num_chr_rom_pages == 0) {
     chrram_size = CHRROM_RANGE;
-    chrram = new uint8_t[CHRROM_RANGE];
+    SHAPONES_TRY(nes::ram_alloc(CHRROM_RANGE, (void **)&chrram));
     chrrom = chrram;
   } else {
     chrram_size = 0;
-    chrram = new uint8_t[1];
+    SHAPONES_TRY(nes::ram_alloc(1, (void **)&chrram));
     int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
     chrrom = ines + start_of_chr_rom;
   }

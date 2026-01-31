@@ -41,7 +41,8 @@ uint64_t disp_next_vsync_us = 0;
 
 static const uint8_t *sound_refill();
 
-static constexpr int LOCK_ID_BASE = 0;
+static constexpr int SPINLOCK_ID_BASE = 0;
+static constexpr int SEMAPHORE_ID_BASE = SPINLOCK_ID_BASE + nes::NUM_SPINLOCKS;
 
 nes::input::status_t input_status;
 
@@ -264,21 +265,42 @@ static const uint8_t *sound_refill() {
   return ptr;
 }
 
-nes::result_t nes::lock_init(int id) {
-  SpinClaim(LOCK_ID_BASE + id);
+nes::result_t nes::ram_alloc(size_t size, void **out_ptr) {
+  void *ptr = malloc(size);
+  if (!ptr) {
+    return nes::result_t::ERR_RAM_ALLOC_FAILED;
+  }
+  *out_ptr = ptr;
   return nes::result_t::SUCCESS;
 }
-void nes::lock_deinit(int id) { SpinUnclaim(LOCK_ID_BASE + id); }
-void nes::lock_get(int id) { SpinLock(LOCK_ID_BASE + id); }
-bool nes::lock_try_get(int id) { return SpinTryLock(LOCK_ID_BASE + id); }
-void nes::lock_release(int id) { SpinUnlock(LOCK_ID_BASE + id); }
+
+void nes::ram_free(void *ptr) { free(ptr); }
+
+nes::result_t nes::spinlock_init(int id) {
+  SpinClaim(SPINLOCK_ID_BASE + id);
+  return nes::result_t::SUCCESS;
+}
+void nes::spinlock_deinit(int id) { SpinUnclaim(SPINLOCK_ID_BASE + id); }
+void nes::spinlock_get(int id) { SpinLock(SPINLOCK_ID_BASE + id); }
+void nes::spinlock_release(int id) { SpinUnlock(SPINLOCK_ID_BASE + id); }
+
+nes::result_t nes::semaphore_init(int id) {
+  SpinClaim(SEMAPHORE_ID_BASE + id);
+  return nes::result_t::SUCCESS;
+}
+void nes::semaphore_deinit(int id) { SpinUnclaim(SEMAPHORE_ID_BASE + id); }
+void nes::semaphore_take(int id) { SpinLock(SEMAPHORE_ID_BASE + id); }
+bool nes::semaphore_try_take(int id) {
+  return SpinTryLock(SEMAPHORE_ID_BASE + id);
+}
+void nes::semaphore_give(int id) { SpinUnlock(SEMAPHORE_ID_BASE + id); }
 
 nes::result_t nes::fs_mount() {
   if (DiskMount()) {
     return nes::result_t::SUCCESS;
   } else {
     WaitMs(500);
-    return nes::result_t::ERR_NO_DISK;
+    return nes::result_t::ERR_FS_NO_DISK;
   }
 }
 
@@ -294,7 +316,7 @@ nes::result_t nes::fs_enum_files(const char *path,
   // List up NES files
   sFile find;
   if (!FindOpen(&find, path)) {
-    return nes::result_t::ERR_DIR_NOT_FOUND;
+    return nes::result_t::ERR_FS_DIR_NOT_FOUND;
   }
   sFileInfo fi;
   while (FindNext(&find, &fi, ATTR_ARCH | ATTR_DIR, "*")) {
@@ -315,11 +337,11 @@ bool nes::fs_exists(char const *path) { return FileExist(path); }
 nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
   if (!FileExist(path)) {
     if (!FileCreate(&file_handle, path)) {
-      return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+      return nes::result_t::ERR_FS_OPEN_FAILED;
     }
   } else {
     if (!FileOpen(&file_handle, path)) {
-      return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+      return nes::result_t::ERR_FS_OPEN_FAILED;
     }
   }
   *handle = &file_handle;
@@ -334,7 +356,7 @@ void nes::fs_close(void *handle) {
 nes::result_t nes::fs_seek(void *handle, size_t offset) {
   sFile *f = (sFile *)handle;
   if (!FileSeek(f, offset)) {
-    return nes::result_t::ERR_FAILED_TO_SEEK_FILE;
+    return nes::result_t::ERR_FS_SEEK_FAILED;
   }
   return nes::result_t::SUCCESS;
 }
@@ -351,7 +373,7 @@ nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
   if (s == (int)size) {
     return nes::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FAILED_TO_READ_FILE;
+    return nes::result_t::ERR_FS_READ_FAILED;
   }
 }
 
@@ -361,7 +383,7 @@ nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
   if (s == (int)size) {
     return nes::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FAILED_TO_WRITE_FILE;
+    return nes::result_t::ERR_FS_WRITE_FAILED;
   }
 }
 
@@ -369,7 +391,7 @@ nes::result_t nes::fs_delete(const char *path) {
   if (FileDelete(path)) {
     return nes::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FAILED_TO_DELETE_FILE;
+    return nes::result_t::ERR_FS_DELETE_FAILED;
   }
 }
 
@@ -382,7 +404,7 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
   // Load NES file
   sFile ines_file;
   if (!FileOpen(&ines_file, path)) {
-    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+    return nes::result_t::ERR_FS_OPEN_FAILED;
   }
   int ines_size = ines_file.size;
   if (ines_size < (128 + 1) * 1024) {
@@ -391,7 +413,7 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
     ines_allocated = true;
     int ret = FileRead(&ines_file, ines_rom, ines_size);
     if (ret != ines_size) {
-      res = nes::result_t::ERR_FAILED_TO_READ_FILE;
+      res = nes::result_t::ERR_FS_READ_FAILED;
     }
   } else if (ines_size < (1024 + 1) * 1024) {
     // Load to Flash
@@ -406,7 +428,7 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
       int to_read = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
       int ret = FileRead(&ines_file, buff, to_read);
       if (ret <= 0) {
-        res = nes::result_t::ERR_FAILED_TO_READ_FILE;
+        res = nes::result_t::ERR_FS_READ_FAILED;
         break;
       }
       FlashProgram(ROM_OFFSET + (ines_size - remaining), buff, ret);
@@ -415,7 +437,7 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
     LockoutStop();
     delete[] buff;
     if (res != nes::result_t::SUCCESS) {
-      return nes::result_t::ERR_FAILED_TO_READ_FILE;
+      return nes::result_t::ERR_FS_READ_FAILED;
     }
     ines_rom = (uint8_t *)ROM_OFFSET;
     ines_allocated = false;

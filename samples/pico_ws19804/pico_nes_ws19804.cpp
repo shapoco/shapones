@@ -55,8 +55,8 @@ static uint8_t line_buff[LINE_FIFO_DEPTH * LINE_FIFO_STRIDE];
 static volatile int line_fifo_wptr = 0;
 static volatile int line_fifo_rptr = 0;
 
-static spin_lock_t *lock_hws[nes::NUM_LOCKS];
-static uint32_t lock_irqs[nes::NUM_LOCKS];
+static spin_lock_t *lock_hws[nes::NUM_SPINLOCKS];
+static uint32_t lock_irqs[nes::NUM_SPINLOCKS];
 
 // sound buffer for DMA
 static uint8_t spk_buff[SPK_LATENCY];
@@ -295,14 +295,14 @@ static void apu_fill_buffer(PwmAudio::sample_t *buff) {
   }
 }
 
-nes::result_t nes::lock_init(int id) {
+nes::result_t nes::spinlock_init(int id) {
   lock_hws[id] = spin_lock_init(id);
   spin_lock_claim(id);
   return nes::result_t::SUCCESS;
 }
-void nes::lock_deinit(int id) { spin_lock_unclaim(id); }
-void nes::lock_get(int id) { lock_irqs[id] = spin_lock_blocking(lock_hws[id]); }
-void nes::lock_release(int id) { spin_unlock(lock_hws[id], lock_irqs[id]); }
+void nes::spinlock_deinit(int id) { spin_lock_unclaim(id); }
+void nes::spinlock_get(int id) { lock_irqs[id] = spin_lock_blocking(lock_hws[id]); }
+void nes::spinlock_release(int id) { spin_unlock(lock_hws[id], lock_irqs[id]); }
 
 nes::result_t nes::fs_mount() { return nes::result_t::SUCCESS; }
 void nes::fs_unmount() {}

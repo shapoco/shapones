@@ -110,12 +110,28 @@ bool FcApp::OnInit() {
 DECLARE_APP(FcApp)
 IMPLEMENT_APP(FcApp)
 
+nes::result_t nes::ram_alloc(size_t size, void **out_ptr) {
+  void *ptr = malloc(size);
+  if (!ptr) {
+    return nes::result_t::ERR_RAM_ALLOC_FAILED;
+  }
+  *out_ptr = ptr;
+  return nes::result_t::SUCCESS;
+}
+
+void nes::ram_free(void *ptr) { free(ptr); }
+
 // Exclusive control is not required because it is single-threaded
-nes::result_t nes::lock_init(int id) { return nes::result_t::SUCCESS; }
-void nes::lock_deinit(int id) {}
-void nes::lock_get(int id) {}
-bool nes::lock_try_get(int id) { return true; }
-void nes::lock_release(int id) {}
+nes::result_t nes::spinlock_init(int id) { return nes::result_t::SUCCESS; }
+void nes::spinlock_deinit(int id) {}
+void nes::spinlock_get(int id) {}
+void nes::spinlock_release(int id) {}
+
+nes::result_t nes::semaphore_init(int id) { return nes::result_t::SUCCESS; }
+void nes::semaphore_deinit(int id) {}
+void nes::semaphore_take(int id) {}
+bool nes::semaphore_try_take(int id) { return true; }
+void nes::semaphore_give(int id) {}
 
 nes::result_t nes::fs_mount() { return nes::result_t::SUCCESS; }
 void nes::fs_unmount() {}
@@ -126,7 +142,7 @@ nes::result_t nes::fs_get_current_dir(char *out_path) {
     strncpy(out_path, path.c_str(), nes::MAX_PATH_LENGTH);
     out_path[nes::MAX_PATH_LENGTH] = '\0';
   } catch (...) {
-    return nes::result_t::ERR_DIR_NOT_FOUND;
+    return nes::result_t::ERR_FS_DIR_NOT_FOUND;
   }
   return nes::result_t::SUCCESS;
 }
@@ -142,7 +158,7 @@ nes::result_t nes::fs_enum_files(const char *path,
       if (!callback(info)) break;
     }
   } catch (...) {
-    return nes::result_t::ERR_DIR_NOT_FOUND;
+    return nes::result_t::ERR_FS_DIR_NOT_FOUND;
   }
   return nes::result_t::SUCCESS;
 }
@@ -163,7 +179,7 @@ nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
   fs->open(path, mode);
   if (!fs->is_open()) {
     delete fs;
-    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+    return nes::result_t::ERR_FS_OPEN_FAILED;
   }
   *handle = static_cast<void *>(fs);
   return nes::result_t::SUCCESS;
@@ -180,7 +196,7 @@ void nes::fs_close(void *handle) {
 nes::result_t nes::fs_seek(void *handle, size_t offset) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
-    return nes::result_t::ERR_FAILED_TO_OPEN_FILE;
+    return nes::result_t::ERR_FS_OPEN_FAILED;
   }
   fs->seekg(offset, std::ios::beg);
   fs->seekp(offset, std::ios::beg);
@@ -190,7 +206,7 @@ nes::result_t nes::fs_seek(void *handle, size_t offset) {
 nes::result_t nes::fs_size(void *handle, size_t *out_size) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
-    return nes::result_t::ERR_FILE_NOT_OPEN;
+    return nes::result_t::ERR_FS_FILE_NOT_OPEN;
   }
   std::streampos current_pos = fs->tellg();
   fs->seekg(0, std::ios::end);
@@ -203,7 +219,7 @@ nes::result_t nes::fs_size(void *handle, size_t *out_size) {
 nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
-    return nes::result_t::ERR_FILE_NOT_OPEN;
+    return nes::result_t::ERR_FS_FILE_NOT_OPEN;
   }
   fs->read(reinterpret_cast<char *>(buff), size);
   return nes::result_t::SUCCESS;
@@ -212,11 +228,11 @@ nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
 nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
-    return nes::result_t::ERR_FILE_NOT_OPEN;
+    return nes::result_t::ERR_FS_FILE_NOT_OPEN;
   }
   fs->write(reinterpret_cast<const char *>(buff), size);
   if (fs->bad()) {
-    return nes::result_t::ERR_FAILED_TO_WRITE_FILE;
+    return nes::result_t::ERR_FS_WRITE_FAILED;
   }
   return nes::result_t::SUCCESS;
 }
@@ -225,7 +241,7 @@ nes::result_t nes::fs_delete(const char *path) {
   try {
     fs::remove(path);
   } catch (...) {
-    return nes::result_t::ERR_FAILED_TO_DELETE_FILE;
+    return nes::result_t::ERR_FS_DELETE_FAILED;
   }
   return nes::result_t::SUCCESS;
 }
@@ -251,7 +267,7 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
     SHAPONES_PRINTF("iNES file loaded\n");
   } catch (...) {
     SHAPONES_PRINTF("Failed to load iNES file\n");
-    return nes::result_t::ERR_FAILED_TO_READ_FILE;
+    return nes::result_t::ERR_FS_READ_FAILED;
   }
   return nes::result_t::SUCCESS;
 }

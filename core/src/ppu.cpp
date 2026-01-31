@@ -82,7 +82,7 @@ uint8_t reg_read(addr_t addr) {
   uint8_t retval;
   switch (addr) {
     case REG_PPUSTATUS: {
-      LockBlock lock(LOCK_REGS_PPU);
+      SpinLockBlock lock(SPINLOCK_PPU);
       retval = reg.status.raw;
       reg.status.vblank_flag = 0;
       scroll_ppuaddr_high_stored = false;
@@ -91,7 +91,7 @@ uint8_t reg_read(addr_t addr) {
     case REG_OAMDATA: retval = oam_read(reg.oam_addr); break;
 
     case REG_PPUDATA: {
-      LockBlock lock(LOCK_REGS_PPU);
+      SpinLockBlock lock(SPINLOCK_PPU);
       addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
@@ -113,7 +113,7 @@ uint8_t reg_read(addr_t addr) {
 void reg_write(addr_t addr, uint8_t data) {
   switch (addr) {
     case REG_PPUCTRL: {
-      LockBlock lock(LOCK_REGS_PPU);
+      SpinLockBlock lock(SPINLOCK_PPU);
       // name sel bits
       reg.scroll &= 0xf3ff;
       reg.scroll |= (uint16_t)(data & 0x3) << 10;
@@ -128,7 +128,7 @@ void reg_write(addr_t addr, uint8_t data) {
     case REG_OAMDATA: oam_write(reg.oam_addr, data); break;
 
     case REG_PPUSCROLL: {
-      LockBlock lock(LOCK_REGS_PPU);
+      SpinLockBlock lock(SPINLOCK_PPU);
       if (!scroll_ppuaddr_high_stored) {
         reg.scroll &= ~SCROLL_MASK_COARSE_X;
         reg.scroll |= (data >> 3) & SCROLL_MASK_COARSE_X;
@@ -143,7 +143,7 @@ void reg_write(addr_t addr, uint8_t data) {
     } break;
 
     case REG_PPUADDR: {
-      LockBlock lock(LOCK_REGS_PPU);
+      SpinLockBlock lock(SPINLOCK_PPU);
       if (!scroll_ppuaddr_high_stored) {
         reg.scroll &= 0x00ffu;
         reg.scroll |= ((uint16_t)data << 8) & 0x3f00u;
@@ -157,7 +157,7 @@ void reg_write(addr_t addr, uint8_t data) {
     } break;
 
     case REG_PPUDATA: {
-      LockBlock lock(LOCK_REGS_PPU);
+      SpinLockBlock lock(SPINLOCK_PPU);
       uint_fast16_t scr = scroll_counter;
       addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
       bus_write(addr, data);
@@ -251,7 +251,7 @@ static SHAPONES_INLINE void palette_write(addr_t addr, uint8_t data) {
 }
 
 result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
-  if (!lock_try_get(LOCK_STATE_PPU)) {
+  if (!semaphore_try_take(SEMAPHORE_PPU)) {
     status->timing = timing_t::NONE;
     status->focus_y = focus_y;
     return result_t::SUCCESS;
@@ -270,11 +270,11 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     if (focus_x == 0) {
       if (focus_y == SCREEN_HEIGHT + 1) {
         // vblank flag/interrupt
-        LockBlock lock(LOCK_REGS_PPU);
+        SpinLockBlock lock(SPINLOCK_PPU);
         reg.status.vblank_flag = 1;
       } else if (focus_y == SCAN_LINES - 1) {
         // clear flags
-        LockBlock lock(LOCK_REGS_PPU);
+        SpinLockBlock lock(SPINLOCK_PPU);
         reg.status.vblank_flag = 0;
         reg.status.sprite0_hit = 0;
       }
@@ -361,7 +361,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
   }
 
   if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
-    nes::state::auto_screenshot(focus_y, line_buff, skip_render);
+    nes::state::hsync(focus_y, line_buff, skip_render);
     if (!skip_render) {
       nes::menu::overlay(focus_y, line_buff);
     }
@@ -372,7 +372,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     status->timing = timing;
   }
 
-  lock_release(LOCK_STATE_PPU);
+  semaphore_give(SEMAPHORE_PPU);
 
   return result_t::SUCCESS;
 }
@@ -380,7 +380,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
 #if !SHAPONES_LOCK_FAST
-  LockBlock lock(LOCK_REGS_PPU);
+  SpinLockBlock lock(SPINLOCK_PPU);
 #endif
 
   bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
@@ -399,7 +399,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
       uint_fast16_t scr;
       {
 #if SHAPONES_LOCK_FAST
-        Exclusive lock(LOCK_REGS_PPU);
+        SpinLockBlock(SPINLOCK_PPU);
 #endif
         scr = scroll_counter;
       }
@@ -479,7 +479,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
     // see: https://www.nesdev.org/wiki/PPU_scrolling
     if (reg.mask.bg_enable || reg.mask.sprite_enable) {
 #if SHAPONES_LOCK_FAST
-      Exclusive lock(LOCK_REGS_PPU);
+      SpinLockBlock(SPINLOCK_PPU);
 #endif
       uint_fast16_t scr = scroll_counter;
       uint_fast8_t fx = fine_x_counter;
