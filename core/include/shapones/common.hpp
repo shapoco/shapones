@@ -36,6 +36,10 @@
 #define SHAPONES_MENU_LARGE_FONT (0)
 #endif
 
+#ifndef SHAPONES_PERF_DETAIL
+#define SHAPONES_PERF_DETAIL (0)
+#endif
+
 #if SHAPONES_PICOLIBSDK
 #include "../include.h"
 #endif

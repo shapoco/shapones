@@ -1,4 +1,5 @@
 #include <string.h>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 
@@ -275,4 +276,12 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
 void nes::unload_ines() {
   SHAPONES_PRINTF("Unloading iNES file\n");
   ines_image.clear();
+}
+
+uint64_t nes::get_time_us() {
+  auto now = std::chrono::high_resolution_clock::now();
+  auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                now.time_since_epoch())
+                .count();
+  return static_cast<uint64_t>(us);
 }

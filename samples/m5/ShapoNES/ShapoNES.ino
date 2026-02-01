@@ -140,46 +140,8 @@ static const uint16_t COLOR_TABLE[] = {
 // clang-format on
 #endif
 
-static uint32_t fps_frame_count = 0;
-static uint64_t fps_last_meas_ms = 0;
-static float fps = 0.0f;
-
-struct stat_t {
-  uint64_t start_us = 0;
-  uint32_t time_us = 0;
-  uint32_t count = 0;
-};
-
-static stat_t stat_cpu_service;
-static stat_t stat_ppu_service;
-static stat_t stat_apu_service;
-static uint32_t stat_ppu_delay_clock = 0;
-static uint32_t stat_ppu_delay_count = 0;
-static uint32_t stat_pdm_sent_bytes = 0;
-static uint32_t stat_pdm_sent_count = 0;
-
 static uint64_t disp_button_down_ms = 0;
 static bool disp_button_pressed = false;
-
-static SHAPONES_INLINE void stat_start(stat_t &s) {
-  s.start_us = micros();
-}
-
-static SHAPONES_INLINE void stat_end(stat_t &s) {
-  uint32_t elapsed_us = micros() - s.start_us;
-  s.time_us += elapsed_us;
-  s.count++;
-}
-
-static SHAPONES_INLINE uint32_t stat_get_average(stat_t &s) {
-  uint32_t ave = 0;
-  if (s.count > 0) {
-    ave = s.time_us / s.count;
-  }
-  s.time_us = 0;
-  s.count = 0;
-  return ave;
-}
 
 static i2s_chan_handle_t audio_i2s_ch;
 static uint8_t apu_out_buff[AUDIO_BUFF_LEN] = { 0 };
@@ -197,7 +159,6 @@ static bool wait_vsync();
 static bool dma_busy();
 static void dma_start();
 static void dma_maintain();
-static void meas();
 static void audio_init();
 static void audio_stream(bool preload);
 static int audio_fill_buffer(int16_t *buff, int offset, int size);
@@ -217,6 +178,7 @@ void setup() {
   SHAPONES_PRINTF("ESP-IDF Version: %s\n", esp_get_idf_version());
 
   pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(44, OUTPUT);
 
 #if SHAPONES_ENABLE_HALF_SCREEN
   SPI.begin(TF_SCK_PIN, TF_MISO_PIN, TF_MOSI_PIN, TF_CS_PIN);
@@ -247,11 +209,9 @@ void loop() {
       }
     }
 
-    stat_start(stat_cpu_service);
     for (int i = 0; i < 10; i++) {
       nes::cpu::service();
     }
-    stat_end(stat_cpu_service);
 
     audio_stream(false);
   }
@@ -299,15 +259,8 @@ static void read_input() {
 static void ppu_loop(void *arg) {
   uint64_t next_wdt_reset_ms = 0;
   while (true) {
-    stat_ppu_delay_clock +=
-      nes::cpu::ppu_cycle_leading() - nes::ppu::cycle_following();
-    stat_ppu_delay_count += 1;
     nes::ppu::status_t status;
-    stat_start(stat_ppu_service);
     nes::ppu::service(line_buff, skip_frame, &status);
-    if (!skip_frame) {
-      stat_end(stat_ppu_service);
-    }
     if ((!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) && !skip_frame) {
 #if SHAPONES_ENABLE_HALF_SCREEN
       if (status.focus_y % 2 == 0) {
@@ -338,7 +291,6 @@ static void ppu_loop(void *arg) {
     if (!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_AREA)) {
       if (!skip_frame) {
         dma_start();
-        meas();
       }
       skip_frame = wait_vsync();
     } else {
@@ -393,35 +345,6 @@ static void dma_maintain() {
   M5.Display.startWrite();
   M5.Display.pushImageDMA(dx, dy, BUFF_W, h, sptr);
   dma_next_y += h;
-}
-
-static void meas() {
-  uint64_t now_ms = millis();
-  uint32_t elapsed_ms = now_ms - fps_last_meas_ms;
-
-  uint32_t cpu_time_us = stat_get_average(stat_cpu_service);
-  uint32_t ppu_time_us = stat_get_average(stat_ppu_service);
-  uint32_t apu_time_us = stat_get_average(stat_apu_service);
-  float ppu_delay_clocks = (float)stat_ppu_delay_clock / stat_ppu_delay_count;
-  stat_ppu_delay_clock = 0;
-  stat_ppu_delay_count = 0;
-  float pdm_sent_bytes = (float)stat_pdm_sent_bytes / stat_pdm_sent_count;
-  stat_pdm_sent_bytes = 0;
-  stat_pdm_sent_count = 0;
-
-  fps_frame_count++;
-  if (elapsed_ms >= 5000) {
-    fps = (float)(fps_frame_count * 1000) / elapsed_ms;
-#if 1
-    Serial.printf(
-      "%5.2f FPS (CPU:%u us, PPU:%u us, APU:%u us, PPU delay:%6.2f cyc, PDM "
-      "sent:%7.1f)\n",
-      fps, cpu_time_us, ppu_time_us, apu_time_us, ppu_delay_clocks,
-      pdm_sent_bytes);
-#endif
-    fps_last_meas_ms = now_ms;
-    fps_frame_count = 0;
-  }
 }
 
 static void audio_init() {
@@ -507,8 +430,6 @@ static void audio_stream(bool preload) {
                         0);
     }
     audio_rd_ptr = (audio_rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_LEN - 1);
-    stat_pdm_sent_bytes += written;
-    stat_pdm_sent_count += 1;
   }
   if (audio_rd_ptr < audio_wr_ptr) {
     size_t to_write = (audio_wr_ptr - audio_rd_ptr) * SAMPLE_SIZE;
@@ -521,14 +442,11 @@ static void audio_stream(bool preload) {
                         0);
     }
     audio_rd_ptr = (audio_rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_LEN - 1);
-    stat_pdm_sent_bytes += written;
-    stat_pdm_sent_count += 1;
   }
 #endif
 }
 
 static int audio_fill_buffer(int16_t *buff, int offset, int size) {
-  stat_start(stat_apu_service);
   nes::apu::service(apu_out_buff, size);
   for (int i = 0; i < size; i++) {
     int16_t val = (int16_t)apu_out_buff[i] - 128;
@@ -539,7 +457,6 @@ static int audio_fill_buffer(int16_t *buff, int offset, int size) {
 #endif
     offset = (offset + 1) & (AUDIO_BUFF_LEN - 1);
   }
-  stat_end(stat_apu_service);
   return offset;
 }
 
@@ -762,4 +679,11 @@ void nes::unload_ines() {
     heap_caps_free(ines_ptr);
   }
   ines_ptr = nullptr;
+}
+
+uint64_t nes::get_time_us() {
+  digitalWrite(44, 1);
+  uint64_t t = micros();
+  digitalWrite(44, 0);
+  return t;
 }

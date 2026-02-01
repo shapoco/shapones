@@ -463,3 +463,7 @@ void nes::unload_ines() {
   ines_rom = nullptr;
   ines_allocated = false;
 }
+
+uint64_t nes::get_time_us() {
+  return Time64();
+}

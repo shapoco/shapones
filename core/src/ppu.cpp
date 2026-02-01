@@ -36,6 +36,19 @@ static uint32_t oam[MAX_SPRITE_COUNT];
 static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
+static uint64_t perf_last_time_us = 0;
+static uint32_t perf_num_rendered_frames = 0;
+static uint32_t perf_num_frames = 0;
+static float perf_fps = 0.0f;
+#if SHAPONES_PERF_DETAIL
+static uint32_t perf_accum_t_sprite_enum = 0;
+static uint32_t perf_accum_t_bg_render = 0;
+static uint32_t perf_accum_t_sprite_render = 0;
+static uint32_t perf_t_sprite_enum = 0;
+static uint32_t perf_t_bg_render = 0;
+static uint32_t perf_t_sprite_render = 0;
+#endif
+
 static AsyncFifo<reg_write_t, 6> write_queue;
 static volatile bool ppu_status_read = false;
 
@@ -50,7 +63,10 @@ static void palette_write(addr_t addr, uint8_t data);
 
 static void render_bg(uint8_t *line_buff, int x0, int x1, bool skip_render);
 static void enum_visible_sprites(bool skip_render);
-static void render_sprite(uint8_t *line_buff, int x0, int x1, bool skip_render);
+static void render_sprites(uint8_t *line_buff, int x0, int x1,
+                           bool skip_render);
+
+static void measure(bool skip_render);
 
 result_t init() {
   deinit();
@@ -328,19 +344,43 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
         dist_to_end < cycle_diff ? dist_to_end : cycle_diff;
     uint_fast16_t next_focus_x = focus_x + step_count;
 
+#if SHAPONES_PERF_DETAIL
+    uint64_t t0 = get_time_us();
+#endif
+
     if (focus_x == 0 && focus_y < SCREEN_HEIGHT && reg.mask.sprite_enable) {
       // enumerate visible sprites in current line
       enum_visible_sprites(skip_render);
     }
 
+#if SHAPONES_PERF_DETAIL
+    uint64_t t1 = get_time_us();
+    uint32_t t_enum_sprites = t1 - t0;
+#endif
+
     // render background
     render_bg(line_buff, focus_x, next_focus_x, skip_render);
 
+#if SHAPONES_PERF_DETAIL
+    uint64_t t2 = get_time_us();
+    uint32_t t_render_bg = t2 - t1;
+#endif
+
     if (focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT &&
         reg.mask.sprite_enable) {
-      // render sprite
-      render_sprite(line_buff, focus_x, next_focus_x, skip_render);
+      // render sprites
+      render_sprites(line_buff, focus_x, next_focus_x, skip_render);
     }
+
+#if SHAPONES_PERF_DETAIL
+    uint64_t t3 = get_time_us();
+    uint32_t t_render_sprites = t3 - t2;
+    if (!skip_render) {
+      perf_accum_t_sprite_enum += t_enum_sprites;
+      perf_accum_t_bg_render += t_render_bg;
+      perf_accum_t_sprite_render += t_render_sprites;
+    }
+#endif
 
     if (focus_y < SCREEN_HEIGHT) {
       if (focus_x <= SCREEN_WIDTH && SCREEN_WIDTH < next_focus_x) {
@@ -360,6 +400,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
       if (focus_y >= SCAN_LINES) {
         focus_y = 0;
         timing |= timing_t::END_OF_FRAME;
+        measure(skip_render);
       }
     }
 
@@ -544,7 +585,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
           constexpr uint16_t COPY_MASK = 0x7be0u;
           scr &= ~COPY_MASK;
           scr |= reg.scroll & COPY_MASK;
-          
+
           scroll_counter = scr;
         }
       }
@@ -628,8 +669,8 @@ static void enum_visible_sprites(bool skip_render) {
   }
 }
 
-static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
-                          bool skip_render) {
+static void render_sprites(uint8_t *line_buff, int x0_block, int x1_block,
+                           bool skip_render) {
   for (int i = 0; i < num_visible_sprites; i++) {
     const auto &sl = sprite_lines[i];
     int x0 = (x0_block > sl.x) ? x0_block : sl.x;
@@ -662,6 +703,39 @@ static void render_sprite(uint8_t *line_buff, int x0_block, int x1_block,
 
 uint32_t get_state_size() {
   return STATE_HEADER_SIZE + sizeof(palette_file) + sizeof(oam);
+}
+
+static void measure(bool skip_render) {
+  perf_num_frames++;
+  if (!skip_render) {
+    perf_num_rendered_frames++;
+  }
+
+  if (perf_num_frames >= 60 * 3) {
+    uint64_t now_us = get_time_us();
+    uint32_t t_elapsed = now_us - perf_last_time_us;
+    perf_fps = (float)(perf_num_rendered_frames * 1000000) / t_elapsed;
+
+#if SHAPONES_PERF_DETAIL
+    uint32_t n = perf_num_rendered_frames;
+    if (n == 0) n = 1;
+    perf_t_sprite_enum = perf_accum_t_sprite_enum / n;
+    perf_t_bg_render = perf_accum_t_bg_render / n;
+    perf_t_sprite_render = perf_accum_t_sprite_render / n;
+    SHAPONES_PRINTF("%5.2ffps, SprEnum:%uus, BgRndr:%uus, SprRndr:%uus\n",
+                    perf_fps, perf_t_sprite_enum, perf_t_bg_render,
+                    perf_t_sprite_render);
+    perf_accum_t_sprite_enum = 0;
+    perf_accum_t_bg_render = 0;
+    perf_accum_t_sprite_render = 0;
+#else
+    SHAPONES_PRINTF("%5.2ffps\n", perf_fps);
+#endif
+
+    perf_last_time_us = now_us;
+    perf_num_frames = 0;
+    perf_num_rendered_frames = 0;
+  }
 }
 
 result_t save_state(void *file_handle) {

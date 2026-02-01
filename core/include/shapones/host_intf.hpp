@@ -44,6 +44,8 @@ result_t fs_write(void *handle, const uint8_t *buff, size_t size);
 result_t fs_size(void *handle, size_t *out_size);
 result_t fs_delete(const char *path);
 
+uint64_t get_time_us();
+
 }  // namespace nes
 
 #endif
