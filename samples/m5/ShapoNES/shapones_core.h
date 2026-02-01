@@ -54,10 +54,6 @@
 #define SHAPONES_MENU_LARGE_FONT (0)
 #endif
 
-#ifndef SHAPONES_LOCK_FAST
-#define SHAPONES_LOCK_FAST (0)
-#endif
-
 #if SHAPONES_PICOLIBSDK
 // #include "../include.h"
 
@@ -168,10 +164,8 @@ static constexpr addr_t PRGROM_RANGE = 32 * 1024;
 static constexpr addr_t PRGRAM_RANGE = 8 * 1024;
 static constexpr addr_t CHRROM_RANGE = 8 * 1024;
 
-static constexpr int NUM_SPINLOCKS = 3;
+static constexpr int NUM_SPINLOCKS = 1;
 static constexpr int SPINLOCK_IRQ = 0;
-static constexpr int SPINLOCK_PPU = 1;
-static constexpr int SPINLOCK_APU = 2;
 
 static constexpr int NUM_SEMAPHORES = 2;
 static constexpr int SEMAPHORE_PPU = 0;
@@ -1644,16 +1638,6 @@ static void pulse_write_reg0(pulse_state_t &s, uint8_t value);
 static void pulse_write_reg1(pulse_state_t &s, uint8_t value);
 static void pulse_write_reg2(pulse_state_t &s, uint8_t value);
 static void pulse_write_reg3(pulse_state_t &s, uint8_t value);
-static void triangle_write_reg0(triangle_state_t &s, uint8_t value);
-static void triangle_write_reg2(triangle_state_t &s, uint8_t value);
-static void triangle_write_reg3(triangle_state_t &s, uint8_t value);
-static void noise_write_reg0(noise_state_t &s, uint8_t value);
-static void noise_write_reg2(noise_state_t &s, uint8_t value);
-static void noise_write_reg3(noise_state_t &s, uint8_t value);
-static void dmc_write_reg0(dmc_state_t &s, uint8_t value);
-static void dmc_write_reg1(dmc_state_t &s, uint8_t value);
-static void dmc_write_reg2(dmc_state_t &s, uint8_t value);
-static void dmc_write_reg3(dmc_state_t &s, uint8_t value);
 
 result_t init() {
   deinit();
@@ -1680,7 +1664,7 @@ result_t reset() {
 }
 
 uint8_t reg_read(addr_t addr) {
-  while (!write_queue.is_empty()) {
+  if (!write_queue.is_empty()) {
     SemaphoreBlock block(SEMAPHORE_APU);
     flush_write_queue();
   }
@@ -1717,6 +1701,49 @@ void reg_write(addr_t addr, uint8_t data) {
   }
 }
 
+static SHAPONES_INLINE void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
+  //  duty pattern
+  switch ((value >> 6) & 0x3) {
+    default:
+    case 0: s.waveform = 0b00000001; break;
+    case 1: s.waveform = 0b00000011; break;
+    case 2: s.waveform = 0b00001111; break;
+    case 3: s.waveform = 0b11111100; break;
+  }
+
+  s.envelope.flags = 0;
+  if (value & 0x10) s.envelope.flags |= ENV_FLAG_CONSTANT;
+  if (value & 0x20) s.envelope.flags |= ENV_FLAG_HALT_LOOP;
+  s.envelope.volume = value & 0xf;
+
+  if (!(s.envelope.flags & ENV_FLAG_CONSTANT)) {
+    s.envelope.flags |= ENV_FLAG_START;
+    s.envelope.divider = s.envelope.volume;
+  }
+}
+
+static SHAPONES_INLINE void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
+  s.sweep.period = (value >> 4) & 0x7;
+  s.sweep.shift = value & 0x7;
+  s.sweep.flags = 0;
+  if (value & 0x80) s.sweep.flags |= SWP_FLAG_ENABLE;
+  if (value & 0x08) s.sweep.flags |= SWP_FLAG_NEGATE;
+  s.sweep.divider = 0;
+}
+
+static SHAPONES_INLINE void pulse_write_reg2(pulse_state_t &s, uint8_t value) {
+  s.timer_period &= ~(0xff << TIMER_PREC);
+  s.timer_period |= (uint32_t)value << TIMER_PREC;
+}
+
+static SHAPONES_INLINE void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
+  s.timer_period &= ~(0x700 << TIMER_PREC);
+  s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
+  s.timer = 0;
+  s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
+  s.phase = 0;
+}
+
 static void flush_write_queue() {
   reg_write_t req;
   while (write_queue.try_peek(&req)) {
@@ -1727,20 +1754,76 @@ static void flush_write_queue() {
       case REG_PULSE1_REG1: pulse_write_reg1(pulse[0], data); break;
       case REG_PULSE1_REG2: pulse_write_reg2(pulse[0], data); break;
       case REG_PULSE1_REG3: pulse_write_reg3(pulse[0], data); break;
+
       case REG_PULSE2_REG0: pulse_write_reg0(pulse[1], data); break;
       case REG_PULSE2_REG1: pulse_write_reg1(pulse[1], data); break;
       case REG_PULSE2_REG2: pulse_write_reg2(pulse[1], data); break;
       case REG_PULSE2_REG3: pulse_write_reg3(pulse[1], data); break;
-      case REG_TRIANGLE_REG0: triangle_write_reg0(triangle, data); break;
-      case REG_TRIANGLE_REG2: triangle_write_reg2(triangle, data); break;
-      case REG_TRIANGLE_REG3: triangle_write_reg3(triangle, data); break;
-      case REG_NOISE_REG0: noise_write_reg0(noise, data); break;
-      case REG_NOISE_REG2: noise_write_reg2(noise, data); break;
-      case REG_NOISE_REG3: noise_write_reg3(noise, data); break;
-      case REG_DMC_REG0: dmc_write_reg0(dmc, data); break;
-      case REG_DMC_REG1: dmc_write_reg1(dmc, data); break;
-      case REG_DMC_REG2: dmc_write_reg2(dmc, data); break;
-      case REG_DMC_REG3: dmc_write_reg3(dmc, data); break;
+
+      case REG_TRIANGLE_REG0:
+        triangle.linear.reload_value = data & 0x7f;
+        if (data & 0x80) {
+          triangle.linear.flags |= LIN_FLAG_CONTROL;
+        } else {
+          triangle.linear.flags &= ~LIN_FLAG_CONTROL;
+        }
+        break;
+
+      case REG_TRIANGLE_REG2:
+        triangle.timer_period &= ~(0xff << TIMER_PREC);
+        triangle.timer_period |= (uint32_t)data << TIMER_PREC;
+        break;
+
+      case REG_TRIANGLE_REG3:
+        triangle.timer_period &= ~(0x700 << TIMER_PREC);
+        triangle.timer_period |= (uint32_t)(data & 0x7) << (TIMER_PREC + 8);
+        triangle.timer = 0;
+        triangle.length = LENGTH_TABLE[(data >> 3) & 0x1f];
+        triangle.phase = 0;
+        triangle.linear.flags |= LIN_FLAG_RELOAD;
+        break;
+
+      case REG_NOISE_REG0:
+        noise.envelope.flags = 0;
+        if (data & 0x10) noise.envelope.flags |= ENV_FLAG_CONSTANT;
+        if (data & 0x20) noise.envelope.flags |= ENV_FLAG_HALT_LOOP;
+        noise.envelope.volume = data & 0xf;
+        if (!(noise.envelope.flags & ENV_FLAG_CONSTANT)) {
+          noise.envelope.flags |= ENV_FLAG_START;
+          noise.envelope.divider = noise.envelope.volume;
+        }
+        break;
+
+      case REG_NOISE_REG2:
+        if (data & 0x80) {
+          noise.flags |= NOISE_FLAG_FB_MODE;
+        } else {
+          noise.flags &= ~NOISE_FLAG_FB_MODE;
+        }
+        noise.timer_period = NOISE_PERIOD_TABLE[data & 0xF];
+        break;
+
+      case REG_NOISE_REG3:
+        noise.length = LENGTH_TABLE[(data >> 3) & 0x1f];
+        break;
+
+      case REG_DMC_REG0: {
+        bool irq_ena_old = !!(dmc.flags & DMC_FLAG_IRQ_ENABLE);
+        bool irq_ena_new = !!(data & 0x80);
+        if (irq_ena_new && !irq_ena_old) {
+          interrupt::deassert_irq(interrupt::source_t::APU_DMC);
+        }
+        dmc.flags = 0;
+        if (irq_ena_new) dmc.flags |= DMC_FLAG_IRQ_ENABLE;
+        if (data & 0x40) dmc.flags |= DMC_FLAG_LOOP;
+        dmc.timer_step = dmc_step_coeff / DMC_RATE_TABLE[data & 0x0f];
+      } break;
+
+      case REG_DMC_REG1: dmc.out_level = data & 0x7f; break;
+
+      case REG_DMC_REG2: dmc.sample_addr = 0xc000 + ((addr_t)data << 6); break;
+      case REG_DMC_REG3: dmc.sample_length = ((uint16_t)data << 4) + 1; break;
+
       case REG_STATUS:
         status.raw = data;
         if (!status.pulse0_enable) pulse[0].length = 0;
@@ -1758,6 +1841,7 @@ static void flush_write_queue() {
         // see: https://www.nesdev.org/wiki/IRQ
         interrupt::deassert_irq(interrupt::source_t::APU_DMC);
         break;
+
       case REG_FRAME_COUNTER:
         if (data & 0x80) {
           // todo: implement
@@ -1790,137 +1874,6 @@ result_t set_sampling_rate(uint32_t rate_hz) {
   return result_t::SUCCESS;
 }
 
-static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  //  duty pattern
-  switch ((value >> 6) & 0x3) {
-    default:
-    case 0: s.waveform = 0b00000001; break;
-    case 1: s.waveform = 0b00000011; break;
-    case 2: s.waveform = 0b00001111; break;
-    case 3: s.waveform = 0b11111100; break;
-  }
-
-  s.envelope.flags = 0;
-  if (value & 0x10) s.envelope.flags |= ENV_FLAG_CONSTANT;
-  if (value & 0x20) s.envelope.flags |= ENV_FLAG_HALT_LOOP;
-  s.envelope.volume = value & 0xf;
-
-  if (!(s.envelope.flags & ENV_FLAG_CONSTANT)) {
-    s.envelope.flags |= ENV_FLAG_START;
-    s.envelope.divider = s.envelope.volume;
-  }
-}
-
-static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  s.sweep.period = (value >> 4) & 0x7;
-  s.sweep.shift = value & 0x7;
-  s.sweep.flags = 0;
-  if (value & 0x80) s.sweep.flags |= SWP_FLAG_ENABLE;
-  if (value & 0x08) s.sweep.flags |= SWP_FLAG_NEGATE;
-  s.sweep.divider = 0;
-}
-
-static void pulse_write_reg2(pulse_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  s.timer_period &= ~(0xff << TIMER_PREC);
-  s.timer_period |= (uint32_t)value << TIMER_PREC;
-}
-
-static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  s.timer_period &= ~(0x700 << TIMER_PREC);
-  s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
-  s.timer = 0;
-  s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
-  s.phase = 0;
-}
-
-static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  s.linear.reload_value = value & 0x7f;
-  if (value & 0x80) {
-    s.linear.flags |= LIN_FLAG_CONTROL;
-  } else {
-    s.linear.flags &= ~LIN_FLAG_CONTROL;
-  }
-}
-
-static void triangle_write_reg2(triangle_state_t &s, uint8_t value) {
-  //  SpinLockBlock lock(SPINLOCK_APU);
-  s.timer_period &= ~(0xff << TIMER_PREC);
-  s.timer_period |= (uint32_t)value << TIMER_PREC;
-}
-
-static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  s.timer_period &= ~(0x700 << TIMER_PREC);
-  s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
-  s.timer = 0;
-  s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
-  s.phase = 0;
-  s.linear.flags |= LIN_FLAG_RELOAD;
-}
-
-static void noise_write_reg0(noise_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  s.envelope.flags = 0;
-  if (value & 0x10) s.envelope.flags |= ENV_FLAG_CONSTANT;
-  if (value & 0x20) s.envelope.flags |= ENV_FLAG_HALT_LOOP;
-  s.envelope.volume = value & 0xf;
-
-  if (!(s.envelope.flags & ENV_FLAG_CONSTANT)) {
-    s.envelope.flags |= ENV_FLAG_START;
-    s.envelope.divider = s.envelope.volume;
-  }
-}
-
-static void noise_write_reg2(noise_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  if (value & 0x80) {
-    s.flags |= NOISE_FLAG_FB_MODE;
-  } else {
-    s.flags &= ~NOISE_FLAG_FB_MODE;
-  }
-  s.timer_period = NOISE_PERIOD_TABLE[value & 0xF];
-}
-
-static void noise_write_reg3(noise_state_t &s, uint8_t value) {
-  //  SpinLockBlock lock(SPINLOCK_APU);
-  s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
-}
-
-static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
-  bool irq_ena_old = !!(s.flags & DMC_FLAG_IRQ_ENABLE);
-  bool irq_ena_new = !!(value & 0x80);
-  if (irq_ena_new && !irq_ena_old) {
-    interrupt::deassert_irq(interrupt::source_t::APU_DMC);
-  }
-  {
-    // SpinLockBlock lock(SPINLOCK_APU);
-    s.flags = 0;
-    if (irq_ena_new) s.flags |= DMC_FLAG_IRQ_ENABLE;
-    if (value & 0x40) s.flags |= DMC_FLAG_LOOP;
-    s.timer_step = dmc_step_coeff / DMC_RATE_TABLE[value & 0x0f];
-  }
-}
-
-static void dmc_write_reg1(dmc_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  s.out_level = value & 0x7f;
-}
-
-static void dmc_write_reg2(dmc_state_t &s, uint8_t value) {
-  //  SpinLockBlock lock(SPINLOCK_APU);
-  s.sample_addr = 0xc000 + ((addr_t)value << 6);
-}
-
-static void dmc_write_reg3(dmc_state_t &s, uint8_t value) {
-  // SpinLockBlock lock(SPINLOCK_APU);
-  s.sample_length = ((int)value << 4) + 1;
-}
-
 // see: https://www.nesdev.org/wiki/APU_Envelope
 static SHAPONES_INLINE uint8_t step_envelope(envelope_t &e) {
   if (frame_step_flags & STEP_FLAG_QUARTER) {
@@ -1947,145 +1900,109 @@ static SHAPONES_INLINE uint8_t step_envelope(envelope_t &e) {
   }
 }
 
-// see: https://www.nesdev.org/wiki/APU_Sweep
-static SHAPONES_INLINE int step_sweep(pulse_state_t &s) {
-  int gate = 1;
-  if (s.sweep.flags & SWP_FLAG_ENABLE) {
-    if (frame_step_flags & STEP_FLAG_HALF) {
-      if (s.sweep.divider < s.sweep.period) {
-        s.sweep.divider++;
-      } else {
-        s.sweep.divider = 0;
-        int32_t change = s.timer_period;
-        change >>= s.sweep.shift;
-        if (s.sweep.flags & SWP_FLAG_NEGATE) {
-          change = -change;
-        }
-        int32_t target = s.timer_period + change;
-        if (target < 0) {
-          target = 0;
-        } else if (target >= (0x7ff << TIMER_PREC)) {
-          target = (0x7ff << TIMER_PREC);
-          gate = 0;
-        }
-        {
-#if SHAPONES_LOCK_FAST
-          SpinLockBlock lock(SPINLOCK_APU);
-#endif
-          s.timer_period = target;
-        }
-      }
-    }
-  }
-  return gate;
-}
-
-// see: https://www.nesdev.org/wiki/APU_Triangle
-static SHAPONES_INLINE int step_linear_counter(linear_counter_t &c) {
-  // linear counter
-  if (frame_step_flags & STEP_FLAG_QUARTER) {
-    if (c.flags & LIN_FLAG_RELOAD) {
-      c.counter = c.reload_value;
-    } else if (c.counter > 0) {
-      c.counter--;
-    }
-
-    if (!(c.flags & LIN_FLAG_CONTROL)) {
-#if SHAPONES_LOCK_FAST
-      SpinLockBlock(SPINLOCK_APU);
-#endif
-      c.flags &= ~LIN_FLAG_RELOAD;  // clear reload flag
-    }
-  }
-  return c.counter > 0 ? 1 : 0;
-}
-
 // see: https://www.nesdev.org/wiki/APU_Pulse
+// see: https://www.nesdev.org/wiki/APU_Sweep
 static SHAPONES_INLINE int sample_pulse(pulse_state_t &s) {
   // envelope unit
   uint_fast8_t vol = step_envelope(s.envelope);
 
-  // sweep unit
-  vol *= step_sweep(s);
+  bool half_frame = !!(frame_step_flags & STEP_FLAG_HALF);
 
-  // length counter
-  if ((frame_step_flags & STEP_FLAG_HALF) &&
-      !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
-    if (s.length > 0) {
-#if SHAPONES_LOCK_FAST
-      SpinLockBlock(SPINLOCK_APU);
-#endif
-      s.length--;
+  // sweep unit
+  if (half_frame && !!(s.sweep.flags & SWP_FLAG_ENABLE)) {
+    if (s.sweep.divider < s.sweep.period) {
+      s.sweep.divider++;
+    } else {
+      s.sweep.divider = 0;
+      int32_t change = s.timer_period;
+      int32_t target = s.timer_period;
+      change >>= s.sweep.shift;
+      if (s.sweep.flags & SWP_FLAG_NEGATE) {
+        change = -change;
+      }
+      target += change;
+      if (target < 0) {
+        target = 0;
+      } else if (target >= (0x7ff << TIMER_PREC)) {
+        target = (0x7ff << TIMER_PREC);
+        vol = 0;
+      }
+      s.timer_period = target;
     }
   }
 
   // mute
-  if (s.timer_period < 8) vol = 0;
-  if (s.length <= 0) vol = 0;
-
-  // sequencer
-  uint32_t phase;
-  {
-#if SHAPONES_LOCK_FAST
-    SpinLockBlock(SPINLOCK_APU);
-#endif
-    s.timer += pulse_timer_step;
-    int step = 0;
-    if (s.timer_period != 0) {
-      step = s.timer / s.timer_period;
-    }
-    s.timer -= step * s.timer_period;
-    s.phase = (s.phase + step) & 0x7;
-    phase = s.phase;
+  if (s.timer_period < 8 || s.length <= 0 || vol == 0) {
+    return 0;
   }
 
-  int amp = (s.waveform >> phase) & 1;
-  return amp * vol;
+  // length counter
+  if (half_frame && !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
+    if (s.length > 0) {
+      s.length--;
+    }
+  }
+
+  // sequencer
+  s.timer += pulse_timer_step;
+  int step = 0;
+  if (s.timer_period != 0) {
+    step = s.timer / s.timer_period;
+  }
+  s.timer -= step * s.timer_period;
+  s.phase = (s.phase + step) & 0x7;
+
+  if ((s.waveform >> s.phase) & 1) {
+    return vol;
+  } else {
+    return 0;
+  }
 }
 
 // see: https://www.nesdev.org/wiki/APU_Triangle
 static SHAPONES_INLINE int sample_triangle(triangle_state_t &s) {
-  int vol = 1;
+  // mute
+  if (s.length <= 0) {
+    return 0;
+  }
 
   // length counter
   if ((frame_step_flags & STEP_FLAG_HALF) &&
       !(s.linear.flags & LIN_FLAG_CONTROL)) {
     if (s.length > 0) {
-#if SHAPONES_LOCK_FAST
-      SpinLockBlock(SPINLOCK_APU);
-#endif
       s.length--;
     }
   }
 
   // linear counter
-  step_linear_counter(s.linear);
-
-  // phase counter
-  uint32_t phase;
-  {
-#if SHAPONES_LOCK_FAST
-    SpinLockBlock(SPINLOCK_APU);
-#endif
-    s.timer += triangle_timer_step;
-    int step = 0;
-    if (s.timer_period != 0) {
-      step = s.timer / s.timer_period;
+  if (frame_step_flags & STEP_FLAG_QUARTER) {
+    if (s.linear.flags & LIN_FLAG_RELOAD) {
+      s.linear.counter = s.linear.reload_value;
+    } else if (s.linear.counter > 0) {
+      s.linear.counter--;
     }
-    s.timer -= step * s.timer_period;
-    if (s.length > 0 && s.linear.counter > 0) {
-      s.phase = (s.phase + step) & 0x1f;
+    if (!(s.linear.flags & LIN_FLAG_CONTROL)) {
+      s.linear.flags &= ~LIN_FLAG_RELOAD;  // clear reload flag
     }
-    phase = s.phase;
   }
 
-  // mute
-  if (s.timer_period < 8) vol = 0;
+  // phase counter
+  s.timer += triangle_timer_step;
+  int step = 0;
+  if (s.timer_period != 0) {
+    step = s.timer / s.timer_period;
+  }
+  s.timer -= step * s.timer_period;
+  if (s.length > 0 && s.linear.counter > 0) {
+    s.phase = (s.phase + step) & 0x1f;
+  }
+  uint32_t phase = s.phase;
+
   // sequencer
   if (phase <= 15) {
-    return (15 - phase) * vol;
+    return (15 - phase);
   } else {
-    return (phase - 16) * vol;
+    return (phase - 16);
   }
 }
 
@@ -2098,15 +2015,14 @@ static SHAPONES_INLINE int sample_noise(noise_state_t &s) {
   if ((frame_step_flags & STEP_FLAG_HALF) &&
       !(s.envelope.flags & ENV_FLAG_HALT_LOOP)) {
     if (s.length > 0) {
-#if SHAPONES_LOCK_FAST
-      SpinLockBlock(SPINLOCK_APU);
-#endif
       s.length--;
     }
   }
 
   // mute
-  if (s.length <= 0) vol = 0;
+  if (s.length <= 0 || vol == 0) {
+    return 0;
+  }
 
   // timer
   s.timer += noise_timer_step;
@@ -2131,21 +2047,12 @@ static SHAPONES_INLINE int sample_noise(noise_state_t &s) {
 
 // see: https://www.nesdev.org/wiki/APU_DMC
 static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
-  int step;
-  {
-#if SHAPONES_LOCK_FAST
-    SpinLockBlock(SPINLOCK_APU);
-#endif
-    s.timer += s.timer_step;
-    step = s.timer >> TIMER_PREC;
-    s.timer &= (1 << TIMER_PREC) - 1;
-  }
+  s.timer += s.timer_step;
+  uint32_t step = s.timer >> TIMER_PREC;
+  s.timer &= (1 << TIMER_PREC) - 1;
 
-  for (int i = 0; i < step; i++) {
+  for (uint32_t i = 0; i < step; i++) {
     if (s.bits_remaining == 0) {
-#if SHAPONES_LOCK_FAST
-      SpinLockBlock(SPINLOCK_APU);
-#endif
       if (s.bytes_remaining > 0) {
         s.shift_reg = cpu::bus_read(s.addr_counter | 0x8000);
         s.addr_counter++;
@@ -2167,16 +2074,10 @@ static SHAPONES_INLINE int sample_dmc(dmc_state_t &s) {
     if (s.bits_remaining > 0) {
       if (status.dmc_enable) {
         if (s.shift_reg & 1) {
-#if SHAPONES_LOCK_FAST
-          SpinLockBlock(SPINLOCK_APU);
-#endif
           if (s.out_level <= 125) {
             s.out_level += 2;
           }
         } else {
-#if SHAPONES_LOCK_FAST
-          SpinLockBlock(SPINLOCK_APU);
-#endif
           if (s.out_level >= 2) {
             s.out_level -= 2;
           }
@@ -2198,10 +2099,6 @@ result_t service(uint8_t *buff, int len) {
     return result_t::SUCCESS;
   }
 
-#if !SHAPONES_LOCK_FAST
-  // SpinLockBlock lock(SPINLOCK_APU);
-#endif
-
   flush_write_queue();
 
   for (int i = 0; i < len; i++) {
@@ -2222,7 +2119,7 @@ result_t service(uint8_t *buff, int len) {
       frame_step_flags = 0;
     }
 
-    uint8_t sample = 0;
+    uint_fast8_t sample = 0;
     sample += sample_pulse(pulse[0]);
     sample += sample_pulse(pulse[1]);
     sample += sample_triangle(triangle);
@@ -2941,7 +2838,6 @@ result_t service() {
     } else if (irq_pending == 0 && !!interrupt::get_irq() &&
                !reg.status.interrupt) {
       // IRQ
-      auto irq_source = interrupt::get_irq();
       auto s = reg.status;
       s.breakmode = 0;
       push(reg.PC >> 8);
@@ -5854,6 +5750,7 @@ static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
 static AsyncFifo<reg_write_t, 6> write_queue;
+static volatile bool ppu_status_read = false;
 
 static void flush_write_queue();
 
@@ -5903,7 +5800,7 @@ bool is_in_hblank() { return focus_x >= SCREEN_WIDTH; }
 int current_focus_y() { return focus_y; }
 
 uint8_t reg_read(addr_t addr) {
-  while (!write_queue.is_empty()) {
+  if (!write_queue.is_empty()) {
     SemaphoreBlock block(SEMAPHORE_PPU);
     flush_write_queue();
   }
@@ -5911,16 +5808,14 @@ uint8_t reg_read(addr_t addr) {
   uint8_t retval;
   switch (addr) {
     case REG_PPUSTATUS: {
-      SpinLockBlock lock(SPINLOCK_PPU);
       retval = reg.status.raw;
-      reg.status.vblank_flag = 0;
       scroll_ppuaddr_high_stored = false;
+      ppu_status_read = true;
     } break;
 
     case REG_OAMDATA: retval = oam_read(reg.oam_addr); break;
 
     case REG_PPUDATA: {
-      SpinLockBlock lock(SPINLOCK_PPU);
       addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
@@ -5930,11 +5825,7 @@ uint8_t reg_read(addr_t addr) {
       retval = bus_read_data_delayed;
     } break;
 
-    default:
-      SHAPONES_PRINTF("*Warning: Invalid PPU register read addr: 0x%x\n",
-                      (int)addr);
-      retval = 0;
-      break;
+    default: retval = 0; break;
   }
   return retval;
 }
@@ -5952,15 +5843,21 @@ void reg_write(addr_t addr, uint8_t data) {
 
 static void flush_write_queue() {
   reg_write_t req;
+
+  if (ppu_status_read) {
+    ppu_status_read = false;
+    reg.status.vblank_flag = 0;
+  }
+
   while (write_queue.try_peek(&req)) {
     switch (req.addr) {
-      case REG_PPUCTRL: {
+      case REG_PPUCTRL:
         // name sel bits
         reg.scroll &= 0xf3ff;
         reg.scroll |= (uint16_t)(req.data & 0x3) << 10;
         // other bits
         reg.control.raw = req.data;
-      } break;
+        break;
 
       case REG_PPUMASK: reg.mask.raw = req.data; break;
 
@@ -5968,7 +5865,7 @@ static void flush_write_queue() {
 
       case REG_OAMDATA: oam_write(reg.oam_addr, req.data); break;
 
-      case REG_PPUSCROLL: {
+      case REG_PPUSCROLL:
         if (!scroll_ppuaddr_high_stored) {
           reg.scroll &= ~SCROLL_MASK_COARSE_X;
           reg.scroll |= (req.data >> 3) & SCROLL_MASK_COARSE_X;
@@ -5980,9 +5877,9 @@ static void flush_write_queue() {
           reg.scroll |= ((uint16_t)req.data << 12) & SCROLL_MASK_FINE_Y;
           scroll_ppuaddr_high_stored = false;
         }
-      } break;
+        break;
 
-      case REG_PPUADDR: {
+      case REG_PPUADDR:
         if (!scroll_ppuaddr_high_stored) {
           reg.scroll &= 0x00ffu;
           reg.scroll |= ((uint16_t)req.data << 8) & 0x3f00u;
@@ -5993,7 +5890,7 @@ static void flush_write_queue() {
           scroll_counter = reg.scroll;
           scroll_ppuaddr_high_stored = false;
         }
-      } break;
+        break;
 
       case REG_PPUDATA: {
         uint_fast16_t scr = scroll_counter;
@@ -6005,10 +5902,6 @@ static void flush_write_queue() {
         scr |= addr;
         scroll_counter = scr;
       } break;
-
-      default:
-        SHAPONES_PRINTF("*Warning: Invalid PPU register write addr: 0x%x\n",
-                        (int)req.addr);
     }
 
     write_queue.try_pop(&req);
@@ -6054,9 +5947,6 @@ static SHAPONES_INLINE void bus_write(addr_t addr, uint8_t data) {
   } else if (VRAM_MIRROR_BASE <= addr &&
              addr < VRAM_MIRROR_BASE + VRAM_MIRROR_SIZE) {
     memory::vram_write(addr - VRAM_MIRROR_BASE, data);
-  } else {
-    // SHAPONES_PRINTF("*Warning: Invalid PPU bus write addr: 0x%x\n",
-    // addr);
   }
 }
 
@@ -6220,11 +6110,6 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
 
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
-#if !SHAPONES_LOCK_FAST
-// todo: delete
-// SpinLockBlock lock(SPINLOCK_PPU);
-#endif
-
   bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
   bool bg_enabled = reg.mask.bg_enable;
 
@@ -6238,13 +6123,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
   while (x0_block < x1_block) {
     int x0, x1;
     {
-      uint_fast16_t scr;
-      {
-#if SHAPONES_LOCK_FAST
-        SpinLockBlock(SPINLOCK_PPU);
-#endif
-        scr = scroll_counter;
-      }
+      uint_fast16_t scr = scroll_counter;
 
       // determine step count
       x0 = x0_block;
@@ -6320,9 +6199,6 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
     // update scroll counter
     // see: https://www.nesdev.org/wiki/PPU_scrolling
     if (reg.mask.bg_enable || reg.mask.sprite_enable) {
-#if SHAPONES_LOCK_FAST
-      SpinLockBlock(SPINLOCK_PPU);
-#endif
       uint_fast16_t scr = scroll_counter;
       uint_fast8_t fx = fine_x_counter;
       if (focus_y < SCREEN_HEIGHT) {

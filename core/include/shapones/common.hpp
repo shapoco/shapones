@@ -36,10 +36,6 @@
 #define SHAPONES_MENU_LARGE_FONT (0)
 #endif
 
-#ifndef SHAPONES_LOCK_FAST
-#define SHAPONES_LOCK_FAST (0)
-#endif
-
 #if SHAPONES_PICOLIBSDK
 #include "../include.h"
 #endif
@@ -149,10 +145,8 @@ static constexpr addr_t PRGROM_RANGE = 32 * 1024;
 static constexpr addr_t PRGRAM_RANGE = 8 * 1024;
 static constexpr addr_t CHRROM_RANGE = 8 * 1024;
 
-static constexpr int NUM_SPINLOCKS = 3;
+static constexpr int NUM_SPINLOCKS = 1;
 static constexpr int SPINLOCK_IRQ = 0;
-static constexpr int SPINLOCK_PPU = 1;
-static constexpr int SPINLOCK_APU = 2;
 
 static constexpr int NUM_SEMAPHORES = 2;
 static constexpr int SEMAPHORE_PPU = 0;

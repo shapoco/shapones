@@ -209,8 +209,10 @@ void setup() {
   M5.begin(cfg);
   delay(500);
 
-  // to supress power noise sound
+#if defined(ARDUINO_M5STACK_STICKS3)
+  // to supress power noise
   M5.Power.setExtOutput(false);
+#endif
 
   SHAPONES_PRINTF("ESP-IDF Version: %s\n", esp_get_idf_version());
 

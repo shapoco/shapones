@@ -36,7 +36,8 @@ static uint8_t oam[OAM_SIZE];
 static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
-static AsyncFifo<reg_write_t, 6> write_queue;
+static AsyncFifo<reg_write_t, 8> write_queue;
+static volatile bool ppu_status_read = false;
 
 static void flush_write_queue();
 
@@ -86,7 +87,7 @@ bool is_in_hblank() { return focus_x >= SCREEN_WIDTH; }
 int current_focus_y() { return focus_y; }
 
 uint8_t reg_read(addr_t addr) {
-  while (!write_queue.is_empty()) {
+  if (!write_queue.is_empty()) {
     SemaphoreBlock block(SEMAPHORE_PPU);
     flush_write_queue();
   }
@@ -94,16 +95,14 @@ uint8_t reg_read(addr_t addr) {
   uint8_t retval;
   switch (addr) {
     case REG_PPUSTATUS: {
-      SpinLockBlock lock(SPINLOCK_PPU);
       retval = reg.status.raw;
-      reg.status.vblank_flag = 0;
       scroll_ppuaddr_high_stored = false;
+      ppu_status_read = true;
     } break;
 
     case REG_OAMDATA: retval = oam_read(reg.oam_addr); break;
 
     case REG_PPUDATA: {
-      SpinLockBlock lock(SPINLOCK_PPU);
       addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
@@ -113,11 +112,7 @@ uint8_t reg_read(addr_t addr) {
       retval = bus_read_data_delayed;
     } break;
 
-    default:
-      SHAPONES_PRINTF("*Warning: Invalid PPU register read addr: 0x%x\n",
-                      (int)addr);
-      retval = 0;
-      break;
+    default: retval = 0; break;
   }
   return retval;
 }
@@ -135,15 +130,21 @@ void reg_write(addr_t addr, uint8_t data) {
 
 static void flush_write_queue() {
   reg_write_t req;
+
+  if (ppu_status_read) {
+    ppu_status_read = false;
+    reg.status.vblank_flag = 0;
+  }
+
   while (write_queue.try_peek(&req)) {
     switch (req.addr) {
-      case REG_PPUCTRL: {
+      case REG_PPUCTRL:
         // name sel bits
         reg.scroll &= 0xf3ff;
         reg.scroll |= (uint16_t)(req.data & 0x3) << 10;
         // other bits
         reg.control.raw = req.data;
-      } break;
+        break;
 
       case REG_PPUMASK: reg.mask.raw = req.data; break;
 
@@ -151,7 +152,7 @@ static void flush_write_queue() {
 
       case REG_OAMDATA: oam_write(reg.oam_addr, req.data); break;
 
-      case REG_PPUSCROLL: {
+      case REG_PPUSCROLL:
         if (!scroll_ppuaddr_high_stored) {
           reg.scroll &= ~SCROLL_MASK_COARSE_X;
           reg.scroll |= (req.data >> 3) & SCROLL_MASK_COARSE_X;
@@ -163,9 +164,9 @@ static void flush_write_queue() {
           reg.scroll |= ((uint16_t)req.data << 12) & SCROLL_MASK_FINE_Y;
           scroll_ppuaddr_high_stored = false;
         }
-      } break;
+        break;
 
-      case REG_PPUADDR: {
+      case REG_PPUADDR:
         if (!scroll_ppuaddr_high_stored) {
           reg.scroll &= 0x00ffu;
           reg.scroll |= ((uint16_t)req.data << 8) & 0x3f00u;
@@ -176,7 +177,7 @@ static void flush_write_queue() {
           scroll_counter = reg.scroll;
           scroll_ppuaddr_high_stored = false;
         }
-      } break;
+        break;
 
       case REG_PPUDATA: {
         uint_fast16_t scr = scroll_counter;
@@ -188,10 +189,6 @@ static void flush_write_queue() {
         scr |= addr;
         scroll_counter = scr;
       } break;
-
-      default:
-        SHAPONES_PRINTF("*Warning: Invalid PPU register write addr: 0x%x\n",
-                        (int)req.addr);
     }
 
     write_queue.try_pop(&req);
@@ -237,9 +234,6 @@ static SHAPONES_INLINE void bus_write(addr_t addr, uint8_t data) {
   } else if (VRAM_MIRROR_BASE <= addr &&
              addr < VRAM_MIRROR_BASE + VRAM_MIRROR_SIZE) {
     memory::vram_write(addr - VRAM_MIRROR_BASE, data);
-  } else {
-    // SHAPONES_PRINTF("*Warning: Invalid PPU bus write addr: 0x%x\n",
-    // addr);
   }
 }
 
@@ -403,11 +397,6 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
 
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
-#if !SHAPONES_LOCK_FAST
-// todo: delete
-// SpinLockBlock lock(SPINLOCK_PPU);
-#endif
-
   bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
   bool bg_enabled = reg.mask.bg_enable;
 
@@ -421,13 +410,7 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
   while (x0_block < x1_block) {
     int x0, x1;
     {
-      uint_fast16_t scr;
-      {
-#if SHAPONES_LOCK_FAST
-        SpinLockBlock(SPINLOCK_PPU);
-#endif
-        scr = scroll_counter;
-      }
+      uint_fast16_t scr = scroll_counter;
 
       // determine step count
       x0 = x0_block;
@@ -503,9 +486,6 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
     // update scroll counter
     // see: https://www.nesdev.org/wiki/PPU_scrolling
     if (reg.mask.bg_enable || reg.mask.sprite_enable) {
-#if SHAPONES_LOCK_FAST
-      SpinLockBlock(SPINLOCK_PPU);
-#endif
       uint_fast16_t scr = scroll_counter;
       uint_fast8_t fx = fine_x_counter;
       if (focus_y < SCREEN_HEIGHT) {
