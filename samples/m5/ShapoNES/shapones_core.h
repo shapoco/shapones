@@ -5729,7 +5729,7 @@ volatile cycle_t cycle_count;
 static uint16_t focus_x;
 static uint16_t focus_y;
 
-static volatile uint16_t scroll_counter;
+static uint16_t scroll_counter;
 static uint8_t fine_x_counter;
 
 static uint8_t bus_read_data_latest = 0;
@@ -5812,12 +5812,14 @@ uint8_t reg_read(addr_t addr) {
     case REG_OAMDATA: retval = oam_read(reg.oam_addr); break;
 
     case REG_PPUDATA: {
-      addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
+      uint_fast16_t scr = scroll_counter;
+      addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
       addr &= SCROLL_MASK_PPU_ADDR;
-      scroll_counter &= ~SCROLL_MASK_PPU_ADDR;
-      scroll_counter |= addr;
+      scr &= ~SCROLL_MASK_PPU_ADDR;
+      scr |= addr;
+      scroll_counter = scr;
       retval = bus_read_data_delayed;
     } break;
 
@@ -6122,84 +6124,79 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
 
   while (x0_block < x1_block) {
     int x0, x1;
-    {
-      uint_fast16_t scr = scroll_counter;
+    uint_fast16_t scr = scroll_counter;
 
-      // determine step count
-      x0 = x0_block;
-      if (visible_area && bg_enabled) {
-        x1 = x0 + (BLOCK_SIZE - ((scr & 0x1) * TILE_SIZE + fine_x_counter));
-      } else {
-        x1 = x0 + 64;
-      }
-      x1 = x1 < x1_block ? x1 : x1_block;
+    // determine step count
+    x0 = x0_block;
+    if (visible_area && bg_enabled) {
+      x1 = x0 + (BLOCK_SIZE - ((scr & 0x1) * TILE_SIZE + fine_x_counter));
+    } else {
+      x1 = x0 + 64;
+    }
+    x1 = x1 < x1_block ? x1 : x1_block;
 
-      if (visible_area) {
-        if (bg_enabled) {
-          // read name table for two tiles
-          addr_t name_addr0 = scr & 0xffeu;
-          addr_t name_addr1 = name_addr0 + 1;
-          uint32_t name0 = memory::vram_read(name_addr0);
-          uint32_t name1 = memory::vram_read(name_addr1);
+    if (visible_area) {
+      if (bg_enabled) {
+        // read name table for two tiles
+        addr_t name_addr0 = scr & 0xffeu;
+        addr_t name_addr1 = name_addr0 + 1;
+        uint32_t name0 = memory::vram_read(name_addr0);
+        uint32_t name1 = memory::vram_read(name_addr1);
 
-          uint32_t fine_y = (scr & SCROLL_MASK_FINE_Y) >> 12;
+        uint32_t fine_y = (scr & SCROLL_MASK_FINE_Y) >> 12;
 
-          uint32_t chr = 0xFFFFFFFF;
-          const uint8_t *palette = nullptr;
-          if (!skip_render) {
-            // read CHRROM
-            uint32_t chrrom_index0 = (name0 << 4) + fine_y;
-            uint32_t chrrom_index1 = (name1 << 4) + fine_y;
-            chrrom_index0 += bg_offset;
-            chrrom_index1 += bg_offset;
-            uint_fast16_t chr0 =
-                memory::chrrom_read_double(chrrom_index0, false);
-            uint_fast16_t chr1 =
-                memory::chrrom_read_double(chrrom_index1, false);
-            chr = ((uint32_t)chr1 << 16) | (uint32_t)chr0;
+        uint32_t chr = 0xFFFFFFFF;
+        const uint8_t *palette = nullptr;
+        if (!skip_render) {
+          // read CHRROM
+          uint32_t chrrom_index0 = (name0 << 4) + fine_y;
+          uint32_t chrrom_index1 = (name1 << 4) + fine_y;
+          chrrom_index0 += bg_offset;
+          chrrom_index1 += bg_offset;
+          uint_fast16_t chr0 = memory::chrrom_read_double(chrrom_index0, false);
+          uint_fast16_t chr1 = memory::chrrom_read_double(chrrom_index1, false);
+          chr = ((uint32_t)chr1 << 16) | (uint32_t)chr0;
 
-            // adjust CHR bit pos
-            int chr_shift_size = ((scr << 4) & 0x10) | (fine_x_counter << 1);
-            chr >>= chr_shift_size;
+          // adjust CHR bit pos
+          int chr_shift_size = ((scr << 4) & 0x10) | (fine_x_counter << 1);
+          chr >>= chr_shift_size;
 
-            // calc attr index
-            addr_t attr_index = (scr & SCROLL_MASK_NAME_SEL) | 0x3c0 |
-                                ((scr >> 2) & 0x7) | ((scr >> 4) & 0x38);
-            int attr_shift_size = ((scr >> 4) & 0x4) | (scr & 0x2);
+          // calc attr index
+          addr_t attr_index = (scr & SCROLL_MASK_NAME_SEL) | 0x3c0 |
+                              ((scr >> 2) & 0x7) | ((scr >> 4) & 0x38);
+          int attr_shift_size = ((scr >> 4) & 0x4) | (scr & 0x2);
 
-            // read attr table
-            uint8_t attr = memory::vram_read(attr_index);
-            attr = (attr >> attr_shift_size) & 0x3;
-            palette = palette_file + attr * PALETTE_SIZE;
-          }
-
-          // render BG block
-          uint8_t bg_color = palette_file[0];
-          for (int x = x0; x < x1; x++) {
-            uint32_t palette_index = chr & 0x3;
-            chr >>= 2;
-            if (palette_index == 0) {
-              line_buff[x] = bg_color;
-            } else {
-              uint8_t col = OPAQUE_FLAG;
-              if (!skip_render) {
-                col |= palette[palette_index];
-              }
-              line_buff[x] = col;
-            }
-          }
-        } else {
-          // blank background
-          uint8_t bg_color = palette_file[0];
-          memset(&line_buff[x0], bg_color, x1 - x0);
+          // read attr table
+          uint8_t attr = memory::vram_read(attr_index);
+          attr = (attr >> attr_shift_size) & 0x3;
+          palette = palette_file + attr * PALETTE_SIZE;
         }
+
+        // render BG block
+        uint8_t bg_color = palette_file[0];
+        for (int x = x0; x < x1; x++) {
+          uint32_t palette_index = chr & 0x3;
+          chr >>= 2;
+          if (palette_index == 0) {
+            line_buff[x] = bg_color;
+          } else {
+            uint8_t col = OPAQUE_FLAG;
+            if (!skip_render) {
+              col |= palette[palette_index];
+            }
+            line_buff[x] = col;
+          }
+        }
+      } else {
+        // blank background
+        uint8_t bg_color = palette_file[0];
+        memset(&line_buff[x0], bg_color, x1 - x0);
       }
     }
 
     // update scroll counter
     // see: https://www.nesdev.org/wiki/PPU_scrolling
     if (reg.mask.bg_enable || reg.mask.sprite_enable) {
-      uint_fast16_t scr = scroll_counter;
       uint_fast8_t fx = fine_x_counter;
       if (focus_y < SCREEN_HEIGHT) {
         if (x0 < SCREEN_WIDTH) {
@@ -6216,7 +6213,10 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
               scr ^= 0x0400u;                // switch name table horizontally
             }
           }
-        } else if (SCREEN_WIDTH < x1 && x0 <= SCREEN_WIDTH) {
+          
+          scroll_counter = scr;
+          fine_x_counter = fx;
+        } else if (x0 <= SCREEN_WIDTH && SCREEN_WIDTH < x1) {
           // step scroll counter for y-axis
           // if fine_y < 7
           if ((scr & SCROLL_MASK_FINE_Y) < SCROLL_MASK_FINE_Y) {
@@ -6243,17 +6243,19 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
           scr &= ~MASK;
           scr |= reg.scroll & MASK;
           fx = reg.fine_x;
+
+          scroll_counter = scr;
+          fine_x_counter = fx;
         }
-        fine_x_counter = fx;
       } else if (focus_y == SCAN_LINES - 1) {
         if (280 <= x1 && x0 <= 304) {
           // vertical recovery
-          constexpr uint16_t copy_mask = 0x7be0u;
-          scr &= ~copy_mask;
-          scr |= reg.scroll & copy_mask;
+          constexpr uint16_t COPY_MASK = 0x7be0u;
+          scr &= ~COPY_MASK;
+          scr |= reg.scroll & COPY_MASK;
+          scroll_counter = scr;
         }
       }
-      scroll_counter = scr;
     }  // if
 
     x0_block = x1;
