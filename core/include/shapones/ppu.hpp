@@ -172,10 +172,6 @@ struct sprite_line_t {
   uint8_t palette_offset;
 };
 
-static constexpr int FOCUS_HBLANK = 1;
-static constexpr int FOCUS_VBLANK = 2;
-static constexpr int FOCUS_1STLINE = 3;
-
 struct status_t {
   int focus_y;
   timing_t timing;

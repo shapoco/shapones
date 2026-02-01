@@ -1100,10 +1100,6 @@ struct sprite_line_t {
   uint8_t palette_offset;
 };
 
-static constexpr int FOCUS_HBLANK = 1;
-static constexpr int FOCUS_VBLANK = 2;
-static constexpr int FOCUS_1STLINE = 3;
-
 struct status_t {
   int focus_y;
   timing_t timing;
@@ -5745,7 +5741,7 @@ static bool nmi_level = false;
 
 static uint8_t palette_file[PALETTE_NUM_BANK * PALETTE_SIZE];
 
-static uint8_t oam[OAM_SIZE];
+static uint32_t oam[MAX_SPRITE_COUNT];
 static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
@@ -5951,11 +5947,18 @@ static SHAPONES_INLINE void bus_write(addr_t addr, uint8_t data) {
 }
 
 static SHAPONES_INLINE uint8_t oam_read(addr_t addr) {
-  return oam[addr % OAM_SIZE];
+  uint32_t index = addr / 4;
+  uint32_t byte = addr % 4;
+  return (oam[index] >> (byte * 8)) & 0xff;
 }
 
 static SHAPONES_INLINE void oam_write(addr_t addr, uint8_t data) {
-  oam[addr % OAM_SIZE] = data;
+  uint32_t index = addr / 4;
+  uint32_t byte = addr % 4;
+  uint32_t word = oam[index];
+  word &= ~(0xff << (byte * 8));
+  word |= ((uint32_t)data << (byte * 8));
+  oam[index] = word;
 }
 
 static SHAPONES_INLINE uint8_t palette_read(addr_t addr) {
@@ -6268,14 +6271,14 @@ static void enum_visible_sprites(bool skip_render) {
   }
 
   num_visible_sprites = 0;
+  bool sprite_size_16 = reg.control.sprite_size;
   uint8_t h = reg.control.sprite_size ? 16 : 8;
   for (int i = 0; i < n; i++) {
-    uint_fast8_t s_y = oam[i * 4 + OAM_ENTRY_OFFSET_Y];
-    uint_fast8_t s_tile = oam[i * 4 + OAM_ENTRY_OFFSET_TILE];
-    uint_fast8_t s_attr = oam[i * 4 + OAM_ENTRY_OFFSET_ATTR];
-    uint_fast8_t s_x = oam[i * 4 + OAM_ENTRY_OFFSET_X];
-
-    const auto &s = oam[i];
+    uint32_t word = oam[i];
+    uint_fast8_t s_y = (word >> (OAM_ENTRY_OFFSET_Y * 8)) & 0xff;
+    uint_fast8_t s_tile = (word >> (OAM_ENTRY_OFFSET_TILE * 8)) & 0xff;
+    uint_fast8_t s_attr = (word >> (OAM_ENTRY_OFFSET_ATTR * 8)) & 0xff;
+    uint_fast8_t s_x = (word >> (OAM_ENTRY_OFFSET_X * 8)) & 0xff;
 
     // vertical hit test
     int src_y = focus_y - (s_y + SPRITE_Y_OFFSET);
@@ -6389,8 +6392,21 @@ result_t save_state(void *file_handle) {
   writer.b(scroll_ppuaddr_high_stored);
   writer.b(nmi_level);
   SHAPONES_TRY(fs_write(file_handle, buff, sizeof(buff)));
+
   SHAPONES_TRY(fs_write(file_handle, palette_file, sizeof(palette_file)));
-  SHAPONES_TRY(fs_write(file_handle, oam, sizeof(oam)));
+
+  uint8_t *oam_buff;
+  SHAPONES_TRY(ram_alloc(sizeof(oam), (void **)&oam_buff));
+  for (size_t i = 0; i < sizeof(oam); i += 4) {
+    uint32_t word = oam[i / 4];
+    oam_buff[i + 0] = (word >> 0) & 0xff;
+    oam_buff[i + 1] = (word >> 8) & 0xff;
+    oam_buff[i + 2] = (word >> 16) & 0xff;
+    oam_buff[i + 3] = (word >> 24) & 0xff;
+  }
+  SHAPONES_TRY(fs_write(file_handle, oam_buff, sizeof(oam)));
+  ram_free(oam_buff);
+
   return result_t::SUCCESS;
 }
 
@@ -6413,7 +6429,20 @@ result_t load_state(void *file_handle) {
   scroll_ppuaddr_high_stored = reader.b();
   nmi_level = reader.b();
   SHAPONES_TRY(fs_read(file_handle, palette_file, sizeof(palette_file)));
-  SHAPONES_TRY(fs_read(file_handle, oam, sizeof(oam)));
+
+  uint8_t *oam_buff;
+  SHAPONES_TRY(ram_alloc(sizeof(oam), (void **)&oam_buff));
+  SHAPONES_TRY(fs_read(file_handle, oam_buff, sizeof(oam)));
+  for (size_t i = 0; i < sizeof(oam); i += 4) {
+    uint32_t word = 0;
+    word |= ((uint32_t)oam_buff[i + 0]) << 0;
+    word |= ((uint32_t)oam_buff[i + 1]) << 8;
+    word |= ((uint32_t)oam_buff[i + 2]) << 16;
+    word |= ((uint32_t)oam_buff[i + 3]) << 24;
+    oam[i / 4] = word;
+  }
+  ram_free(oam_buff);
+
   return result_t::SUCCESS;
 }
 
