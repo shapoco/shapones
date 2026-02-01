@@ -36,7 +36,7 @@ static uint8_t oam[OAM_SIZE];
 static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
-static AsyncFifo<reg_write_t, 8> write_queue;
+static AsyncFifo<reg_write_t, 6> write_queue;
 static volatile bool ppu_status_read = false;
 
 static void flush_write_queue();
@@ -683,7 +683,6 @@ result_t save_state(void *file_handle) {
 
 result_t load_state(void *file_handle) {
   write_queue.clear();
-  SHAPONES_THREAD_FENCE_SEQ_CST();
 
   uint8_t buff[STATE_HEADER_SIZE];
   SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));

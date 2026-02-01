@@ -6396,7 +6396,6 @@ result_t save_state(void *file_handle) {
 
 result_t load_state(void *file_handle) {
   write_queue.clear();
-  SHAPONES_THREAD_FENCE_SEQ_CST();
 
   uint8_t buff[STATE_HEADER_SIZE];
   SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));
