@@ -198,7 +198,7 @@ static SHAPONES_INLINE addr_t fetch_post_idx_ind(cycle_t *cycle) {
   addr_t addrOrData = fetch();
   addr_t baseAddr = bus_read(addrOrData) |
                     ((uint16_t)bus_read((addrOrData + 1) & 0xffu) << 8);
-  addr_t addr = baseAddr + reg.Y;
+  addr_t addr = (baseAddr + reg.Y) & 0xffff;
   if ((addr & 0xff00u) != (baseAddr & 0xff00u)) *cycle += 1;
   return addr;
 }
@@ -264,8 +264,6 @@ static SHAPONES_INLINE void opRTI() {
   reg.status.breakmode = 0;
   reg.PC = (addr_t)pop();
   reg.PC |= ((addr_t)pop() << 8);
-  // SHAPONES_PRINTF("RTI to PC=0x%04x, SP=0x%02x\n", (unsigned int)reg.PC,
-  // (unsigned int)reg.SP);
 }
 
 static SHAPONES_INLINE void opRTS() {
@@ -549,7 +547,6 @@ result_t service() {
     } else if (irq_pending == 0 && !!interrupt::get_irq() &&
                !reg.status.interrupt) {
       // IRQ
-      auto irq_source = interrupt::get_irq();
       auto s = reg.status;
       s.breakmode = 0;
       push(reg.PC >> 8);
@@ -903,9 +900,6 @@ result_t save_state(void *file_handle) {
   writer.u16(dma_cycle);
   writer.b(stopped);
   writer.u8(irq_pending);
-  SHAPONES_PRINTF("SAVE: %d %d %d %d %d %d %d %d %d\n", (int)reg.PC, (int)reg.A,
-                  (int)reg.X, (int)reg.Y, (int)reg.SP, (int)reg.status.raw,
-                  (int)dma_addr, (int)dma_cycle, (int)irq_pending);
   return fs_write(file_handle, buffer, sizeof(buffer));
 }
 
@@ -925,9 +919,6 @@ result_t load_state(void *file_handle) {
 #else
   reader.u8();  // discard
 #endif
-  SHAPONES_PRINTF("LOAD: %d %d %d %d %d %d %d %d %d\n", (int)reg.PC, (int)reg.A,
-                  (int)reg.X, (int)reg.Y, (int)reg.SP, (int)reg.status.raw,
-                  (int)dma_addr, (int)dma_cycle, (int)irq_pending);
   return result_t::SUCCESS;
 }
 

@@ -209,6 +209,9 @@ void setup() {
   M5.begin(cfg);
   delay(500);
 
+  // to supress power noise sound
+  M5.Power.setExtOutput(false);
+
   SHAPONES_PRINTF("ESP-IDF Version: %s\n", esp_get_idf_version());
 
   pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLUP);
@@ -231,23 +234,25 @@ void setup() {
 }
 
 void loop() {
-  read_input();
+  for (int i = 0; i < 10; i++) {
+    read_input();
 
-  if (disp_button_down()) {
-    if (nes::menu::is_shown()) {
-      nes::menu::hide();
-    } else {
-      nes::menu::show();
+    if (disp_button_down()) {
+      if (nes::menu::is_shown()) {
+        nes::menu::hide();
+      } else {
+        nes::menu::show();
+      }
     }
-  }
 
-  stat_start(stat_cpu_service);
-  for (int i = 0; i < 100; i++) {
-    nes::cpu::service();
-  }
-  stat_end(stat_cpu_service);
+    stat_start(stat_cpu_service);
+    for (int i = 0; i < 10; i++) {
+      nes::cpu::service();
+    }
+    stat_end(stat_cpu_service);
 
-  audio_stream(false);
+    audio_stream(false);
+  }
 }
 
 static void input_init() {
@@ -552,15 +557,15 @@ static bool disp_button_down() {
 }
 
 nes::result_t nes::ram_alloc(size_t size, void **out_ptr) {
-  #if SHAPONES_FORCE_USE_PSRAM
-    void *ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-  #else
-    void *ptr = heap_caps_malloc(size, MALLOC_CAP_DMA);
-  #endif
-    if (!ptr) {
-      return nes::result_t::ERR_RAM_ALLOC_FAILED;
-    }
-    *out_ptr = ptr;
+#if SHAPONES_FORCE_USE_PSRAM
+  void *ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+#else
+  void *ptr = heap_caps_malloc(size, MALLOC_CAP_DMA);
+#endif
+  if (!ptr) {
+    return nes::result_t::ERR_RAM_ALLOC_FAILED;
+  }
+  *out_ptr = ptr;
   return nes::result_t::SUCCESS;
 }
 

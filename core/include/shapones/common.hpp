@@ -5,6 +5,7 @@
 #define SHAPONES_NO_STDLIB (1)
 #define SHAPONES_PICOLIBSDK (1)
 #define SHAPONES_DEFINE_FAST_INT (1)
+#define SHAPONES_THREAD_FENCE_SEQ_CST() cb()
 #endif
 
 #ifndef SHAPONES_NO_STDLIB
@@ -47,6 +48,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <atomic>
 #endif
 
 #if SHAPONES_DEFINE_FAST_INT
@@ -128,6 +130,11 @@ using int_fast32_t = int32_t;
 #define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
 
+#ifndef SHAPONES_THREAD_FENCE_SEQ_CST
+#define SHAPONES_THREAD_FENCE_SEQ_CST() \
+  std::atomic_thread_fence(std::memory_order_seq_cst);
+#endif
+
 namespace nes {
 
 using addr_t = uint_fast16_t;
@@ -190,6 +197,11 @@ enum class result_t {
 
 struct config_t {
   uint32_t apu_sampling_rate;
+};
+
+struct reg_write_t {
+  addr_t addr;
+  uint8_t data;
 };
 
 class BufferWriter {

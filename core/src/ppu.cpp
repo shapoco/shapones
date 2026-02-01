@@ -1,5 +1,6 @@
 #include "shapones/ppu.hpp"
 #include "shapones/cpu.hpp"
+#include "shapones/fifo.hpp"
 #include "shapones/host_intf.hpp"
 #include "shapones/interrupt.hpp"
 #include "shapones/lock.hpp"
@@ -34,6 +35,10 @@ static uint8_t palette_file[PALETTE_NUM_BANK * PALETTE_SIZE];
 static uint8_t oam[OAM_SIZE];
 static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
+
+static AsyncFifo<reg_write_t, 6> write_queue;
+
+static void flush_write_queue();
 
 static uint8_t bus_read(addr_t addr);
 static void bus_write(addr_t addr, uint8_t data);
@@ -71,6 +76,8 @@ result_t reset() {
 
   cycle_count = 0;
 
+  write_queue.clear();
+
   return result_t::SUCCESS;
 }
 
@@ -79,6 +86,11 @@ bool is_in_hblank() { return focus_x >= SCREEN_WIDTH; }
 int current_focus_y() { return focus_y; }
 
 uint8_t reg_read(addr_t addr) {
+  while (!write_queue.is_empty()) {
+    SemaphoreBlock block(SEMAPHORE_PPU);
+    flush_write_queue();
+  }
+
   uint8_t retval;
   switch (addr) {
     case REG_PPUSTATUS: {
@@ -111,66 +123,78 @@ uint8_t reg_read(addr_t addr) {
 }
 
 void reg_write(addr_t addr, uint8_t data) {
-  switch (addr) {
-    case REG_PPUCTRL: {
-      SpinLockBlock lock(SPINLOCK_PPU);
-      // name sel bits
-      reg.scroll &= 0xf3ff;
-      reg.scroll |= (uint16_t)(data & 0x3) << 10;
-      // other bits
-      reg.control.raw = data;
-    } break;
+  reg_write_t req;
+  req.addr = addr;
+  req.data = data;
+  if (!write_queue.try_push(req)) {
+    SemaphoreBlock block(SEMAPHORE_PPU);
+    flush_write_queue();
+    write_queue.push_blocking(req);
+  }
+}
 
-    case REG_PPUMASK: reg.mask.raw = data; break;
+static void flush_write_queue() {
+  reg_write_t req;
+  while (write_queue.try_peek(&req)) {
+    switch (req.addr) {
+      case REG_PPUCTRL: {
+        // name sel bits
+        reg.scroll &= 0xf3ff;
+        reg.scroll |= (uint16_t)(req.data & 0x3) << 10;
+        // other bits
+        reg.control.raw = req.data;
+      } break;
 
-    case REG_OAMADDR: reg.oam_addr = data; break;
+      case REG_PPUMASK: reg.mask.raw = req.data; break;
 
-    case REG_OAMDATA: oam_write(reg.oam_addr, data); break;
+      case REG_OAMADDR: reg.oam_addr = req.data; break;
 
-    case REG_PPUSCROLL: {
-      SpinLockBlock lock(SPINLOCK_PPU);
-      if (!scroll_ppuaddr_high_stored) {
-        reg.scroll &= ~SCROLL_MASK_COARSE_X;
-        reg.scroll |= (data >> 3) & SCROLL_MASK_COARSE_X;
-        reg.fine_x = data & 0x7;
-        scroll_ppuaddr_high_stored = true;
-      } else {
-        reg.scroll &= ~(SCROLL_MASK_COARSE_Y | SCROLL_MASK_FINE_Y);
-        reg.scroll |= ((uint16_t)data << 2) & SCROLL_MASK_COARSE_Y;
-        reg.scroll |= ((uint16_t)data << 12) & SCROLL_MASK_FINE_Y;
-        scroll_ppuaddr_high_stored = false;
-      }
-    } break;
+      case REG_OAMDATA: oam_write(reg.oam_addr, req.data); break;
 
-    case REG_PPUADDR: {
-      SpinLockBlock lock(SPINLOCK_PPU);
-      if (!scroll_ppuaddr_high_stored) {
-        reg.scroll &= 0x00ffu;
-        reg.scroll |= ((uint16_t)data << 8) & 0x3f00u;
-        scroll_ppuaddr_high_stored = true;
-      } else {
-        reg.scroll &= 0xff00u;
-        reg.scroll |= (uint16_t)data;
-        scroll_counter = reg.scroll;
-        scroll_ppuaddr_high_stored = false;
-      }
-    } break;
+      case REG_PPUSCROLL: {
+        if (!scroll_ppuaddr_high_stored) {
+          reg.scroll &= ~SCROLL_MASK_COARSE_X;
+          reg.scroll |= (req.data >> 3) & SCROLL_MASK_COARSE_X;
+          reg.fine_x = req.data & 0x7;
+          scroll_ppuaddr_high_stored = true;
+        } else {
+          reg.scroll &= ~(SCROLL_MASK_COARSE_Y | SCROLL_MASK_FINE_Y);
+          reg.scroll |= ((uint16_t)req.data << 2) & SCROLL_MASK_COARSE_Y;
+          reg.scroll |= ((uint16_t)req.data << 12) & SCROLL_MASK_FINE_Y;
+          scroll_ppuaddr_high_stored = false;
+        }
+      } break;
 
-    case REG_PPUDATA: {
-      SpinLockBlock lock(SPINLOCK_PPU);
-      uint_fast16_t scr = scroll_counter;
-      addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
-      bus_write(addr, data);
-      addr += reg.control.incr_stride ? 32 : 1;
-      addr &= SCROLL_MASK_PPU_ADDR;
-      scr &= ~SCROLL_MASK_PPU_ADDR;
-      scr |= addr;
-      scroll_counter = scr;
-    } break;
+      case REG_PPUADDR: {
+        if (!scroll_ppuaddr_high_stored) {
+          reg.scroll &= 0x00ffu;
+          reg.scroll |= ((uint16_t)req.data << 8) & 0x3f00u;
+          scroll_ppuaddr_high_stored = true;
+        } else {
+          reg.scroll &= 0xff00u;
+          reg.scroll |= (uint16_t)req.data;
+          scroll_counter = reg.scroll;
+          scroll_ppuaddr_high_stored = false;
+        }
+      } break;
 
-    default:
-      SHAPONES_PRINTF("*Warning: Invalid PPU register write addr: 0x%x\n",
-                      (int)addr);
+      case REG_PPUDATA: {
+        uint_fast16_t scr = scroll_counter;
+        addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
+        bus_write(addr, req.data);
+        addr += reg.control.incr_stride ? 32 : 1;
+        addr &= SCROLL_MASK_PPU_ADDR;
+        scr &= ~SCROLL_MASK_PPU_ADDR;
+        scr |= addr;
+        scroll_counter = scr;
+      } break;
+
+      default:
+        SHAPONES_PRINTF("*Warning: Invalid PPU register write addr: 0x%x\n",
+                        (int)req.addr);
+    }
+
+    write_queue.try_pop(&req);
   }
 }
 
@@ -261,6 +285,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
   bool irq = false;
 
   while (true) {
+    flush_write_queue();
+
     cycle_t cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
     if (cycle_diff <= 0) {
       break;
@@ -270,11 +296,9 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     if (focus_x == 0) {
       if (focus_y == SCREEN_HEIGHT + 1) {
         // vblank flag/interrupt
-        SpinLockBlock lock(SPINLOCK_PPU);
         reg.status.vblank_flag = 1;
       } else if (focus_y == SCAN_LINES - 1) {
         // clear flags
-        SpinLockBlock lock(SPINLOCK_PPU);
         reg.status.vblank_flag = 0;
         reg.status.sprite0_hit = 0;
       }
@@ -380,7 +404,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
 #if !SHAPONES_LOCK_FAST
-  SpinLockBlock lock(SPINLOCK_PPU);
+// todo: delete
+// SpinLockBlock lock(SPINLOCK_PPU);
 #endif
 
   bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
@@ -653,6 +678,8 @@ uint32_t get_state_size() {
 }
 
 result_t save_state(void *file_handle) {
+  flush_write_queue();
+
   uint8_t buff[STATE_HEADER_SIZE];
   memset(buff, 0, sizeof(buff));
   uint8_t *p = buff;
@@ -675,6 +702,9 @@ result_t save_state(void *file_handle) {
 }
 
 result_t load_state(void *file_handle) {
+  write_queue.clear();
+  SHAPONES_THREAD_FENCE_SEQ_CST();
+
   uint8_t buff[STATE_HEADER_SIZE];
   SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));
   const uint8_t *p = buff;

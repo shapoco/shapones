@@ -23,6 +23,7 @@
 #define SHAPONES_NO_STDLIB (1)
 #define SHAPONES_PICOLIBSDK (1)
 #define SHAPONES_DEFINE_FAST_INT (1)
+#define SHAPONES_THREAD_FENCE_SEQ_CST() cb()
 #endif
 
 #ifndef SHAPONES_NO_STDLIB
@@ -66,6 +67,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <atomic>
 #endif
 
 #if SHAPONES_DEFINE_FAST_INT
@@ -147,6 +149,11 @@ using int_fast32_t = int32_t;
 #define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
 
+#ifndef SHAPONES_THREAD_FENCE_SEQ_CST
+#define SHAPONES_THREAD_FENCE_SEQ_CST() \
+  std::atomic_thread_fence(std::memory_order_seq_cst);
+#endif
+
 namespace nes {
 
 using addr_t = uint_fast16_t;
@@ -209,6 +216,11 @@ enum class result_t {
 
 struct config_t {
   uint32_t apu_sampling_rate;
+};
+
+struct reg_write_t {
+  addr_t addr;
+  uint8_t data;
 };
 
 class BufferWriter {
@@ -1476,6 +1488,99 @@ uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b) {
 
 // #include "shapones/cpu.hpp"
 
+// #include "shapones/fifo.hpp"
+
+#ifndef SHAPONES_FIFO_HPP
+#define SHAPONES_FIFO_HPP
+
+// #include "shapones/common.hpp"
+
+
+namespace nes {
+
+template <typename T, uint32_t prm_ADDR_BITS>
+class AsyncFifo {
+ public:
+  static constexpr uint32_t ADDR_BITS = prm_ADDR_BITS;
+  static constexpr uint32_t CAPACITY = 1 << ADDR_BITS;
+
+ private:
+  T buffer[CAPACITY];
+  volatile uint32_t rd_ptr;
+  volatile uint32_t wr_ptr;
+
+ public:
+  AsyncFifo() : rd_ptr(0), wr_ptr(0) {}
+
+  void clear() {
+    rd_ptr = 0;
+    wr_ptr = 0;
+  }
+
+  SHAPONES_INLINE bool is_empty() const { return rd_ptr == wr_ptr; }
+
+  SHAPONES_INLINE bool is_full() const {
+    uint32_t wp = (wr_ptr + 1) & (CAPACITY - 1);
+    return wp == rd_ptr;
+  }
+
+  SHAPONES_INLINE bool try_push(const T &item) {
+    uint32_t wp = wr_ptr;
+    uint32_t wp_next = (wp + 1) & (CAPACITY - 1);
+    if (wp_next == rd_ptr) {
+      return false;  // full
+    }
+    buffer[wp] = item;
+    SHAPONES_THREAD_FENCE_SEQ_CST();
+    wr_ptr = wp_next;
+    return true;
+  }
+
+  SHAPONES_INLINE void push_blocking(const T &item) {
+    uint32_t wp, wp_next;
+    do {
+      wp = wr_ptr;
+      wp_next = (wp + 1) & (CAPACITY - 1);
+    } while (wp_next == rd_ptr);  // wait until not full
+    SHAPONES_THREAD_FENCE_SEQ_CST();
+    buffer[wp] = item;
+    wr_ptr = wp_next;
+  }
+
+  SHAPONES_INLINE bool try_peek(T *out_item) {
+    uint32_t rp = rd_ptr;
+    if (rp == wr_ptr) {
+      return false;  // empty
+    }
+    *out_item = buffer[rp];
+    return true;
+  }
+
+  SHAPONES_INLINE bool try_pop(T *out_item) {
+    uint32_t rp = rd_ptr;
+    if (rp == wr_ptr) {
+      return false;  // empty
+    }
+    *out_item = buffer[rp];
+    SHAPONES_THREAD_FENCE_SEQ_CST();
+    rd_ptr = (rp + 1) & (CAPACITY - 1);
+    return true;
+  }
+
+  SHAPONES_INLINE T pop_blocking() {
+    uint32_t rp;
+    do {
+      rp = rd_ptr;
+    } while (rp == wr_ptr);  // wait until not empty
+    T item = buffer[rp];
+    SHAPONES_THREAD_FENCE_SEQ_CST();
+    rd_ptr = (rp + 1) & (CAPACITY - 1);
+    return item;
+  }
+};
+}  // namespace nes
+
+#endif
 // #include "shapones/interrupt.hpp"
 
 // #include "shapones/lock.hpp"
@@ -1531,6 +1636,10 @@ static triangle_state_t triangle;
 static noise_state_t noise;
 static dmc_state_t dmc;
 
+static AsyncFifo<reg_write_t, 6> write_queue;
+
+static void flush_write_queue();
+
 static void pulse_write_reg0(pulse_state_t &s, uint8_t value);
 static void pulse_write_reg1(pulse_state_t &s, uint8_t value);
 static void pulse_write_reg2(pulse_state_t &s, uint8_t value);
@@ -1565,11 +1674,17 @@ result_t reset() {
   quarter_frame_count = 0;
   frame_step_flags = 0;
 
+  write_queue.clear();
+
   return result_t::SUCCESS;
 }
 
-// todo: exclusive control
 uint8_t reg_read(addr_t addr) {
+  while (!write_queue.is_empty()) {
+    SemaphoreBlock block(SEMAPHORE_APU);
+    flush_write_queue();
+  }
+
   switch (addr) {
     case REG_STATUS: {
       // see: https://www.nesdev.org/wiki/IRQ
@@ -1589,56 +1704,76 @@ uint8_t reg_read(addr_t addr) {
   }
 }
 
-// todo: exclusive control
-void reg_write(addr_t addr, uint8_t value) {
-  switch (addr) {
-    case REG_PULSE1_REG0: pulse_write_reg0(pulse[0], value); break;
-    case REG_PULSE1_REG1: pulse_write_reg1(pulse[0], value); break;
-    case REG_PULSE1_REG2: pulse_write_reg2(pulse[0], value); break;
-    case REG_PULSE1_REG3: pulse_write_reg3(pulse[0], value); break;
-    case REG_PULSE2_REG0: pulse_write_reg0(pulse[1], value); break;
-    case REG_PULSE2_REG1: pulse_write_reg1(pulse[1], value); break;
-    case REG_PULSE2_REG2: pulse_write_reg2(pulse[1], value); break;
-    case REG_PULSE2_REG3: pulse_write_reg3(pulse[1], value); break;
-    case REG_TRIANGLE_REG0: triangle_write_reg0(triangle, value); break;
-    case REG_TRIANGLE_REG2: triangle_write_reg2(triangle, value); break;
-    case REG_TRIANGLE_REG3: triangle_write_reg3(triangle, value); break;
-    case REG_NOISE_REG0: noise_write_reg0(noise, value); break;
-    case REG_NOISE_REG2: noise_write_reg2(noise, value); break;
-    case REG_NOISE_REG3: noise_write_reg3(noise, value); break;
-    case REG_DMC_REG0: dmc_write_reg0(dmc, value); break;
-    case REG_DMC_REG1: dmc_write_reg1(dmc, value); break;
-    case REG_DMC_REG2: dmc_write_reg2(dmc, value); break;
-    case REG_DMC_REG3: dmc_write_reg3(dmc, value); break;
-    case REG_STATUS:
-      status.raw = value;
-      if (!status.pulse0_enable) pulse[0].length = 0;
-      if (!status.pulse1_enable) pulse[1].length = 0;
-      if (!status.triangle_enable) triangle.length = 0;
-      if (!status.noise_enable) noise.length = 0;
-      if (status.dmc_enable) {
-        if (dmc.bytes_remaining == 0) {
-          dmc.addr_counter = dmc.sample_addr;
-          dmc.bytes_remaining = dmc.sample_length;
+void reg_write(addr_t addr, uint8_t data) {
+  reg_write_t req;
+  req.addr = addr;
+  req.data = data;
+  if (!write_queue.try_push(req)) {
+    SemaphoreBlock block(SEMAPHORE_APU);
+    flush_write_queue();
+    SHAPONES_THREAD_FENCE_SEQ_CST();
+    write_queue.push_blocking(req);
+    SHAPONES_THREAD_FENCE_SEQ_CST();
+  }
+}
+
+static void flush_write_queue() {
+  reg_write_t req;
+  while (write_queue.try_peek(&req)) {
+    addr_t addr = req.addr;
+    uint8_t data = req.data;
+    switch (addr) {
+      case REG_PULSE1_REG0: pulse_write_reg0(pulse[0], data); break;
+      case REG_PULSE1_REG1: pulse_write_reg1(pulse[0], data); break;
+      case REG_PULSE1_REG2: pulse_write_reg2(pulse[0], data); break;
+      case REG_PULSE1_REG3: pulse_write_reg3(pulse[0], data); break;
+      case REG_PULSE2_REG0: pulse_write_reg0(pulse[1], data); break;
+      case REG_PULSE2_REG1: pulse_write_reg1(pulse[1], data); break;
+      case REG_PULSE2_REG2: pulse_write_reg2(pulse[1], data); break;
+      case REG_PULSE2_REG3: pulse_write_reg3(pulse[1], data); break;
+      case REG_TRIANGLE_REG0: triangle_write_reg0(triangle, data); break;
+      case REG_TRIANGLE_REG2: triangle_write_reg2(triangle, data); break;
+      case REG_TRIANGLE_REG3: triangle_write_reg3(triangle, data); break;
+      case REG_NOISE_REG0: noise_write_reg0(noise, data); break;
+      case REG_NOISE_REG2: noise_write_reg2(noise, data); break;
+      case REG_NOISE_REG3: noise_write_reg3(noise, data); break;
+      case REG_DMC_REG0: dmc_write_reg0(dmc, data); break;
+      case REG_DMC_REG1: dmc_write_reg1(dmc, data); break;
+      case REG_DMC_REG2: dmc_write_reg2(dmc, data); break;
+      case REG_DMC_REG3: dmc_write_reg3(dmc, data); break;
+      case REG_STATUS:
+        status.raw = data;
+        if (!status.pulse0_enable) pulse[0].length = 0;
+        if (!status.pulse1_enable) pulse[1].length = 0;
+        if (!status.triangle_enable) triangle.length = 0;
+        if (!status.noise_enable) noise.length = 0;
+        if (status.dmc_enable) {
+          if (dmc.bytes_remaining == 0) {
+            dmc.addr_counter = dmc.sample_addr;
+            dmc.bytes_remaining = dmc.sample_length;
+          }
+        } else {
+          dmc.bytes_remaining = 0;
         }
-      } else {
-        dmc.bytes_remaining = 0;
-      }
-      // see: https://www.nesdev.org/wiki/IRQ
-      interrupt::deassert_irq(interrupt::source_t::APU_DMC);
-      break;
-    case REG_FRAME_COUNTER:
-      if (value & 0x80) {
-        // todo: implement
-      } else {
-        // todo: implement
-      }
-      if (value & 0x40) {
-        quarter_frame_count = 0;
-        quarter_frame_phase = 0;
-        frame_step_flags = STEP_FLAG_FRAME | STEP_FLAG_HALF | STEP_FLAG_QUARTER;
-      }
-      break;
+        // see: https://www.nesdev.org/wiki/IRQ
+        interrupt::deassert_irq(interrupt::source_t::APU_DMC);
+        break;
+      case REG_FRAME_COUNTER:
+        if (data & 0x80) {
+          // todo: implement
+        } else {
+          // todo: implement
+        }
+        if (data & 0x40) {
+          quarter_frame_count = 0;
+          quarter_frame_phase = 0;
+          frame_step_flags =
+              STEP_FLAG_FRAME | STEP_FLAG_HALF | STEP_FLAG_QUARTER;
+        }
+        break;
+    }
+
+    write_queue.try_pop(&req);
   }
 }
 
@@ -1656,8 +1791,8 @@ result_t set_sampling_rate(uint32_t rate_hz) {
 }
 
 static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
-  // duty pattern
+  // SpinLockBlock lock(SPINLOCK_APU);
+  //  duty pattern
   switch ((value >> 6) & 0x3) {
     default:
     case 0: s.waveform = 0b00000001; break;
@@ -1678,7 +1813,7 @@ static void pulse_write_reg0(pulse_state_t &s, uint8_t value) {
 }
 
 static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
   s.sweep.period = (value >> 4) & 0x7;
   s.sweep.shift = value & 0x7;
   s.sweep.flags = 0;
@@ -1688,13 +1823,13 @@ static void pulse_write_reg1(pulse_state_t &s, uint8_t value) {
 }
 
 static void pulse_write_reg2(pulse_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
   s.timer_period &= ~(0xff << TIMER_PREC);
   s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
 static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
   s.timer_period &= ~(0x700 << TIMER_PREC);
   s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s.timer = 0;
@@ -1703,7 +1838,7 @@ static void pulse_write_reg3(pulse_state_t &s, uint8_t value) {
 }
 
 static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
   s.linear.reload_value = value & 0x7f;
   if (value & 0x80) {
     s.linear.flags |= LIN_FLAG_CONTROL;
@@ -1713,13 +1848,13 @@ static void triangle_write_reg0(triangle_state_t &s, uint8_t value) {
 }
 
 static void triangle_write_reg2(triangle_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  //  SpinLockBlock lock(SPINLOCK_APU);
   s.timer_period &= ~(0xff << TIMER_PREC);
   s.timer_period |= (uint32_t)value << TIMER_PREC;
 }
 
 static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
   s.timer_period &= ~(0x700 << TIMER_PREC);
   s.timer_period |= (uint32_t)(value & 0x7) << (TIMER_PREC + 8);
   s.timer = 0;
@@ -1729,7 +1864,7 @@ static void triangle_write_reg3(triangle_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg0(noise_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
   s.envelope.flags = 0;
   if (value & 0x10) s.envelope.flags |= ENV_FLAG_CONSTANT;
   if (value & 0x20) s.envelope.flags |= ENV_FLAG_HALT_LOOP;
@@ -1742,7 +1877,7 @@ static void noise_write_reg0(noise_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg2(noise_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
   if (value & 0x80) {
     s.flags |= NOISE_FLAG_FB_MODE;
   } else {
@@ -1752,7 +1887,7 @@ static void noise_write_reg2(noise_state_t &s, uint8_t value) {
 }
 
 static void noise_write_reg3(noise_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  //  SpinLockBlock lock(SPINLOCK_APU);
   s.length = LENGTH_TABLE[(value >> 3) & 0x1f];
 }
 
@@ -1763,7 +1898,7 @@ static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
     interrupt::deassert_irq(interrupt::source_t::APU_DMC);
   }
   {
-    SpinLockBlock lock(SPINLOCK_APU);
+    // SpinLockBlock lock(SPINLOCK_APU);
     s.flags = 0;
     if (irq_ena_new) s.flags |= DMC_FLAG_IRQ_ENABLE;
     if (value & 0x40) s.flags |= DMC_FLAG_LOOP;
@@ -1772,17 +1907,17 @@ static void dmc_write_reg0(dmc_state_t &s, uint8_t value) {
 }
 
 static void dmc_write_reg1(dmc_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
   s.out_level = value & 0x7f;
 }
 
 static void dmc_write_reg2(dmc_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  //  SpinLockBlock lock(SPINLOCK_APU);
   s.sample_addr = 0xc000 + ((addr_t)value << 6);
 }
 
 static void dmc_write_reg3(dmc_state_t &s, uint8_t value) {
-  SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
   s.sample_length = ((int)value << 4) + 1;
 }
 
@@ -2063,39 +2198,40 @@ result_t service(uint8_t *buff, int len) {
     return result_t::SUCCESS;
   }
 
-  {
 #if !SHAPONES_LOCK_FAST
-    SpinLockBlock lock(SPINLOCK_APU);
+  // SpinLockBlock lock(SPINLOCK_APU);
 #endif
 
-    for (int i = 0; i < len; i++) {
-      quarter_frame_phase += quarter_frame_phase_step;
-      if (quarter_frame_phase >= QUARTER_FRAME_PHASE_PERIOD) {
-        quarter_frame_phase -= QUARTER_FRAME_PHASE_PERIOD;
+  flush_write_queue();
 
-        frame_step_flags = 0;
-        if ((quarter_frame_count & 3) == 3) {
-          frame_step_flags |= STEP_FLAG_FRAME;
-        }
-        if ((quarter_frame_count & 1) == 1) {
-          frame_step_flags |= STEP_FLAG_HALF;
-        }
-        frame_step_flags |= STEP_FLAG_QUARTER;
-        quarter_frame_count = (quarter_frame_count + 1) & 0x3;
-      } else {
-        frame_step_flags = 0;
+  for (int i = 0; i < len; i++) {
+    quarter_frame_phase += quarter_frame_phase_step;
+    if (quarter_frame_phase >= QUARTER_FRAME_PHASE_PERIOD) {
+      quarter_frame_phase -= QUARTER_FRAME_PHASE_PERIOD;
+
+      frame_step_flags = 0;
+      if ((quarter_frame_count & 3) == 3) {
+        frame_step_flags |= STEP_FLAG_FRAME;
       }
-
-      uint8_t sample = 0;
-      sample += sample_pulse(pulse[0]);
-      sample += sample_pulse(pulse[1]);
-      sample += sample_triangle(triangle);
-      sample += sample_noise(noise);
-      sample *= 2;
-      sample += sample_dmc(dmc);
-      buff[i] = sample;
+      if ((quarter_frame_count & 1) == 1) {
+        frame_step_flags |= STEP_FLAG_HALF;
+      }
+      frame_step_flags |= STEP_FLAG_QUARTER;
+      quarter_frame_count = (quarter_frame_count + 1) & 0x3;
+    } else {
+      frame_step_flags = 0;
     }
+
+    uint8_t sample = 0;
+    sample += sample_pulse(pulse[0]);
+    sample += sample_pulse(pulse[1]);
+    sample += sample_triangle(triangle);
+    sample += sample_noise(noise);
+    sample *= 2;
+    sample += sample_dmc(dmc);
+    buff[i] = sample;
   }
+
   semaphore_give(SEMAPHORE_APU);
 
   return result_t::SUCCESS;
@@ -2104,6 +2240,8 @@ result_t service(uint8_t *buff, int len) {
 uint32_t get_state_size() { return STATE_SIZE; }
 
 result_t save_state(void *file_handle) {
+  flush_write_queue();
+
   uint8_t buff[STATE_SIZE];
   memset(buff, 0, sizeof(buff));
   uint8_t *p = buff;
@@ -2126,6 +2264,8 @@ result_t save_state(void *file_handle) {
 }
 
 result_t load_state(void *file_handle) {
+  write_queue.clear();
+
   uint8_t buff[STATE_SIZE];
   SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));
   uint8_t *p = buff;
@@ -2144,6 +2284,7 @@ result_t load_state(void *file_handle) {
   quarter_frame_count = reader.u8();
   frame_step_flags = reader.u8();
   status.raw = reader.u8();
+
   return result_t::SUCCESS;
 }
 
@@ -2451,7 +2592,7 @@ static SHAPONES_INLINE addr_t fetch_post_idx_ind(cycle_t *cycle) {
   addr_t addrOrData = fetch();
   addr_t baseAddr = bus_read(addrOrData) |
                     ((uint16_t)bus_read((addrOrData + 1) & 0xffu) << 8);
-  addr_t addr = baseAddr + reg.Y;
+  addr_t addr = (baseAddr + reg.Y) & 0xffff;
   if ((addr & 0xff00u) != (baseAddr & 0xff00u)) *cycle += 1;
   return addr;
 }
@@ -2517,8 +2658,6 @@ static SHAPONES_INLINE void opRTI() {
   reg.status.breakmode = 0;
   reg.PC = (addr_t)pop();
   reg.PC |= ((addr_t)pop() << 8);
-  // SHAPONES_PRINTF("RTI to PC=0x%04x, SP=0x%02x\n", (unsigned int)reg.PC,
-  // (unsigned int)reg.SP);
 }
 
 static SHAPONES_INLINE void opRTS() {
@@ -3156,9 +3295,6 @@ result_t save_state(void *file_handle) {
   writer.u16(dma_cycle);
   writer.b(stopped);
   writer.u8(irq_pending);
-  SHAPONES_PRINTF("SAVE: %d %d %d %d %d %d %d %d %d\n", (int)reg.PC, (int)reg.A,
-                  (int)reg.X, (int)reg.Y, (int)reg.SP, (int)reg.status.raw,
-                  (int)dma_addr, (int)dma_cycle, (int)irq_pending);
   return fs_write(file_handle, buffer, sizeof(buffer));
 }
 
@@ -3178,9 +3314,6 @@ result_t load_state(void *file_handle) {
 #else
   reader.u8();  // discard
 #endif
-  SHAPONES_PRINTF("LOAD: %d %d %d %d %d %d %d %d %d\n", (int)reg.PC, (int)reg.A,
-                  (int)reg.X, (int)reg.Y, (int)reg.SP, (int)reg.status.raw,
-                  (int)dma_addr, (int)dma_cycle, (int)irq_pending);
   return result_t::SUCCESS;
 }
 
@@ -5676,6 +5809,8 @@ static void clip_rect(int *x, int *y, int *w, int *h) {
 
 // #include "shapones/cpu.hpp"
 
+// #include "shapones/fifo.hpp"
+
 // #include "shapones/host_intf.hpp"
 
 // #include "shapones/interrupt.hpp"
@@ -5718,6 +5853,10 @@ static uint8_t oam[OAM_SIZE];
 static sprite_line_t sprite_lines[MAX_VISIBLE_SPRITES];
 static int num_visible_sprites;
 
+static AsyncFifo<reg_write_t, 6> write_queue;
+
+static void flush_write_queue();
+
 static uint8_t bus_read(addr_t addr);
 static void bus_write(addr_t addr, uint8_t data);
 static uint8_t oam_read(addr_t addr);
@@ -5754,6 +5893,8 @@ result_t reset() {
 
   cycle_count = 0;
 
+  write_queue.clear();
+
   return result_t::SUCCESS;
 }
 
@@ -5762,10 +5903,15 @@ bool is_in_hblank() { return focus_x >= SCREEN_WIDTH; }
 int current_focus_y() { return focus_y; }
 
 uint8_t reg_read(addr_t addr) {
+  while (!write_queue.is_empty()) {
+    SemaphoreBlock block(SEMAPHORE_PPU);
+    flush_write_queue();
+  }
+
   uint8_t retval;
   switch (addr) {
     case REG_PPUSTATUS: {
-      //SpinLockBlock lock(SPINLOCK_PPU);
+      SpinLockBlock lock(SPINLOCK_PPU);
       retval = reg.status.raw;
       reg.status.vblank_flag = 0;
       scroll_ppuaddr_high_stored = false;
@@ -5774,7 +5920,7 @@ uint8_t reg_read(addr_t addr) {
     case REG_OAMDATA: retval = oam_read(reg.oam_addr); break;
 
     case REG_PPUDATA: {
-      //SpinLockBlock lock(SPINLOCK_PPU);
+      SpinLockBlock lock(SPINLOCK_PPU);
       addr_t addr = scroll_counter & SCROLL_MASK_PPU_ADDR;
       bus_read(addr);
       addr += reg.control.incr_stride ? 32 : 1;
@@ -5794,66 +5940,78 @@ uint8_t reg_read(addr_t addr) {
 }
 
 void reg_write(addr_t addr, uint8_t data) {
-  switch (addr) {
-    case REG_PPUCTRL: {
-      //SpinLockBlock lock(SPINLOCK_PPU);
-      // name sel bits
-      reg.scroll &= 0xf3ff;
-      reg.scroll |= (uint16_t)(data & 0x3) << 10;
-      // other bits
-      reg.control.raw = data;
-    } break;
+  reg_write_t req;
+  req.addr = addr;
+  req.data = data;
+  if (!write_queue.try_push(req)) {
+    SemaphoreBlock block(SEMAPHORE_PPU);
+    flush_write_queue();
+    write_queue.push_blocking(req);
+  }
+}
 
-    case REG_PPUMASK: reg.mask.raw = data; break;
+static void flush_write_queue() {
+  reg_write_t req;
+  while (write_queue.try_peek(&req)) {
+    switch (req.addr) {
+      case REG_PPUCTRL: {
+        // name sel bits
+        reg.scroll &= 0xf3ff;
+        reg.scroll |= (uint16_t)(req.data & 0x3) << 10;
+        // other bits
+        reg.control.raw = req.data;
+      } break;
 
-    case REG_OAMADDR: reg.oam_addr = data; break;
+      case REG_PPUMASK: reg.mask.raw = req.data; break;
 
-    case REG_OAMDATA: oam_write(reg.oam_addr, data); break;
+      case REG_OAMADDR: reg.oam_addr = req.data; break;
 
-    case REG_PPUSCROLL: {
-      //SpinLockBlock lock(SPINLOCK_PPU);
-      if (!scroll_ppuaddr_high_stored) {
-        reg.scroll &= ~SCROLL_MASK_COARSE_X;
-        reg.scroll |= (data >> 3) & SCROLL_MASK_COARSE_X;
-        reg.fine_x = data & 0x7;
-        scroll_ppuaddr_high_stored = true;
-      } else {
-        reg.scroll &= ~(SCROLL_MASK_COARSE_Y | SCROLL_MASK_FINE_Y);
-        reg.scroll |= ((uint16_t)data << 2) & SCROLL_MASK_COARSE_Y;
-        reg.scroll |= ((uint16_t)data << 12) & SCROLL_MASK_FINE_Y;
-        scroll_ppuaddr_high_stored = false;
-      }
-    } break;
+      case REG_OAMDATA: oam_write(reg.oam_addr, req.data); break;
 
-    case REG_PPUADDR: {
-      //SpinLockBlock lock(SPINLOCK_PPU);
-      if (!scroll_ppuaddr_high_stored) {
-        reg.scroll &= 0x00ffu;
-        reg.scroll |= ((uint16_t)data << 8) & 0x3f00u;
-        scroll_ppuaddr_high_stored = true;
-      } else {
-        reg.scroll &= 0xff00u;
-        reg.scroll |= (uint16_t)data;
-        scroll_counter = reg.scroll;
-        scroll_ppuaddr_high_stored = false;
-      }
-    } break;
+      case REG_PPUSCROLL: {
+        if (!scroll_ppuaddr_high_stored) {
+          reg.scroll &= ~SCROLL_MASK_COARSE_X;
+          reg.scroll |= (req.data >> 3) & SCROLL_MASK_COARSE_X;
+          reg.fine_x = req.data & 0x7;
+          scroll_ppuaddr_high_stored = true;
+        } else {
+          reg.scroll &= ~(SCROLL_MASK_COARSE_Y | SCROLL_MASK_FINE_Y);
+          reg.scroll |= ((uint16_t)req.data << 2) & SCROLL_MASK_COARSE_Y;
+          reg.scroll |= ((uint16_t)req.data << 12) & SCROLL_MASK_FINE_Y;
+          scroll_ppuaddr_high_stored = false;
+        }
+      } break;
 
-    case REG_PPUDATA: {
-      //SpinLockBlock lock(SPINLOCK_PPU);
-      uint_fast16_t scr = scroll_counter;
-      addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
-      bus_write(addr, data);
-      addr += reg.control.incr_stride ? 32 : 1;
-      addr &= SCROLL_MASK_PPU_ADDR;
-      scr &= ~SCROLL_MASK_PPU_ADDR;
-      scr |= addr;
-      scroll_counter = scr;
-    } break;
+      case REG_PPUADDR: {
+        if (!scroll_ppuaddr_high_stored) {
+          reg.scroll &= 0x00ffu;
+          reg.scroll |= ((uint16_t)req.data << 8) & 0x3f00u;
+          scroll_ppuaddr_high_stored = true;
+        } else {
+          reg.scroll &= 0xff00u;
+          reg.scroll |= (uint16_t)req.data;
+          scroll_counter = reg.scroll;
+          scroll_ppuaddr_high_stored = false;
+        }
+      } break;
 
-    default:
-      SHAPONES_PRINTF("*Warning: Invalid PPU register write addr: 0x%x\n",
-                      (int)addr);
+      case REG_PPUDATA: {
+        uint_fast16_t scr = scroll_counter;
+        addr_t addr = scr & SCROLL_MASK_PPU_ADDR;
+        bus_write(addr, req.data);
+        addr += reg.control.incr_stride ? 32 : 1;
+        addr &= SCROLL_MASK_PPU_ADDR;
+        scr &= ~SCROLL_MASK_PPU_ADDR;
+        scr |= addr;
+        scroll_counter = scr;
+      } break;
+
+      default:
+        SHAPONES_PRINTF("*Warning: Invalid PPU register write addr: 0x%x\n",
+                        (int)req.addr);
+    }
+
+    write_queue.try_pop(&req);
   }
 }
 
@@ -5944,6 +6102,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
   bool irq = false;
 
   while (true) {
+    flush_write_queue();
+
     cycle_t cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
     if (cycle_diff <= 0) {
       break;
@@ -5953,11 +6113,9 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     if (focus_x == 0) {
       if (focus_y == SCREEN_HEIGHT + 1) {
         // vblank flag/interrupt
-        //SpinLockBlock lock(SPINLOCK_PPU);
         reg.status.vblank_flag = 1;
       } else if (focus_y == SCAN_LINES - 1) {
         // clear flags
-        //SpinLockBlock lock(SPINLOCK_PPU);
         reg.status.vblank_flag = 0;
         reg.status.sprite0_hit = 0;
       }
@@ -6063,7 +6221,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
 static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
                       bool skip_render) {
 #if !SHAPONES_LOCK_FAST
-  SpinLockBlock lock(SPINLOCK_PPU);
+// todo: delete
+// SpinLockBlock lock(SPINLOCK_PPU);
 #endif
 
   bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
@@ -6336,6 +6495,8 @@ uint32_t get_state_size() {
 }
 
 result_t save_state(void *file_handle) {
+  flush_write_queue();
+
   uint8_t buff[STATE_HEADER_SIZE];
   memset(buff, 0, sizeof(buff));
   uint8_t *p = buff;
@@ -6358,6 +6519,9 @@ result_t save_state(void *file_handle) {
 }
 
 result_t load_state(void *file_handle) {
+  write_queue.clear();
+  SHAPONES_THREAD_FENCE_SEQ_CST();
+
   uint8_t buff[STATE_HEADER_SIZE];
   SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));
   const uint8_t *p = buff;
