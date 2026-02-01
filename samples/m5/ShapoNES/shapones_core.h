@@ -6023,7 +6023,6 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     nmi_level = nmi_level_new;
 
     // determine step count
-    uint_fast16_t step_count;
     uint_fast16_t dist_to_end;
     if (focus_y < SCREEN_HEIGHT && focus_x < SCREEN_WIDTH) {
       // visible area
@@ -6032,10 +6031,8 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
       // blank_area
       dist_to_end = LINE_CYCLES - focus_x;
     }
-    step_count = dist_to_end < cycle_diff ? dist_to_end : cycle_diff;
-    step_count =
-        step_count < MAX_DELAY_CYCLES / 2 ? step_count : MAX_DELAY_CYCLES / 2;
-
+    uint_fast16_t step_count =
+        dist_to_end < cycle_diff ? dist_to_end : cycle_diff;
     uint_fast16_t next_focus_x = focus_x + step_count;
 
     if (focus_x == 0 && focus_y < SCREEN_HEIGHT && reg.mask.sprite_enable) {
