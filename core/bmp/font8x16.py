@@ -58,7 +58,7 @@ with open(options.output, "w") as f:
     f.write("#ifndef SHAPONES_FONT8X16_HPP\n")
     f.write("#define SHAPONES_FONT8X16_HPP\n\n")
     f.write("#if !(SHAPONES_NO_STDLIB)\n")
-    f.write("#include \"shapones/common.hpp\"\n")
+    f.write('#include "shapones/common.hpp"\n')
     f.write("#endif\n\n")
     f.write("namespace nes::menu {\n\n")
     f.write("const uint16_t FONT8X16_CODE_FIRST = 0x%02X;\n" % CODE_FIRST)
@@ -70,7 +70,10 @@ with open(options.output, "w") as f:
         iy = i // 16
         char_x = ix * CHAR_WIDTH
         char_y = iy * CHAR_HEIGHT
-        f.write("  // 0x%02X '%c'\n" % (code, chr(code)))
+        if 0x20 <= code <= 0x7E:
+            f.write("  // 0x%02X '%c'\n" % (code, chr(code)))
+        else:
+            f.write("  // 0x%02X\n" % (code))
         for y in range(CHAR_HEIGHT):
             if y % 8 == 0:
                 f.write("  ")
