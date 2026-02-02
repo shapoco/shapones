@@ -6184,18 +6184,18 @@ static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
 
     if (visible_area) {
       if (bg_enabled) {
-        // read name table for two tiles
-        addr_t name_addr0 = scr & 0xffeu;
-        addr_t name_addr1 = name_addr0 + 1;
-        uint32_t name0 = memory::vram_read(name_addr0);
-        uint32_t name1 = memory::vram_read(name_addr1);
-
-        uint32_t fine_y = (scr & SCROLL_MASK_FINE_Y) >> 12;
-
         uint32_t chr = 0xFFFFFFFF;
         const uint8_t *palette = nullptr;
+        
         if (!skip_render) {
+          // read name table for two tiles
+          addr_t name_addr0 = scr & 0xffeu;
+          addr_t name_addr1 = name_addr0 + 1;
+          uint32_t name0 = memory::vram_read(name_addr0);
+          uint32_t name1 = memory::vram_read(name_addr1);
+
           // read CHRROM
+          uint32_t fine_y = (scr & SCROLL_MASK_FINE_Y) >> 12;
           uint32_t chrrom_index0 = (name0 << 4) + fine_y;
           uint32_t chrrom_index1 = (name1 << 4) + fine_y;
           chrrom_index0 += bg_offset;
