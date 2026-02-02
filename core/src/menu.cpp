@@ -321,7 +321,7 @@ static result_t load_file_list_tab() {
     menu.add_item(icon_t::PARENT, action_t::OPEN_DIR, "../");
   }
 
-  result_t res = fsys::enum_files(current_dir, [](const file_info_t &info) {
+  result_t res = fsys::enum_files(current_dir, [](const fsys::file_info_t &info) {
     char *name = (char *)info.name;
     if (info.is_dir) {
       // append '/' to directory names

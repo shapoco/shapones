@@ -149,10 +149,10 @@ nes::result_t nes::fsys::get_current_dir(char *out_path) {
 }
 
 nes::result_t nes::fsys::enum_files(const char *path,
-                                 nes::fs_enum_files_cb_t callback) {
+                                    nes::fsys::enum_files_cb_t callback) {
   try {
     for (const auto &entry : fs::directory_iterator(path)) {
-      nes::file_info_t info;
+      nes::fsys::file_info_t info;
       info.is_dir = entry.is_directory();
       std::string filename = entry.path().filename().string();
       info.name = filename.c_str();

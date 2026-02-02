@@ -733,13 +733,6 @@ result_t load_state(void *file_handle);
 
 namespace nes {
 
-struct file_info_t {
-  bool is_dir;
-  const char *name;
-};
-
-using fs_enum_files_cb_t = bool (*)(const file_info_t &info);
-
 result_t ram_alloc(size_t size, void **out_ptr);
 void ram_free(void *ptr);
 
@@ -759,10 +752,18 @@ result_t load_ines(const char *path, const uint8_t **out_ines,
 void unload_ines();
 
 namespace fsys {
+
+struct file_info_t {
+  bool is_dir;
+  const char *name;
+};
+
+using enum_files_cb_t = bool (*)(const file_info_t &info);
+
 result_t mount();
 void unmount();
 result_t get_current_dir(char *out_path);
-result_t enum_files(const char *path, fs_enum_files_cb_t callback);
+result_t enum_files(const char *path, enum_files_cb_t callback);
 bool exists(const char *path);
 result_t open(const char *path, bool write, void **handle);
 void close(void *handle);
@@ -771,7 +772,15 @@ result_t read(void *handle, uint8_t *buff, size_t size);
 result_t write(void *handle, const uint8_t *buff, size_t size);
 result_t size(void *handle, size_t *out_size);
 result_t remove(const char *path);
+
 }  // namespace fsys
+
+namespace nwk {
+
+result_t start_connect();
+result_t disconnect();
+
+}  // namespace nwk
 
 uint64_t get_time_us();
 
@@ -5107,7 +5116,7 @@ static result_t load_file_list_tab() {
     menu.add_item(icon_t::PARENT, action_t::OPEN_DIR, "../");
   }
 
-  result_t res = fsys::enum_files(current_dir, [](const file_info_t &info) {
+  result_t res = fsys::enum_files(current_dir, [](const fsys::file_info_t &info) {
     char *name = (char *)info.name;
     if (info.is_dir) {
       // append '/' to directory names

@@ -312,7 +312,7 @@ nes::result_t nes::fsys::get_current_dir(char *out_path) {
 }
 
 nes::result_t nes::fsys::enum_files(const char *path,
-                                 nes::fs_enum_files_cb_t callback) {
+                                 nes::fsys::enum_files_cb_t callback) {
   // List up NES files
   sFile find;
   if (!FindOpen(&find, path)) {
@@ -323,7 +323,7 @@ nes::result_t nes::fsys::enum_files(const char *path,
     if (strncmp(fi.name, ".", 1) == 0 || strncmp(fi.name, "..", 2) == 0) {
       continue;
     }
-    nes::file_info_t fi2;
+    nes::fsys::file_info_t fi2;
     fi2.name = fi.name;
     fi2.is_dir = !!(fi.attr & ATTR_DIR);
     if (!callback(fi2)) break;

@@ -540,11 +540,11 @@ nes::result_t nes::fsys::get_current_dir(char *out_path) {
 }
 
 nes::result_t nes::fsys::enum_files(const char *path,
-                                 nes::fs_enum_files_cb_t callback) {
+                                 nes::fsys::enum_files_cb_t callback) {
   bool is_dir;
   File root = SD.open(path);
   while (1) {
-    nes::file_info_t fi;
+    nes::fsys::file_info_t fi;
     String filename = root.getNextFileName(&fi.is_dir);
     int sep = filename.lastIndexOf('/');
     if (sep >= 0) {
