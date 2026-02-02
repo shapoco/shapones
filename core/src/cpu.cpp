@@ -900,12 +900,12 @@ result_t save_state(void *file_handle) {
   writer.u16(dma_cycle);
   writer.b(stopped);
   writer.u8(irq_pending);
-  return fs_write(file_handle, buffer, sizeof(buffer));
+  return fsys::write(file_handle, buffer, sizeof(buffer));
 }
 
 result_t load_state(void *file_handle) {
   uint8_t buffer[STATE_SIZE];
-  SHAPONES_TRY(fs_read(file_handle, buffer, sizeof(buffer)));
+  SHAPONES_TRY(fsys::read(file_handle, buffer, sizeof(buffer)));
   const uint8_t *p = buffer;
   reg.load(p);
   p += registers_t::STATE_SIZE;

@@ -140,12 +140,12 @@ class Map004 : public Mapper {
     buffer[offset++] = irq_reloading ? 1 : 0;
     buffer[offset++] = irq_latch;
     buffer[offset++] = irq_counter;
-    return nes::fs_write(file_handle, buffer, STATE_SIZE);
+    return nes::fsys::write(file_handle, buffer, STATE_SIZE);
   }
 
   result_t load_state(void *file_handle) override {
     uint8_t buffer[STATE_SIZE];
-    SHAPONES_TRY(nes::fs_read(file_handle, buffer, STATE_SIZE));
+    SHAPONES_TRY(nes::fsys::read(file_handle, buffer, STATE_SIZE));
     uint32_t offset = 0;
     reg_sel = buffer[offset++];
     for (int i = 0; i < 8; i++) {

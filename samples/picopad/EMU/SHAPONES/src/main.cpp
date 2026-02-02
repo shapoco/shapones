@@ -295,7 +295,7 @@ bool nes::semaphore_try_take(int id) {
 }
 void nes::semaphore_give(int id) { SpinUnlock(SEMAPHORE_ID_BASE + id); }
 
-nes::result_t nes::fs_mount() {
+nes::result_t nes::fsys::mount() {
   if (DiskMount()) {
     return nes::result_t::SUCCESS;
   } else {
@@ -304,14 +304,14 @@ nes::result_t nes::fs_mount() {
   }
 }
 
-void nes::fs_unmount() { DiskUnmount(); }
+void nes::fsys::unmount() { DiskUnmount(); }
 
-nes::result_t nes::fs_get_current_dir(char *out_path) {
+nes::result_t nes::fsys::get_current_dir(char *out_path) {
   strncpy(out_path, "/EMU/SHAPONES/", nes::MAX_PATH_LENGTH);
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_enum_files(const char *path,
+nes::result_t nes::fsys::enum_files(const char *path,
                                  nes::fs_enum_files_cb_t callback) {
   // List up NES files
   sFile find;
@@ -332,9 +332,9 @@ nes::result_t nes::fs_enum_files(const char *path,
   return nes::result_t::SUCCESS;
 }
 
-bool nes::fs_exists(char const *path) { return FileExist(path); }
+bool nes::fsys::exists(char const *path) { return FileExist(path); }
 
-nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
+nes::result_t nes::fsys::open(const char *path, bool write, void **handle) {
   if (!FileExist(path)) {
     if (!FileCreate(&file_handle, path)) {
       return nes::result_t::ERR_FS_OPEN_FAILED;
@@ -348,12 +348,12 @@ nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
   return nes::result_t::SUCCESS;
 }
 
-void nes::fs_close(void *handle) {
+void nes::fsys::close(void *handle) {
   sFile *f = (sFile *)handle;
   FileClose(f);
 }
 
-nes::result_t nes::fs_seek(void *handle, size_t offset) {
+nes::result_t nes::fsys::seek(void *handle, size_t offset) {
   sFile *f = (sFile *)handle;
   if (!FileSeek(f, offset)) {
     return nes::result_t::ERR_FS_SEEK_FAILED;
@@ -361,13 +361,13 @@ nes::result_t nes::fs_seek(void *handle, size_t offset) {
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_size(void *handle, size_t *out_size) {
+nes::result_t nes::fsys::size(void *handle, size_t *out_size) {
   sFile *f = (sFile *)handle;
   *out_size = FileSize(f);
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
+nes::result_t nes::fsys::read(void *handle, uint8_t *buff, size_t size) {
   sFile *f = (sFile *)handle;
   int s = FileRead(f, buff, size);
   if (s == (int)size) {
@@ -377,7 +377,7 @@ nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
   }
 }
 
-nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
+nes::result_t nes::fsys::write(void *handle, const uint8_t *buff, size_t size) {
   sFile *f = (sFile *)handle;
   int s = FileWrite(f, buff, size);
   if (s == (int)size) {
@@ -387,7 +387,7 @@ nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
   }
 }
 
-nes::result_t nes::fs_delete(const char *path) {
+nes::result_t nes::fsys::remove(const char *path) {
   if (FileDelete(path)) {
     return nes::result_t::SUCCESS;
   } else {

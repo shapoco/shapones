@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::fs {
+namespace nes::fsys {
 
 
  bool is_root_dir(const char *path);
@@ -13,6 +13,6 @@ namespace nes::fs {
  result_t append_path(char *path, const char *name);
  result_t replace_ext(char *path, const char *new_ext);
 
-}  // namespace nes::fs
+}  // namespace nes::fsys
 
 #endif

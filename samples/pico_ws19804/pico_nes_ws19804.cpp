@@ -304,12 +304,12 @@ void nes::spinlock_deinit(int id) { spin_lock_unclaim(id); }
 void nes::spinlock_get(int id) { lock_irqs[id] = spin_lock_blocking(lock_hws[id]); }
 void nes::spinlock_release(int id) { spin_unlock(lock_hws[id], lock_irqs[id]); }
 
-nes::result_t nes::fs_mount() { return nes::result_t::SUCCESS; }
-void nes::fs_unmount() {}
-nes::result_t nes::fs_get_current_dir(char *out_path) {
+nes::result_t nes::fsys::mount() { return nes::result_t::SUCCESS; }
+void nes::fsys::unmount() {}
+nes::result_t nes::fsys::get_current_dir(char *out_path) {
   return nes::result_t::SUCCESS;
 }
-nes::result_t nes::fs_enum_files(const char *path,
+nes::result_t nes::fsys::enum_files(const char *path,
                                  nes::fs_enum_files_cb_t callback) {
   return nes::result_t::SUCCESS;
 }

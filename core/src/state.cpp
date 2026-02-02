@@ -85,7 +85,7 @@ result_t get_state_path(char *out_path, size_t max_len) {
     return result_t::ERR_INES_NOT_LOADED;
   }
   strncpy(out_path, ines_path, max_len);
-  SHAPONES_TRY(fs::replace_ext(out_path, STATE_FILE_EXT));
+  SHAPONES_TRY(fsys::replace_ext(out_path, STATE_FILE_EXT));
   return result_t::SUCCESS;
 }
 
@@ -108,10 +108,10 @@ result_t save(const char *path, int slot) {
   uint32_t slot_size = get_slot_size();
 
   void *f;
-  SHAPONES_TRY(fs_open(path, true, &f));
+  SHAPONES_TRY(fsys::open(path, true, &f));
 
   size_t file_size = 0;
-  SHAPONES_TRY(fs_size(f, &file_size));
+  SHAPONES_TRY(fsys::size(f, &file_size));
   bool create = file_size < sizeof(state_file_header_t) +
                                 sizeof(state_slot_entry_t) * MAX_SLOTS;
 
@@ -127,10 +127,10 @@ result_t save(const char *path, int slot) {
         fh.slot_size = slot_size;
         fh.store(buff);
 
-        res = fs_seek(f, 0);
+        res = fsys::seek(f, 0);
         if (res != result_t::SUCCESS) break;
 
-        res = fs_write(f, buff, sizeof(buff));
+        res = fsys::write(f, buff, sizeof(buff));
         if (res != result_t::SUCCESS) break;
       }
 
@@ -138,7 +138,7 @@ result_t save(const char *path, int slot) {
       for (int i = 0; i < MAX_SLOTS; i++) {
         uint8_t buff[state_slot_entry_t::SIZE];
         memset(buff, 0, sizeof(buff));
-        res = fs_write(f, buff, sizeof(buff));
+        res = fsys::write(f, buff, sizeof(buff));
         if (res != result_t::SUCCESS) break;
       }
     }
@@ -146,7 +146,7 @@ result_t save(const char *path, int slot) {
     // write slot data
     {
       uint32_t offset = get_slot_offset(slot, slot_size);
-      res = fs_seek(f, offset);
+      res = fsys::seek(f, offset);
       if (res != result_t::SUCCESS) break;
 
       res = write_screenshot(f);
@@ -168,19 +168,19 @@ result_t save(const char *path, int slot) {
 
       int offset = state_file_header_t::SIZE + state_slot_entry_t::SIZE * slot;
 
-      res = fs_seek(f, offset);
+      res = fsys::seek(f, offset);
       if (res != result_t::SUCCESS) break;
 
-      res = fs_write(f, buff, sizeof(buff));
+      res = fsys::write(f, buff, sizeof(buff));
       if (res != result_t::SUCCESS) break;
     }
 
     // seek to end
-    fs_seek(f, file_size);
+    fsys::seek(f, file_size);
 
   } while (0);
 
-  fs_close(f);
+  fsys::close(f);
   return res;
 }
 
@@ -190,13 +190,13 @@ result_t load(const char *path, int slot) {
   uint32_t slot_size = get_slot_size();
 
   void *f;
-  SHAPONES_TRY(fs_open(path, false, &f));
+  SHAPONES_TRY(fsys::open(path, false, &f));
 
   do {
     // header check
     {
       uint8_t buff[state_file_header_t::SIZE];
-      SHAPONES_TRY(fs_read(f, buff, sizeof(buff)));
+      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
       state_file_header_t fh;
       fh.load(buff);
       if (fh.marker != MARKER) {
@@ -211,10 +211,10 @@ result_t load(const char *path, int slot) {
 
     // read slot entry
     {
-      SHAPONES_TRY(fs_seek(
+      SHAPONES_TRY(fsys::seek(
           f, state_file_header_t::SIZE + state_slot_entry_t::SIZE * slot));
       uint8_t buff[state_slot_entry_t::SIZE];
-      SHAPONES_TRY(fs_read(f, buff, sizeof(buff)));
+      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
       state_slot_entry_t slot_entry;
       slot_entry.index = slot;
       slot_entry.load(buff);
@@ -228,10 +228,10 @@ result_t load(const char *path, int slot) {
     // read slot data
     {
       uint32_t offset = get_slot_offset(slot, slot_size);
-      res = fs_seek(f, offset);
+      res = fsys::seek(f, offset);
       if (res != result_t::SUCCESS) break;
 
-      res = fs_read(f, ss_buff, SS_SIZE_BYTES);
+      res = fsys::read(f, ss_buff, SS_SIZE_BYTES);
       if (res != result_t::SUCCESS) break;
       ss_wr_index = 1;
       ss_num_stored = 1;
@@ -242,7 +242,7 @@ result_t load(const char *path, int slot) {
     }
   } while (0);
 
-  fs_close(f);
+  fsys::close(f);
 
   return res;
 }
@@ -253,18 +253,18 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
   uint32_t slot_size = get_slot_size();
 
   void *f;
-  SHAPONES_TRY(fs_open(path, false, &f));
+  SHAPONES_TRY(fsys::open(path, false, &f));
 
   do {
     uint32_t offset = get_slot_offset(slot, slot_size);
-    res = fs_seek(f, offset);
+    res = fsys::seek(f, offset);
     if (res != result_t::SUCCESS) break;
 
-    res = fs_read(f, out_buff, SS_SIZE_BYTES);
+    res = fsys::read(f, out_buff, SS_SIZE_BYTES);
     if (res != result_t::SUCCESS) break;
   } while (0);
 
-  fs_close(f);
+  fsys::close(f);
 
   return res;
 }
@@ -272,7 +272,7 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
 static result_t write_screenshot(void *f) {
   SemaphoreBlock lock(SEMAPHORE_PPU);
   int rd_index = (ss_wr_index + SS_BUFF_DEPTH - ss_num_stored) % SS_BUFF_DEPTH;
-  result_t res = fs_write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
+  result_t res = fsys::write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
   return res;
 }
 
@@ -306,13 +306,13 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
   result_t res = result_t::SUCCESS;
 
   void *f;
-  SHAPONES_TRY(fs_open(path, false, &f));
+  SHAPONES_TRY(fsys::open(path, false, &f));
 
   do {
     // header check
     {
       uint8_t buff[state_file_header_t::SIZE];
-      SHAPONES_TRY(fs_read(f, buff, sizeof(buff)));
+      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
       state_file_header_t fh;
       fh.load(buff);
       if (fh.marker != MARKER) {
@@ -324,7 +324,7 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
     // read slot entries
     for (int i = 0; i < MAX_SLOTS; i++) {
       uint8_t buff[state_slot_entry_t::SIZE];
-      SHAPONES_TRY(fs_read(f, buff, sizeof(buff)));
+      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
       state_slot_entry_t slot_entry;
       slot_entry.index = i;
       slot_entry.load(buff);
@@ -333,7 +333,7 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
       }
     }
   } while (0);
-  fs_close(f);
+  fsys::close(f);
   return res;
 }
 

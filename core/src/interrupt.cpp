@@ -44,12 +44,12 @@ result_t save_state(void *file_handle) {
   BufferWriter writer(p);
   writer.u32(static_cast<uint32_t>(irq));
   writer.b(nmi);
-  return fs_write(file_handle, buffer, STATE_SIZE);
+  return fsys::write(file_handle, buffer, STATE_SIZE);
 }
 
 result_t load_state(void *file_handle) {
   uint8_t buffer[STATE_SIZE];
-  SHAPONES_TRY(fs_read(file_handle, buffer, STATE_SIZE));
+  SHAPONES_TRY(fsys::read(file_handle, buffer, STATE_SIZE));
   const uint8_t *p = buffer;
   BufferReader reader(p);
   irq = static_cast<source_t>(reader.u32());

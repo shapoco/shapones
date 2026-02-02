@@ -30,19 +30,20 @@ result_t load_ines(const char *path, const uint8_t **out_ines,
                    size_t *out_size);
 void unload_ines();
 
-result_t fs_mount();
-void fs_unmount();
-
-result_t fs_get_current_dir(char *out_path);
-result_t fs_enum_files(const char *path, fs_enum_files_cb_t callback);
-bool fs_exists(const char *path);
-result_t fs_open(const char *path, bool write, void **handle);
-void fs_close(void *handle);
-result_t fs_seek(void *handle, size_t offset);
-result_t fs_read(void *handle, uint8_t *buff, size_t size);
-result_t fs_write(void *handle, const uint8_t *buff, size_t size);
-result_t fs_size(void *handle, size_t *out_size);
-result_t fs_delete(const char *path);
+namespace fsys {
+result_t mount();
+void unmount();
+result_t get_current_dir(char *out_path);
+result_t enum_files(const char *path, fs_enum_files_cb_t callback);
+bool exists(const char *path);
+result_t open(const char *path, bool write, void **handle);
+void close(void *handle);
+result_t seek(void *handle, size_t offset);
+result_t read(void *handle, uint8_t *buff, size_t size);
+result_t write(void *handle, const uint8_t *buff, size_t size);
+result_t size(void *handle, size_t *out_size);
+result_t remove(const char *path);
+}  // namespace fsys
 
 uint64_t get_time_us();
 

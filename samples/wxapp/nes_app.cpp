@@ -134,10 +134,10 @@ void nes::semaphore_take(int id) {}
 bool nes::semaphore_try_take(int id) { return true; }
 void nes::semaphore_give(int id) {}
 
-nes::result_t nes::fs_mount() { return nes::result_t::SUCCESS; }
-void nes::fs_unmount() {}
+nes::result_t nes::fsys::mount() { return nes::result_t::SUCCESS; }
+void nes::fsys::unmount() {}
 
-nes::result_t nes::fs_get_current_dir(char *out_path) {
+nes::result_t nes::fsys::get_current_dir(char *out_path) {
   try {
     std::string path = fs::current_path().string();
     strncpy(out_path, path.c_str(), nes::MAX_PATH_LENGTH);
@@ -148,7 +148,7 @@ nes::result_t nes::fs_get_current_dir(char *out_path) {
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_enum_files(const char *path,
+nes::result_t nes::fsys::enum_files(const char *path,
                                  nes::fs_enum_files_cb_t callback) {
   try {
     for (const auto &entry : fs::directory_iterator(path)) {
@@ -164,10 +164,10 @@ nes::result_t nes::fs_enum_files(const char *path,
   return nes::result_t::SUCCESS;
 }
 
-bool nes::fs_exists(const char *path) { return fs::exists(path); }
+bool nes::fsys::exists(const char *path) { return fs::exists(path); }
 
-nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
-  bool create = !fs_exists(path);
+nes::result_t nes::fsys::open(const char *path, bool write, void **handle) {
+  bool create = !fs::exists(path);
 
   std::fstream *fs = new std::fstream();
   std::ios::openmode mode = std::ios::binary;
@@ -186,7 +186,7 @@ nes::result_t nes::fs_open(const char *path, bool write, void **handle) {
   return nes::result_t::SUCCESS;
 }
 
-void nes::fs_close(void *handle) {
+void nes::fsys::close(void *handle) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (fs) {
     fs->close();
@@ -194,7 +194,7 @@ void nes::fs_close(void *handle) {
   }
 }
 
-nes::result_t nes::fs_seek(void *handle, size_t offset) {
+nes::result_t nes::fsys::seek(void *handle, size_t offset) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
     return nes::result_t::ERR_FS_OPEN_FAILED;
@@ -204,7 +204,7 @@ nes::result_t nes::fs_seek(void *handle, size_t offset) {
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_size(void *handle, size_t *out_size) {
+nes::result_t nes::fsys::size(void *handle, size_t *out_size) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
     return nes::result_t::ERR_FS_FILE_NOT_OPEN;
@@ -217,7 +217,7 @@ nes::result_t nes::fs_size(void *handle, size_t *out_size) {
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
+nes::result_t nes::fsys::read(void *handle, uint8_t *buff, size_t size) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
     return nes::result_t::ERR_FS_FILE_NOT_OPEN;
@@ -226,7 +226,7 @@ nes::result_t nes::fs_read(void *handle, uint8_t *buff, size_t size) {
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
+nes::result_t nes::fsys::write(void *handle, const uint8_t *buff, size_t size) {
   std::fstream *fs = static_cast<std::fstream *>(handle);
   if (!fs || !fs->is_open()) {
     return nes::result_t::ERR_FS_FILE_NOT_OPEN;
@@ -238,7 +238,7 @@ nes::result_t nes::fs_write(void *handle, const uint8_t *buff, size_t size) {
   return nes::result_t::SUCCESS;
 }
 
-nes::result_t nes::fs_delete(const char *path) {
+nes::result_t nes::fsys::remove(const char *path) {
   try {
     fs::remove(path);
   } catch (...) {

@@ -1,6 +1,6 @@
 #include "shapones/fs.hpp"
 
-namespace nes::fs {
+namespace nes::fsys {
 
 bool is_root_dir(const char *path) { return find_parent_separator(path) < 0; }
 
@@ -86,4 +86,4 @@ result_t replace_ext(char *path, const char *new_ext) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::fs
+}  // namespace nes::fsys

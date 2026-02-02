@@ -37,7 +37,7 @@ static constexpr int POPUP_Y = (BUFF_HEIGHT - POPUP_MAX_ITEMS - 3) / 2;
 enum class tab_t {
   NES_LIST,
   SAVE_LIST,
-  MONITOR,
+  NETWORK,
   COUNT,
 };
 
@@ -64,8 +64,6 @@ enum class action_t {
   LOAD_STATE,
   SAVE_STATE,
   DELETE_STATE,
-  FORCE_NMI_CONFIRM,
-  FORCE_NMI_TRIGGER,
   CLOSE_POPUP,
 };
 
@@ -214,7 +212,6 @@ bool ss_enable = false;
 static result_t load_tab(tab_t tab, bool force = false);
 static result_t load_file_list_tab();
 static result_t load_state_list_tab();
-static result_t load_monitor_tab();
 static result_t load_state_screenshot();
 
 static int find_empty_slot();
@@ -230,7 +227,6 @@ static result_t on_state_select(ListItem *mi);
 static result_t on_save_state(ListItem *mi);
 static result_t on_load_state(ListItem *mi);
 static result_t on_delete_state();
-static result_t on_force_nmi_trigger();
 
 static result_t show_message(icon_t icon, const char *msg);
 static result_t show_confirm(icon_t icon, const char *msg,
@@ -289,7 +285,6 @@ static result_t load_tab(tab_t t, bool force) {
   switch (tab) {
     case tab_t::NES_LIST: SHAPONES_TRY(load_file_list_tab()); break;
     case tab_t::SAVE_LIST: SHAPONES_TRY(load_state_list_tab()); break;
-    case tab_t::MONITOR: SHAPONES_TRY(load_monitor_tab()); break;
   }
 
   int i = last_menu_index[static_cast<int>(tab)];
@@ -309,7 +304,7 @@ static result_t load_file_list_tab() {
   menu.clear();
 
   if (!disk_mounted) {
-    if (fs_mount() == result_t::SUCCESS) {
+    if (fsys::mount() == result_t::SUCCESS) {
       disk_mounted = true;
     } else {
       return result_t::SUCCESS;
@@ -317,16 +312,16 @@ static result_t load_file_list_tab() {
   }
 
   if (current_dir[0] == '\0') {
-    SHAPONES_TRY(fs_get_current_dir(current_dir));
-    SHAPONES_TRY(fs::append_separator(current_dir));
+    SHAPONES_TRY(fsys::get_current_dir(current_dir));
+    SHAPONES_TRY(fsys::append_separator(current_dir));
   }
 
-  if (!fs::is_root_dir(current_dir)) {
+  if (!fsys::is_root_dir(current_dir)) {
     // add parent directory entry
     menu.add_item(icon_t::PARENT, action_t::OPEN_DIR, "../");
   }
 
-  result_t res = fs_enum_files(current_dir, [](const file_info_t &info) {
+  result_t res = fsys::enum_files(current_dir, [](const file_info_t &info) {
     char *name = (char *)info.name;
     if (info.is_dir) {
       // append '/' to directory names
@@ -378,10 +373,10 @@ static result_t load_state_list_tab() {
   menu.clear();
   char state_path[nes::MAX_PATH_LENGTH + 1];
   strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
-  SHAPONES_TRY(fs::replace_ext(state_path, state::STATE_FILE_EXT));
+  SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   do {
-    if (nes::fs_exists(state_path)) {
+    if (nes::fsys::exists(state_path)) {
       res = state::enum_slots(
           state_path, [](const state::state_slot_entry_t &entry) {
             if (!entry.is_used()) {
@@ -431,17 +426,10 @@ static result_t load_state_list_tab() {
   return res;
 }
 
-static result_t load_monitor_tab() {
-  menu.clear();
-  menu.add_item(icon_t::NONE, action_t::FORCE_NMI_CONFIRM, "Force NMI");
-  request_redraw();
-  return result_t::SUCCESS;
-}
-
 static result_t load_state_screenshot() {
   char state_path[nes::MAX_PATH_LENGTH + 1];
   strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
-  SHAPONES_TRY(fs::replace_ext(state_path, state::STATE_FILE_EXT));
+  SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   ss_enable = false;
   auto *mi = menu.get_selected_item();
@@ -540,10 +528,6 @@ static result_t on_menu_selected(ListItem *mi) {
     case action_t::LOAD_STATE: res = on_load_state(mi); break;
     case action_t::SAVE_STATE: res = on_save_state(mi); break;
     case action_t::DELETE_STATE: res = on_delete_state(); break;
-    case action_t::FORCE_NMI_CONFIRM:
-      show_confirm(icon_t::WARNING, "Force NMI?", action_t::FORCE_NMI_TRIGGER);
-      break;
-    case action_t::FORCE_NMI_TRIGGER: res = on_force_nmi_trigger(); break;
     case action_t::CLOSE_POPUP: popup_close(); break;
   }
 
@@ -557,15 +541,15 @@ static result_t on_menu_selected(ListItem *mi) {
 static result_t on_open_dir(ListItem *mi) {
   if (strcmp(mi->label, "../") == 0) {
     // parent directory
-    int sep_idx = fs::find_parent_separator(current_dir);
+    int sep_idx = fsys::find_parent_separator(current_dir);
     if (sep_idx >= 0) {
       current_dir[sep_idx + 1] = '\0';
     }
   } else {
     // sub directory
-    SHAPONES_TRY(fs::append_path(current_dir, mi->label));
+    SHAPONES_TRY(fsys::append_path(current_dir, mi->label));
   }
-  SHAPONES_TRY(fs::append_separator(current_dir));
+  SHAPONES_TRY(fsys::append_separator(current_dir));
   load_file_list_tab();
   return result_t::SUCCESS;
 }
@@ -573,7 +557,7 @@ static result_t on_open_dir(ListItem *mi) {
 static result_t on_load_rom(ListItem *mi) {
   char path[nes::MAX_PATH_LENGTH + 1];
   strncpy(path, current_dir, nes::MAX_PATH_LENGTH);
-  SHAPONES_TRY(fs::append_path(path, mi->label));
+  SHAPONES_TRY(fsys::append_path(path, mi->label));
   unmap_ines();
   const uint8_t *ines = nullptr;
   size_t ines_size = 0;
@@ -624,16 +608,9 @@ static result_t on_load_state(ListItem *mi) {
 static result_t on_delete_state() {
   char path[nes::MAX_PATH_LENGTH + 1];
   SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
-  SHAPONES_TRY(nes::fs_delete(path));
+  SHAPONES_TRY(nes::fsys::remove(path));
   popup_close();
   load_state_list_tab();
-  return result_t::SUCCESS;
-}
-
-static result_t on_force_nmi_trigger() {
-  interrupt::assert_nmi();
-  popup_close();
-  hide();
   return result_t::SUCCESS;
 }
 

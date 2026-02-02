@@ -207,25 +207,25 @@ uint32_t get_state_size() {
 }
 
 result_t save_state(void *file_handle) {
-  SHAPONES_TRY(fs_write(file_handle, wram, WRAM_SIZE));
-  SHAPONES_TRY(fs_write(file_handle, vram, VRAM_SIZE));
+  SHAPONES_TRY(fsys::write(file_handle, wram, WRAM_SIZE));
+  SHAPONES_TRY(fsys::write(file_handle, vram, VRAM_SIZE));
   if (prgram_size > 0) {
-    SHAPONES_TRY(fs_write(file_handle, prgram, prgram_size));
+    SHAPONES_TRY(fsys::write(file_handle, prgram, prgram_size));
   }
   if (chrram_size > 0) {
-    SHAPONES_TRY(fs_write(file_handle, chrram, chrram_size));
+    SHAPONES_TRY(fsys::write(file_handle, chrram, chrram_size));
   }
   return result_t::SUCCESS;
 }
 
 result_t load_state(void *file_handle) {
-  SHAPONES_TRY(fs_read(file_handle, wram, WRAM_SIZE));
-  SHAPONES_TRY(fs_read(file_handle, vram, VRAM_SIZE));
+  SHAPONES_TRY(fsys::read(file_handle, wram, WRAM_SIZE));
+  SHAPONES_TRY(fsys::read(file_handle, vram, VRAM_SIZE));
   if (prgram_size > 0) {
-    SHAPONES_TRY(fs_read(file_handle, prgram, prgram_size));
+    SHAPONES_TRY(fsys::read(file_handle, prgram, prgram_size));
   }
   if (chrram_size > 0) {
-    SHAPONES_TRY(fs_read(file_handle, chrram, chrram_size));
+    SHAPONES_TRY(fsys::read(file_handle, chrram, chrram_size));
   }
   return result_t::SUCCESS;
 }

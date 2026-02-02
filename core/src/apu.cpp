@@ -580,14 +580,14 @@ result_t save_state(void *file_handle) {
   writer.u8(quarter_frame_count);
   writer.u8(frame_step_flags);
   writer.u8(status.raw);
-  return fs_write(file_handle, buff, sizeof(buff));
+  return fsys::write(file_handle, buff, sizeof(buff));
 }
 
 result_t load_state(void *file_handle) {
   write_queue.clear();
 
   uint8_t buff[STATE_SIZE];
-  SHAPONES_TRY(fs_read(file_handle, buff, sizeof(buff)));
+  SHAPONES_TRY(fsys::read(file_handle, buff, sizeof(buff)));
   uint8_t *p = buff;
   for (int i = 0; i < 2; i++) {
     pulse[i].load(p);
