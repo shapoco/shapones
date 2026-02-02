@@ -57,7 +57,7 @@ with open(OUTPUT_HPP, "w") as out_f:
     include_file("../src/common.cpp")
     include_file("../src/apu.cpp")
     include_file("../src/cpu.cpp")
-    include_file("../src/fs.cpp")
+    include_file("../src/fsys.cpp")
     include_file("../src/input.cpp")
     include_file("../src/interrupt.cpp")
     include_file("../src/mapper.cpp")

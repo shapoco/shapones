@@ -39,4 +39,4 @@ flash: $(BIN)
 
 clean:
 	rm -rf "$(BIN_DIR)"
-	cd $(BUILD_DIR) && ./d.sh || true
+	rm -rf "$(BUILD_DIR)"

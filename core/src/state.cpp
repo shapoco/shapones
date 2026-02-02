@@ -1,7 +1,7 @@
 #include "shapones/state.hpp"
 #include "shapones/apu.hpp"
 #include "shapones/cpu.hpp"
-#include "shapones/fs.hpp"
+#include "shapones/fsys.hpp"
 #include "shapones/host_intf.hpp"
 #include "shapones/input.hpp"
 #include "shapones/interrupt.hpp"
