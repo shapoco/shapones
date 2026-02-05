@@ -384,11 +384,11 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
 
     if (focus_y < SCREEN_HEIGHT) {
       if (focus_x <= SCREEN_WIDTH && SCREEN_WIDTH < next_focus_x) {
-        mapper::instance->hblank(reg, focus_y);
+        irq |= mapper::instance->hblank(reg, focus_y);
       }
     } else {
       if (focus_x == 0) {
-        mapper::instance->vblank(reg);
+        irq |= mapper::instance->vblank(reg);
       }
     }
 

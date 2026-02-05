@@ -220,14 +220,12 @@ void loop() {
     }
   }
 
-  for (int j = 0; j < 10; j++) {
-    for (int i = 0; i < 10; i++) {
-      nes::cpu::service();
-    }
-#if EXPERIMENTAL_ENABLE_REMOTE
-    pop_comp_queue();
-#endif
+  for (int i = 0; i < 10; i++) {
+    nes::cpu::service();
   }
+#if EXPERIMENTAL_ENABLE_REMOTE
+  pop_comp_queue();
+#endif
 
   audio_stream(false);
 }

@@ -87,7 +87,6 @@ void stop();
 result_t service();
 
 uint8_t bus_read(addr_t addr);
-void bus_write(addr_t addr, uint8_t data);
 
 uint32_t get_state_size();
 result_t save_state(void *file_handle);
