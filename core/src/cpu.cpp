@@ -558,320 +558,300 @@ result_t service() {
     } else {
       uint8_t op_code = fetch();
 
+      static const void *JUMPTABLE[] = {
       // clang-format off
-      switch(op_code) {
-
-      case 0x00: opBRK();                                     cycle += 7; break;
-      case 0x20: opJSR(fetch_abs());                          cycle += 6; break;
-      case 0x40: opRTI();                                     cycle += 6; break;
-      case 0x60: opRTS();                                     cycle += 6; break;
-      case 0x4c: opJMP(fetch_abs());                          cycle += 3; break;
-      case 0x6c: opJMP(fetch_ind_abs());                      cycle += 5; break;
-
-      case 0x24: opBIT(fetch_zpg());                          cycle += 3; break;
-      case 0x2c: opBIT(fetch_abs());                          cycle += 4; break;
-
-      case 0x08: opPHP();                                     cycle += 3; break;
-      case 0x28: opPLP();                                     cycle += 4; break;
-      case 0x48: opPHA();                                     cycle += 3; break;
-      case 0x68: opPLA();                                     cycle += 4; break;
-
-      case 0x10: opBPL(fetch_rel(&cycle), &cycle);            cycle += 2; break;
-      case 0x30: opBMI(fetch_rel(&cycle), &cycle);            cycle += 2; break;
-      case 0x50: opBVC(fetch_rel(&cycle), &cycle);            cycle += 2; break;
-      case 0x70: opBVS(fetch_rel(&cycle), &cycle);            cycle += 2; break;
-      case 0x90: opBCC(fetch_rel(&cycle), &cycle);            cycle += 2; break;
-      case 0xb0: opBCS(fetch_rel(&cycle), &cycle);            cycle += 2; break;
-      case 0xd0: opBNE(fetch_rel(&cycle), &cycle);            cycle += 2; break;
-      case 0xf0: opBEQ(fetch_rel(&cycle), &cycle);            cycle += 2; break;
-
-      case 0x18: opCLC();                                     cycle += 2; break;
-      case 0x38: opSEC();                                     cycle += 2; break;
-      case 0x58: opCLI();                                     cycle += 2; break;
-      case 0x78: opSEI();                                     cycle += 2; break;
-      case 0xb8: opCLV();                                     cycle += 2; break;
-      case 0xd8: opCLD();                                     cycle += 2; break;
-      case 0xf8: opSED();                                     cycle += 2; break;
-
-      case 0x8a: opTXA();                                     cycle += 2; break;
-      case 0x98: opTYA();                                     cycle += 2; break;
-      case 0x9a: opTXS();                                     cycle += 2; break;
-      case 0xa8: opTAY();                                     cycle += 2; break;
-      case 0xaa: opTAX();                                     cycle += 2; break;
-      case 0xba: opTSX();                                     cycle += 2; break;
-
-      case 0x81: opSTA(fetch_pre_idx_ind(&cycle));            cycle += 6; break;
-      case 0x85: opSTA(fetch_zpg());                          cycle += 3; break;
-      case 0x8d: opSTA(fetch_abs());                          cycle += 4; break;
-      case 0x91: opSTA(fetch_post_idx_ind(&cycle));           cycle += 6; break;
-      case 0x95: opSTA(fetch_zpg_x());                        cycle += 4; break;
-      case 0x99: opSTA(fetch_abs_y(&cycle));                  cycle += 4; break;
-      case 0x9d: opSTA(fetch_abs_x(&cycle));                  cycle += 4; break;
-
-      case 0x86: opSTX(fetch_zpg());                          cycle += 3; break;
-      case 0x8e: opSTX(fetch_abs());                          cycle += 4; break;
-      case 0x96: opSTX(fetch_zpg_y());                        cycle += 4; break;
-
-      case 0x84: opSTY(fetch_zpg());                          cycle += 3; break;
-      case 0x8c: opSTY(fetch_abs());                          cycle += 4; break;
-      case 0x94: opSTY(fetch_zpg_x());                        cycle += 4; break;
-  
-      case 0xa1: opLDA(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
-      case 0xa5: opLDA(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0xa9: opLDA(fetch_imm());                          cycle += 2; break;
-      case 0xad: opLDA(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0xb1: opLDA(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
-      case 0xb5: opLDA(bus_read(fetch_zpg_x()));              cycle += 4; break;
-      case 0xb9: opLDA(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
-      case 0xbd: opLDA(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
-
-      case 0xa2: opLDX(fetch_imm());                          cycle += 2; break;
-      case 0xa6: opLDX(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0xae: opLDX(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0xb6: opLDX(bus_read(fetch_zpg_y()));              cycle += 4; break;
-      case 0xbe: opLDX(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
-
-      case 0xa0: opLDY(fetch_imm());                          cycle += 2; break;
-      case 0xa4: opLDY(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0xac: opLDY(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0xb4: opLDY(bus_read(fetch_zpg_x()));              cycle += 4; break;
-      case 0xbc: opLDY(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
-
-      case 0xc1: opCMP(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
-      case 0xc5: opCMP(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0xc9: opCMP(fetch_imm());                          cycle += 2; break;
-      case 0xcd: opCMP(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0xd1: opCMP(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
-      case 0xd5: opCMP(bus_read(fetch_zpg_x()));              cycle += 4; break;
-      case 0xd9: opCMP(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
-      case 0xdd: opCMP(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
-
-      case 0xe0: opCPX(fetch_imm());                          cycle += 2; break;
-      case 0xe4: opCPX(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0xec: opCPX(bus_read(fetch_abs()));                cycle += 4; break;
-
-      case 0xc0: opCPY(fetch_imm());                          cycle += 2; break;
-      case 0xc4: opCPY(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0xcc: opCPY(bus_read(fetch_abs()));                cycle += 4; break;
-
-      case 0xca: opDEX();                                     cycle += 2; break;
-      case 0x88: opDEY();                                     cycle += 2; break;
-      
-      case 0xe8: opINX();                                     cycle += 2; break;
-      case 0xc8: opINY();                                     cycle += 2; break;
-
-      case 0xc6: opDEC(fetch_zpg());                          cycle += 5; break;
-      case 0xce: opDEC(fetch_abs());                          cycle += 6; break;
-      case 0xd6: opDEC(fetch_zpg_x());                        cycle += 6; break;
-      case 0xde: opDEC(fetch_abs_x(&cycle));                  cycle += 7; break;
-
-      case 0xe6: opINC(fetch_zpg());                          cycle += 5; break;
-      case 0xee: opINC(fetch_abs());                          cycle += 6; break;
-      case 0xf6: opINC(fetch_zpg_x());                        cycle += 6; break;
-      case 0xfe: opINC(fetch_abs_x(&cycle));                  cycle += 7; break;
-
-      case 0x01: opORA(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
-      case 0x05: opORA(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0x09: opORA(fetch_imm());                          cycle += 2; break;
-      case 0x0d: opORA(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0x11: opORA(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
-      case 0x15: opORA(bus_read(fetch_zpg_x()));              cycle += 4; break;
-      case 0x19: opORA(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
-      case 0x1d: opORA(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
-
-      case 0x21: opAND(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
-      case 0x25: opAND(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0x29: opAND(fetch_imm());                          cycle += 2; break;
-      case 0x2d: opAND(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0x31: opAND(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
-      case 0x35: opAND(bus_read(fetch_zpg_x()));              cycle += 4; break;
-      case 0x39: opAND(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
-      case 0x3d: opAND(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
-
-      case 0x41: opEOR(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
-      case 0x45: opEOR(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0x49: opEOR(fetch_imm());                          cycle += 2; break;
-      case 0x4d: opEOR(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0x51: opEOR(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
-      case 0x55: opEOR(bus_read(fetch_zpg_x()));              cycle += 4; break;
-      case 0x59: opEOR(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
-      case 0x5d: opEOR(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
-
-      case 0x61: opADC(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
-      case 0x65: opADC(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0x69: opADC(fetch_imm());                          cycle += 2; break;
-      case 0x6d: opADC(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0x71: opADC(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
-      case 0x75: opADC(bus_read(fetch_zpg_x()));              cycle += 4; break;
-      case 0x79: opADC(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
-      case 0x7d: opADC(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
-
-      case 0xe1: opSBC(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
-      case 0xe5: opSBC(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0xe9: opSBC(fetch_imm());                          cycle += 2; break;
-      case 0xed: opSBC(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0xf1: opSBC(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
-      case 0xf5: opSBC(bus_read(fetch_zpg_x()));              cycle += 4; break;
-      case 0xf9: opSBC(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
-      case 0xfd: opSBC(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
-
-      case 0x06: opASL_m(fetch_zpg());                        cycle += 5; break;
-      case 0x0a: opASL_a();                                   cycle += 2; break;
-      case 0x0e: opASL_m(fetch_abs());                        cycle += 6; break;
-      case 0x16: opASL_m(fetch_zpg_x());                      cycle += 6; break;
-      case 0x1e: opASL_m(fetch_abs_x(&cycle));                cycle += 6; break;
-
-      case 0x26: opROL_m(fetch_zpg());                        cycle += 5; break;
-      case 0x2a: opROL_a();                                   cycle += 2; break;
-      case 0x2e: opROL_m(fetch_abs());                        cycle += 6; break;
-      case 0x36: opROL_m(fetch_zpg_x());                      cycle += 6; break;
-      case 0x3e: opROL_m(fetch_abs_x(&cycle));                cycle += 6; break;
-
-      case 0x46: opLSR_m(fetch_zpg());                        cycle += 5; break;
-      case 0x4a: opLSR_a();                                   cycle += 2; break;
-      case 0x4e: opLSR_m(fetch_abs());                        cycle += 6; break;
-      case 0x56: opLSR_m(fetch_zpg_x());                      cycle += 6; break;
-      case 0x5e: opLSR_m(fetch_abs_x(&cycle));                cycle += 6; break;
-
-      case 0x66: opROR_m(fetch_zpg());                        cycle += 5; break;
-      case 0x6a: opROR_a();                                   cycle += 2; break;
-      case 0x6e: opROR_m(fetch_abs());                        cycle += 6; break;
-      case 0x76: opROR_m(fetch_zpg_x());                      cycle += 6; break;
-      case 0x7e: opROR_m(fetch_abs_x(&cycle));                cycle += 6; break;
-      
-      case 0xea: opNOP();                                     cycle += 2; break;
-#if 0
-      // unofficial opcodes
-      case 0x03: opSLO(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
-      case 0x07: opSLO(fetch_zpg());                          cycle += 5; break;
-      case 0x0f: opSLO(fetch_abs());                          cycle += 6; break;
-      case 0x13: opSLO(fetch_post_idx_ind(&cycle));           cycle += 8; break;
-      case 0x17: opSLO(fetch_zpg_x());                        cycle += 6; break;
-      case 0x1b: opSLO(fetch_abs_y(&cycle));                  cycle += 7; break;
-      case 0x1f: opSLO(fetch_abs_x(&cycle));                  cycle += 7; break;
-
-      case 0x23: opRLA(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
-      case 0x27: opRLA(fetch_zpg());                          cycle += 5; break;
-      case 0x2f: opRLA(fetch_abs());                          cycle += 6; break;
-      case 0x33: opRLA(fetch_post_idx_ind(&cycle));           cycle += 8; break;
-      case 0x37: opRLA(fetch_zpg_x());                        cycle += 6; break;
-      case 0x3b: opRLA(fetch_abs_y(&cycle));                  cycle += 7; break;
-      case 0x3f: opRLA(fetch_abs_x(&cycle));                  cycle += 7; break;
-
-      case 0x43: opSRE(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
-      case 0x47: opSRE(fetch_zpg());                          cycle += 5; break;
-      case 0x4f: opSRE(fetch_abs());                          cycle += 6; break;
-      case 0x53: opSRE(fetch_post_idx_ind(&cycle));           cycle += 8; break;
-      case 0x57: opSRE(fetch_zpg_x());                        cycle += 6; break;
-      case 0x5b: opSRE(fetch_abs_y(&cycle));                  cycle += 7; break;
-      case 0x5f: opSRE(fetch_abs_x(&cycle));                  cycle += 7; break;
-
-      case 0x63: opRRA(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
-      case 0x67: opRRA(fetch_zpg());                          cycle += 5; break;
-      case 0x6f: opRRA(fetch_abs());                          cycle += 6; break;
-      case 0x73: opRRA(fetch_post_idx_ind(&cycle));           cycle += 8; break;
-      case 0x77: opRRA(fetch_zpg_x());                        cycle += 6; break;
-      case 0x7b: opRRA(fetch_abs_y(&cycle));                  cycle += 7; break;
-      case 0x7f: opRRA(fetch_abs_x(&cycle));                  cycle += 7; break;
-
-      case 0x83: opSAX(fetch_pre_idx_ind(&cycle));            cycle += 6; break;
-      case 0x87: opSAX(fetch_zpg());                          cycle += 3; break;
-      case 0x8f: opSAX(fetch_abs());                          cycle += 4; break;
-      case 0x97: opSAX(fetch_zpg_y());                        cycle += 4; break;
-
-      case 0xa3: opLAX(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
-      case 0xa7: opLAX(bus_read(fetch_zpg()));                cycle += 3; break;
-      case 0xab: opLAX(fetch_imm());                          cycle += 2; break;
-      case 0xaf: opLAX(bus_read(fetch_abs()));                cycle += 4; break;
-      case 0xb3: opLAX(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
-      case 0xb7: opLAX(bus_read(fetch_zpg_y()));              cycle += 4; break;
-      case 0xbf: opLAX(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
-
-      case 0xc3: opDCP(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
-      case 0xc7: opDCP(fetch_zpg());                          cycle += 5; break;
-      case 0xcf: opDCP(fetch_abs());                          cycle += 6; break;
-      case 0xd3: opDCP(fetch_post_idx_ind(&cycle));           cycle += 8; break;
-      case 0xd7: opDCP(fetch_zpg_x());                        cycle += 6; break;
-      case 0xdb: opDCP(fetch_abs_y(&cycle));                  cycle += 7; break;
-      case 0xdf: opDCP(fetch_abs_x(&cycle));                  cycle += 7; break;
-
-      case 0xe3: opISB(fetch_pre_idx_ind(&cycle));            cycle += 8; break;
-      case 0xe7: opISB(fetch_zpg());                          cycle += 5; break;
-      case 0xef: opISB(fetch_abs());                          cycle += 6; break;
-      case 0xf3: opISB(fetch_post_idx_ind(&cycle));           cycle += 8; break;
-      case 0xf7: opISB(fetch_zpg_x());                        cycle += 6; break;
-      case 0xfb: opISB(fetch_abs_y(&cycle));                  cycle += 7; break;
-      case 0xff: opISB(fetch_abs_x(&cycle));                  cycle += 7; break;
-
-      case 0xeb: opSBC(fetch_imm());                          cycle += 2; break;
-
-      case 0x1a: opNOP();                                     cycle += 2; break;
-      case 0x3a: opNOP();                                     cycle += 2; break;
-      case 0x5a: opNOP();                                     cycle += 2; break;
-      case 0x7a: opNOP();                                     cycle += 2; break;
-      case 0xda: opNOP();                                     cycle += 2; break;
-      case 0xfa: opNOP();                                     cycle += 2; break;
-
-      case 0x02: opNOP();                                     cycle += 2; break; // STP
-      case 0x12: opNOP();                                     cycle += 2; break; // STP
-      case 0x22: opNOP();                                     cycle += 2; break; // STP
-      case 0x32: opNOP();                                     cycle += 2; break; // STP
-      case 0x42: opNOP();                                     cycle += 2; break; // STP
-      case 0x52: opNOP();                                     cycle += 2; break; // STP
-      case 0x62: opNOP();                                     cycle += 2; break; // STP
-      case 0x72: opNOP();                                     cycle += 2; break; // STP
-      case 0x92: opNOP();                                     cycle += 2; break; // STP
-      case 0xb2: opNOP();                                     cycle += 2; break; // STP
-      case 0xd2: opNOP();                                     cycle += 2; break; // STP
-      case 0xf2: opNOP();                                     cycle += 2; break; // STP
-
-      case 0x9c: fetch_abs_x(&cycle); opNOP();                cycle += 5; break; // SHY
-      case 0x9e: fetch_abs_y(&cycle); opNOP();                cycle += 5; break; // SHX
-      case 0x0b: fetch_imm(); opNOP();                        cycle += 2; break; // ANC
-      case 0x2b: fetch_imm(); opNOP();                        cycle += 2; break; // ANC
-      case 0x4b: fetch_imm(); opNOP();                        cycle += 2; break; // ALR
-      case 0x6b: fetch_imm(); opNOP();                        cycle += 2; break; // ARR
-      case 0x8b: fetch_imm(); opNOP();                        cycle += 2; break; // XAA
-      case 0xcb: fetch_imm(); opNOP();                        cycle += 2; break; // AXS
-
-      case 0x93: fetch_post_idx_ind(&cycle); opNOP();         cycle += 6; break; // AHX
-      case 0x9f: fetch_abs_y(&cycle); opNOP();                cycle += 5; break; // AHX
-
-      case 0x9b: fetch_abs_y(&cycle); opNOP();                cycle += 5; break; // TAS
-      case 0xbb: fetch_abs_y(&cycle); opNOP();                cycle += 4; break; // LAS
-
-      case 0x80: fetch_imm(); opNOP();                        cycle += 2; break; 
-      case 0x82: fetch_imm(); opNOP();                        cycle += 2; break; 
-      case 0x89: fetch_imm(); opNOP();                        cycle += 2; break; 
-      case 0xc2: fetch_imm(); opNOP();                        cycle += 2; break;
-      case 0xe2: fetch_imm(); opNOP();                        cycle += 3; break;
-
-      case 0x04: fetch_zpg(); opNOP();                        cycle += 3; break; 
-      case 0x44: fetch_zpg(); opNOP();                        cycle += 3; break; 
-      case 0x64: fetch_zpg(); opNOP();                        cycle += 3; break;
-
-      case 0x0c: fetch_abs(); opNOP();                        cycle += 4; break;
-
-      case 0x14: fetch_zpg_x(); opNOP();                      cycle += 4; break;
-      case 0x34: fetch_zpg_x(); opNOP();                      cycle += 4; break;
-      case 0x54: fetch_zpg_x(); opNOP();                      cycle += 4; break;
-      case 0x74: fetch_zpg_x(); opNOP();                      cycle += 4; break;
-      case 0xd4: fetch_zpg_x(); opNOP();                      cycle += 4; break;
-      case 0xf4: fetch_zpg_x(); opNOP();                      cycle += 4; break;
-
-      case 0x1c: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
-      case 0x3c: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
-      case 0x5c: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
-      case 0x7c: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
-      case 0xdc: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
-      case 0xfc: fetch_abs_x(&cycle); opNOP();                cycle += 4; break;
-#else
-      default:
-          SHAPONES_ERRORF("UNKNOWN INSTRUCTION: 0x%02x (PC=0x%04x)\n", (int)op_code, (int)reg.PC);
-          break;
-#endif
-      }
+          &&op00, &&op01, &&op02, &&op03, &&op04, &&op05, &&op06, &&op07, &&op08, &&op09, &&op0A, &&op0B, &&op0C, &&op0D, &&op0E, &&op0F,
+          &&op10, &&op11, &&op12, &&op13, &&op14, &&op15, &&op16, &&op17, &&op18, &&op19, &&op1A, &&op1B, &&op1C, &&op1D, &&op1E, &&op1F,
+          &&op20, &&op21, &&op22, &&op23, &&op24, &&op25, &&op26, &&op27, &&op28, &&op29, &&op2A, &&op2B, &&op2C, &&op2D, &&op2E, &&op2F,
+          &&op30, &&op31, &&op32, &&op33, &&op34, &&op35, &&op36, &&op37, &&op38, &&op39, &&op3A, &&op3B, &&op3C, &&op3D, &&op3E, &&op3F,
+          &&op40, &&op41, &&op42, &&op43, &&op44, &&op45, &&op46, &&op47, &&op48, &&op49, &&op4A, &&op4B, &&op4C, &&op4D, &&op4E, &&op4F,
+          &&op50, &&op51, &&op52, &&op53, &&op54, &&op55, &&op56, &&op57, &&op58, &&op59, &&op5A, &&op5B, &&op5C, &&op5D, &&op5E, &&op5F,
+          &&op60, &&op61, &&op62, &&op63, &&op64, &&op65, &&op66, &&op67, &&op68, &&op69, &&op6A, &&op6B, &&op6C, &&op6D, &&op6E, &&op6F,
+          &&op70, &&op71, &&op72, &&op73, &&op74, &&op75, &&op76, &&op77, &&op78, &&op79, &&op7A, &&op7B, &&op7C, &&op7D, &&op7E, &&op7F,
+          &&op80, &&op81, &&op82, &&op83, &&op84, &&op85, &&op86, &&op87, &&op88, &&op89, &&op8A, &&op8B, &&op8C, &&op8D, &&op8E, &&op8F,
+          &&op90, &&op91, &&op92, &&op93, &&op94, &&op95, &&op96, &&op97, &&op98, &&op99, &&op9A, &&op9B, &&op9C, &&op9D, &&op9E, &&op9F,
+          &&opA0, &&opA1, &&opA2, &&opA3, &&opA4, &&opA5, &&opA6, &&opA7, &&opA8, &&opA9, &&opAA, &&opAB, &&opAC, &&opAD, &&opAE, &&opAF,
+          &&opB0, &&opB1, &&opB2, &&opB3, &&opB4, &&opB5, &&opB6, &&opB7, &&opB8, &&opB9, &&opBA, &&opBB, &&opBC, &&opBD, &&opBE, &&opBF,
+          &&opC0, &&opC1, &&opC2, &&opC3, &&opC4, &&opC5, &&opC6, &&opC7, &&opC8, &&opC9, &&opCA, &&opCB, &&opCC, &&opCD, &&opCE, &&opCF,
+          &&opD0, &&opD1, &&opD2, &&opD3, &&opD4, &&opD5, &&opD6, &&opD7, &&opD8, &&opD9, &&opDA, &&opDB, &&opDC, &&opDD, &&opDE, &&opDF,
+          &&opE0, &&opE1, &&opE2, &&opE3, &&opE4, &&opE5, &&opE6, &&opE7, &&opE8, &&opE9, &&opEA, &&opEB, &&opEC, &&opED, &&opEE, &&opEF,
+          &&opF0, &&opF1, &&opF2, &&opF3, &&opF4, &&opF5, &&opF6, &&opF7, &&opF8, &&opF9, &&opFA, &&opFB, &&opFC, &&opFD, &&opFE, &&opFF,
       // clang-format on
+      };
+
+      goto *JUMPTABLE[op_code];
+
+      // clang-format off
+      do {
+      op00: opBRK();                                     cycle += 7; break;
+      op20: opJSR(fetch_abs());                          cycle += 6; break;
+      op40: opRTI();                                     cycle += 6; break;
+      op60: opRTS();                                     cycle += 6; break;
+      op4C: opJMP(fetch_abs());                          cycle += 3; break;
+      op6C: opJMP(fetch_ind_abs());                      cycle += 5; break;
+
+      op24: opBIT(fetch_zpg());                          cycle += 3; break;
+      op2C: opBIT(fetch_abs());                          cycle += 4; break;
+
+      op08: opPHP();                                     cycle += 3; break;
+      op28: opPLP();                                     cycle += 4; break;
+      op48: opPHA();                                     cycle += 3; break;
+      op68: opPLA();                                     cycle += 4; break;
+
+      op10: opBPL(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+      op30: opBMI(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+      op50: opBVC(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+      op70: opBVS(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+      op90: opBCC(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+      opB0: opBCS(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+      opD0: opBNE(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+      opF0: opBEQ(fetch_rel(&cycle), &cycle);            cycle += 2; break;
+      op18: opCLC();                                     cycle += 2; break;
+      op38: opSEC();                                     cycle += 2; break;
+      op58: opCLI();                                     cycle += 2; break;
+      op78: opSEI();                                     cycle += 2; break;
+      opB8: opCLV();                                     cycle += 2; break;
+      opD8: opCLD();                                     cycle += 2; break;
+      opF8: opSED();                                     cycle += 2; break;
+      op8A: opTXA();                                     cycle += 2; break;
+      op98: opTYA();                                     cycle += 2; break;
+      op9A: opTXS();                                     cycle += 2; break;
+      opA8: opTAY();                                     cycle += 2; break;
+      opAA: opTAX();                                     cycle += 2; break;
+      opBA: opTSX();                                     cycle += 2; break;
+      op81: opSTA(fetch_pre_idx_ind(&cycle));            cycle += 6; break;
+      op85: opSTA(fetch_zpg());                          cycle += 3; break;
+      op8D: opSTA(fetch_abs());                          cycle += 4; break;
+      op91: opSTA(fetch_post_idx_ind(&cycle));           cycle += 6; break;
+      op95: opSTA(fetch_zpg_x());                        cycle += 4; break;
+      op99: opSTA(fetch_abs_y(&cycle));                  cycle += 4; break;
+      op9D: opSTA(fetch_abs_x(&cycle));                  cycle += 4; break;
+      op86: opSTX(fetch_zpg());                          cycle += 3; break;
+      op8E: opSTX(fetch_abs());                          cycle += 4; break;
+      op96: opSTX(fetch_zpg_y());                        cycle += 4; break;
+      op84: opSTY(fetch_zpg());                          cycle += 3; break;
+      op8C: opSTY(fetch_abs());                          cycle += 4; break;
+      op94: opSTY(fetch_zpg_x());                        cycle += 4; break;
+      opA1: opLDA(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+      opA5: opLDA(bus_read(fetch_zpg()));                cycle += 3; break;
+      opA9: opLDA(fetch_imm());                          cycle += 2; break;
+      opAD: opLDA(bus_read(fetch_abs()));                cycle += 4; break;
+      opB1: opLDA(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+      opB5: opLDA(bus_read(fetch_zpg_x()));              cycle += 4; break;
+      opB9: opLDA(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+      opBD: opLDA(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+      opA2: opLDX(fetch_imm());                          cycle += 2; break;
+      opA6: opLDX(bus_read(fetch_zpg()));                cycle += 3; break;
+      opAE: opLDX(bus_read(fetch_abs()));                cycle += 4; break;
+      opB6: opLDX(bus_read(fetch_zpg_y()));              cycle += 4; break;
+      opBE: opLDX(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+      opA0: opLDY(fetch_imm());                          cycle += 2; break;
+      opA4: opLDY(bus_read(fetch_zpg()));                cycle += 3; break;
+      opAC: opLDY(bus_read(fetch_abs()));                cycle += 4; break;
+      opB4: opLDY(bus_read(fetch_zpg_x()));              cycle += 4; break;
+      opBC: opLDY(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+      opC1: opCMP(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+      opC5: opCMP(bus_read(fetch_zpg()));                cycle += 3; break;
+      opC9: opCMP(fetch_imm());                          cycle += 2; break;
+      opCD: opCMP(bus_read(fetch_abs()));                cycle += 4; break;
+      opD1: opCMP(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+      opD5: opCMP(bus_read(fetch_zpg_x()));              cycle += 4; break;
+      opD9: opCMP(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+      opDD: opCMP(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+      opE0: opCPX(fetch_imm());                          cycle += 2; break;
+      opE4: opCPX(bus_read(fetch_zpg()));                cycle += 3; break;
+      opEC: opCPX(bus_read(fetch_abs()));                cycle += 4; break;
+      opC0: opCPY(fetch_imm());                          cycle += 2; break;
+      opC4: opCPY(bus_read(fetch_zpg()));                cycle += 3; break;
+      opCC: opCPY(bus_read(fetch_abs()));                cycle += 4; break;
+      opCA: opDEX();                                     cycle += 2; break;
+      op88: opDEY();                                     cycle += 2; break;
+      opE8: opINX();                                     cycle += 2; break;
+      opC8: opINY();                                     cycle += 2; break;
+      opC6: opDEC(fetch_zpg());                          cycle += 5; break;
+      opCE: opDEC(fetch_abs());                          cycle += 6; break;
+      opD6: opDEC(fetch_zpg_x());                        cycle += 6; break;
+      opDE: opDEC(fetch_abs_x(&cycle));                  cycle += 7; break;
+      opE6: opINC(fetch_zpg());                          cycle += 5; break;
+      opEE: opINC(fetch_abs());                          cycle += 6; break;
+      opF6: opINC(fetch_zpg_x());                        cycle += 6; break;
+      opFE: opINC(fetch_abs_x(&cycle));                  cycle += 7; break;
+      op01: opORA(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+      op05: opORA(bus_read(fetch_zpg()));                cycle += 3; break;
+      op09: opORA(fetch_imm());                          cycle += 2; break;
+      op0D: opORA(bus_read(fetch_abs()));                cycle += 4; break;
+      op11: opORA(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+      op15: opORA(bus_read(fetch_zpg_x()));              cycle += 4; break;
+      op19: opORA(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+      op1D: opORA(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+      op21: opAND(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+      op25: opAND(bus_read(fetch_zpg()));                cycle += 3; break;
+      op29: opAND(fetch_imm());                          cycle += 2; break;
+      op2D: opAND(bus_read(fetch_abs()));                cycle += 4; break;
+      op31: opAND(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+      op35: opAND(bus_read(fetch_zpg_x()));              cycle += 4; break;
+      op39: opAND(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+      op3D: opAND(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+      op41: opEOR(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+      op45: opEOR(bus_read(fetch_zpg()));                cycle += 3; break;
+      op49: opEOR(fetch_imm());                          cycle += 2; break;
+      op4D: opEOR(bus_read(fetch_abs()));                cycle += 4; break;
+      op51: opEOR(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+      op55: opEOR(bus_read(fetch_zpg_x()));              cycle += 4; break;
+      op59: opEOR(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+      op5D: opEOR(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+      op61: opADC(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+      op65: opADC(bus_read(fetch_zpg()));                cycle += 3; break;
+      op69: opADC(fetch_imm());                          cycle += 2; break;
+      op6D: opADC(bus_read(fetch_abs()));                cycle += 4; break;
+      op71: opADC(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+      op75: opADC(bus_read(fetch_zpg_x()));              cycle += 4; break;
+      op79: opADC(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+      op7D: opADC(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+      opE1: opSBC(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; break;
+      opE5: opSBC(bus_read(fetch_zpg()));                cycle += 3; break;
+      opE9: opSBC(fetch_imm());                          cycle += 2; break;
+      opED: opSBC(bus_read(fetch_abs()));                cycle += 4; break;
+      opF1: opSBC(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; break;
+      opF5: opSBC(bus_read(fetch_zpg_x()));              cycle += 4; break;
+      opF9: opSBC(bus_read(fetch_abs_y(&cycle)));        cycle += 4; break;
+      opFD: opSBC(bus_read(fetch_abs_x(&cycle)));        cycle += 4; break;
+      op06: opASL_m(fetch_zpg());                        cycle += 5; break;
+      op0A: opASL_a();                                   cycle += 2; break;
+      op0E: opASL_m(fetch_abs());                        cycle += 6; break;
+      op16: opASL_m(fetch_zpg_x());                      cycle += 6; break;
+      op1E: opASL_m(fetch_abs_x(&cycle));                cycle += 6; break;
+      op26: opROL_m(fetch_zpg());                        cycle += 5; break;
+      op2A: opROL_a();                                   cycle += 2; break;
+      op2E: opROL_m(fetch_abs());                        cycle += 6; break;
+      op36: opROL_m(fetch_zpg_x());                      cycle += 6; break;
+      op3E: opROL_m(fetch_abs_x(&cycle));                cycle += 6; break;
+      op46: opLSR_m(fetch_zpg());                        cycle += 5; break;
+      op4A: opLSR_a();                                   cycle += 2; break;
+      op4E: opLSR_m(fetch_abs());                        cycle += 6; break;
+      op56: opLSR_m(fetch_zpg_x());                      cycle += 6; break;
+      op5E: opLSR_m(fetch_abs_x(&cycle));                cycle += 6; break;
+      op66: opROR_m(fetch_zpg());                        cycle += 5; break;
+      op6A: opROR_a();                                   cycle += 2; break;
+      op6E: opROR_m(fetch_abs());                        cycle += 6; break;
+      op76: opROR_m(fetch_zpg_x());                      cycle += 6; break;
+      op7E: opROR_m(fetch_abs_x(&cycle));                cycle += 6; break;
+      opEA: opNOP();                                     cycle += 2; break;
+
+      // unofficial opcodes
+      op03: /* opSLO(fetch_pre_idx_ind(&cycle));            cycle += 8; */ break;
+      op07: /* opSLO(fetch_zpg());                          cycle += 5; */ break;
+      op0F: /* opSLO(fetch_abs());                          cycle += 6; */ break;
+      op13: /* opSLO(fetch_post_idx_ind(&cycle));           cycle += 8; */ break;
+      op17: /* opSLO(fetch_zpg_x());                        cycle += 6; */ break;
+      op1B: /* opSLO(fetch_abs_y(&cycle));                  cycle += 7; */ break;
+      op1F: /* opSLO(fetch_abs_x(&cycle));                  cycle += 7; */ break;
+      op23: /* opRLA(fetch_pre_idx_ind(&cycle));            cycle += 8; */ break;
+      op27: /* opRLA(fetch_zpg());                          cycle += 5; */ break;
+      op2F: /* opRLA(fetch_abs());                          cycle += 6; */ break;
+      op33: /* opRLA(fetch_post_idx_ind(&cycle));           cycle += 8; */ break;
+      op37: /* opRLA(fetch_zpg_x());                        cycle += 6; */ break;
+      op3B: /* opRLA(fetch_abs_y(&cycle));                  cycle += 7; */ break;
+      op3F: /* opRLA(fetch_abs_x(&cycle));                  cycle += 7; */ break;
+      op43: /* opSRE(fetch_pre_idx_ind(&cycle));            cycle += 8; */ break;
+      op47: /* opSRE(fetch_zpg());                          cycle += 5; */ break;
+      op4F: /* opSRE(fetch_abs());                          cycle += 6; */ break;
+      op53: /* opSRE(fetch_post_idx_ind(&cycle));           cycle += 8; */ break;
+      op57: /* opSRE(fetch_zpg_x());                        cycle += 6; */ break;
+      op5B: /* opSRE(fetch_abs_y(&cycle));                  cycle += 7; */ break;
+      op5F: /* opSRE(fetch_abs_x(&cycle));                  cycle += 7; */ break;
+      op63: /* opRRA(fetch_pre_idx_ind(&cycle));            cycle += 8; */ break;
+      op67: /* opRRA(fetch_zpg());                          cycle += 5; */ break;
+      op6F: /* opRRA(fetch_abs());                          cycle += 6; */ break;
+      op73: /* opRRA(fetch_post_idx_ind(&cycle));           cycle += 8; */ break;
+      op77: /* opRRA(fetch_zpg_x());                        cycle += 6; */ break;
+      op7B: /* opRRA(fetch_abs_y(&cycle));                  cycle += 7; */ break;
+      op7F: /* opRRA(fetch_abs_x(&cycle));                  cycle += 7; */ break;
+      op83: /* opSAX(fetch_pre_idx_ind(&cycle));            cycle += 6; */ break;
+      op87: /* opSAX(fetch_zpg());                          cycle += 3; */ break;
+      op8F: /* opSAX(fetch_abs());                          cycle += 4; */ break;
+      op97: /* opSAX(fetch_zpg_y());                        cycle += 4; */ break;
+      opA3: /* opLAX(bus_read(fetch_pre_idx_ind(&cycle)));  cycle += 6; */ break;
+      opA7: /* opLAX(bus_read(fetch_zpg()));                cycle += 3; */ break;
+      opAB: /* opLAX(fetch_imm());                          cycle += 2; */ break;
+      opAF: /* opLAX(bus_read(fetch_abs()));                cycle += 4; */ break;
+      opB3: /* opLAX(bus_read(fetch_post_idx_ind(&cycle))); cycle += 5; */ break;
+      opB7: /* opLAX(bus_read(fetch_zpg_y()));              cycle += 4; */ break;
+      opBF: /* opLAX(bus_read(fetch_abs_y(&cycle)));        cycle += 4; */ break;
+      opC3: /* opDCP(fetch_pre_idx_ind(&cycle));            cycle += 8; */ break;
+      opC7: /* opDCP(fetch_zpg());                          cycle += 5; */ break;
+      opCF: /* opDCP(fetch_abs());                          cycle += 6; */ break;
+      opD3: /* opDCP(fetch_post_idx_ind(&cycle));           cycle += 8; */ break;
+      opD7: /* opDCP(fetch_zpg_x());                        cycle += 6; */ break;
+      opDB: /* opDCP(fetch_abs_y(&cycle));                  cycle += 7; */ break;
+      opDF: /* opDCP(fetch_abs_x(&cycle));                  cycle += 7; */ break;
+      opE3: /* opISB(fetch_pre_idx_ind(&cycle));            cycle += 8; */ break;
+      opE7: /* opISB(fetch_zpg());                          cycle += 5; */ break;
+      opEF: /* opISB(fetch_abs());                          cycle += 6; */ break;
+      opF3: /* opISB(fetch_post_idx_ind(&cycle));           cycle += 8; */ break;
+      opF7: /* opISB(fetch_zpg_x());                        cycle += 6; */ break;
+      opFB: /* opISB(fetch_abs_y(&cycle));                  cycle += 7; */ break;
+      opFF: /* opISB(fetch_abs_x(&cycle));                  cycle += 7; */ break;
+      opEB: /* opSBC(fetch_imm());                          cycle += 2; */ break;
+      op1A: /* opNOP();                                     cycle += 2; */ break;
+      op3A: /* opNOP();                                     cycle += 2; */ break;
+      op5A: /* opNOP();                                     cycle += 2; */ break;
+      op7A: /* opNOP();                                     cycle += 2; */ break;
+      opDA: /* opNOP();                                     cycle += 2; */ break;
+      opFA: /* opNOP();                                     cycle += 2; */ break;
+      op02: /* opNOP();                                     cycle += 2; */ break; // STP
+      op12: /* opNOP();                                     cycle += 2; */ break; // STP
+      op22: /* opNOP();                                     cycle += 2; */ break; // STP
+      op32: /* opNOP();                                     cycle += 2; */ break; // STP
+      op42: /* opNOP();                                     cycle += 2; */ break; // STP
+      op52: /* opNOP();                                     cycle += 2; */ break; // STP
+      op62: /* opNOP();                                     cycle += 2; */ break; // STP
+      op72: /* opNOP();                                     cycle += 2; */ break; // STP
+      op92: /* opNOP();                                     cycle += 2; */ break; // STP
+      opB2: /* opNOP();                                     cycle += 2; */ break; // STP
+      opD2: /* opNOP();                                     cycle += 2; */ break; // STP
+      opF2: /* opNOP();                                     cycle += 2; */ break; // STP
+      op9C: /* fetch_abs_x(&cycle); opNOP();                cycle += 5; */ break; // SHY
+      op9E: /* fetch_abs_y(&cycle); opNOP();                cycle += 5; */ break; // SHX
+      op0B: /* fetch_imm(); opNOP();                        cycle += 2; */ break; // ANC
+      op2B: /* fetch_imm(); opNOP();                        cycle += 2; */ break; // ANC
+      op4B: /* fetch_imm(); opNOP();                        cycle += 2; */ break; // ALR
+      op6B: /* fetch_imm(); opNOP();                        cycle += 2; */ break; // ARR
+      op8B: /* fetch_imm(); opNOP();                        cycle += 2; */ break; // XAA
+      opCB: /* fetch_imm(); opNOP();                        cycle += 2; */ break; // AXS
+      op93: /* fetch_post_idx_ind(&cycle); opNOP();         cycle += 6; */ break; // AHX
+      op9F: /* fetch_abs_y(&cycle); opNOP();                cycle += 5; */ break; // AHX
+      op9B: /* fetch_abs_y(&cycle); opNOP();                cycle += 5; */ break; // TAS
+      opBB: /* fetch_abs_y(&cycle); opNOP();                cycle += 4; */ break; // LAS
+      op80: /* fetch_imm(); opNOP();                        cycle += 2; */ break; 
+      op82: /* fetch_imm(); opNOP();                        cycle += 2; */ break; 
+      op89: /* fetch_imm(); opNOP();                        cycle += 2; */ break; 
+      opC2: /* fetch_imm(); opNOP();                        cycle += 2; */ break;
+      opE2: /* fetch_imm(); opNOP();                        cycle += 3; */ break;
+      op04: /* fetch_zpg(); opNOP();                        cycle += 3; */ break; 
+      op44: /* fetch_zpg(); opNOP();                        cycle += 3; */ break; 
+      op64: /* fetch_zpg(); opNOP();                        cycle += 3; */ break;
+      op0C: /* fetch_abs(); opNOP();                        cycle += 4; */ break;
+      op14: /* fetch_zpg_x(); opNOP();                      cycle += 4; */ break;
+      op34: /* fetch_zpg_x(); opNOP();                      cycle += 4; */ break;
+      op54: /* fetch_zpg_x(); opNOP();                      cycle += 4; */ break;
+      op74: /* fetch_zpg_x(); opNOP();                      cycle += 4; */ break;
+      opD4: /* fetch_zpg_x(); opNOP();                      cycle += 4; */ break;
+      opF4: /* fetch_zpg_x(); opNOP();                      cycle += 4; */ break;
+      op1C: /* fetch_abs_x(&cycle); opNOP();                cycle += 4; */ break;
+      op3C: /* fetch_abs_x(&cycle); opNOP();                cycle += 4; */ break;
+      op5C: /* fetch_abs_x(&cycle); opNOP();                cycle += 4; */ break;
+      op7C: /* fetch_abs_x(&cycle); opNOP();                cycle += 4; */ break;
+      opDC: /* fetch_abs_x(&cycle); opNOP();                cycle += 4; */ break;
+      opFC: /* fetch_abs_x(&cycle); opNOP();                cycle += 4; */ break;
+        // clang-format on
+
+      opXX:
+        SHAPONES_ERRORF("UNKNOWN INSTRUCTION: 0x%02x (PC=0x%04x)\n",
+                        (int)op_code, (int)reg.PC);
+        break;
+
+      } while (0);
     }  // if
 
 #if SHAPONES_IRQ_PENDING_SUPPORT
