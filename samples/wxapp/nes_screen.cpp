@@ -20,6 +20,7 @@ static const uint32_t colors[] = {
 
 static double total_emu_time_ms = 0;
 static int total_frames = 0;
+static double next_vsync_ms = 0;
 
 static double get_time_ms() {
   auto now = std::chrono::system_clock::now().time_since_epoch();
@@ -33,6 +34,7 @@ FcScreen::FcScreen(wxFrame *parent, wxWindowID id)
   owner = parent;
   SetBackgroundColour(*wxBLACK);
   frame_buff = wxImage(nes::SCREEN_WIDTH * 2, nes::SCREEN_HEIGHT * 2);
+  next_vsync_ms = get_time_ms();
 }
 
 BEGIN_EVENT_TABLE(FcScreen, wxScrolledWindow)
@@ -47,6 +49,12 @@ void FcScreen::Render() {
   static int itvl = 0;
   bool upd = (((itvl++) & 0x3) == 0);
   uint8_t line_buff[nes::SCREEN_WIDTH];
+
+  double now_ms = get_time_ms();
+  if (now_ms < next_vsync_ms) {
+    return;
+  }
+  next_vsync_ms += 1000.0 / 60.0;
 
   res = nes::vsync(line_buff);
   auto wr_ptr = frame_buff.GetData();

@@ -445,8 +445,8 @@ result_t service() {
   cycle_t ppu_cycle = ppu_cycle_count;
 
   while (m-- > 0 && !ppu_scroll_changed) {
-    cycle_t ppu_cycle_diff = ppu_cycle - ppu::cycle_following();
-    if (ppu_cycle_diff > ppu::MAX_DELAY_CYCLES) {
+    cycle_t ppu_cycle_diff = ppu::cycle_following() - ppu_cycle;
+    if (ppu_cycle_diff & 0x80000000) {
       break;
     }
 
@@ -779,7 +779,7 @@ result_t service() {
 
     }  // if
 
-    ppu_cycle += dma_cycle_steal;
+    cycle += dma_cycle_steal;
     dma_cycle_steal = 0;
 
     ppu_cycle += cycle * 3;

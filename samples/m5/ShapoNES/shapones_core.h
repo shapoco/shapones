@@ -967,8 +967,6 @@ class SemaphoreBlock {
 
 namespace nes::ppu {
 
-static constexpr cycle_t MAX_DELAY_CYCLES = 128;
-
 static constexpr int TILE_SIZE = 8;
 static constexpr int NUM_TILE_X = SCREEN_WIDTH / TILE_SIZE;
 static constexpr int NUM_TILE_Y = SCREEN_HEIGHT / TILE_SIZE;
@@ -1004,6 +1002,8 @@ static constexpr int SPRITE_Y_OFFSET = 1;
 
 static constexpr int LINE_CYCLES = 341;
 static constexpr int SCAN_LINES = 262;
+
+static constexpr cycle_t MAX_DELAY_CYCLES = LINE_CYCLES;
 
 enum class timing_t {
   NONE = 0,
@@ -1147,7 +1147,6 @@ result_t init();
 void deinit();
 
 result_t reset();
-bool is_in_hblank();
 int current_focus_y();
 
 uint8_t reg_read(addr_t addr);
@@ -2779,8 +2778,8 @@ result_t service() {
   cycle_t ppu_cycle = ppu_cycle_count;
 
   while (m-- > 0 && !ppu_scroll_changed) {
-    cycle_t ppu_cycle_diff = ppu_cycle - ppu::cycle_following();
-    if (ppu_cycle_diff > ppu::MAX_DELAY_CYCLES) {
+    cycle_t ppu_cycle_diff = ppu::cycle_following() - ppu_cycle;
+    if (ppu_cycle_diff & 0x80000000) {
       break;
     }
 
@@ -3113,7 +3112,7 @@ result_t service() {
 
     }  // if
 
-    ppu_cycle += dma_cycle_steal;
+    cycle += dma_cycle_steal;
     dma_cycle_steal = 0;
 
     ppu_cycle += cycle * 3;
@@ -5881,13 +5880,13 @@ static constexpr uint32_t STATE_HEADER_SIZE = registers_t::STATE_SIZE + 32;
 
 static registers_t reg;
 
-volatile cycle_t cycle_count;
+volatile cycle_t cycle_count = 0;
 
-static uint16_t focus_x;
-static uint16_t focus_y;
+static uint16_t focus_x = 0;
+static uint16_t focus_y = 0;
 
-static uint16_t scroll_counter;
-static uint8_t fine_x_counter;
+static uint16_t scroll_counter = 0;
+static uint8_t fine_x_counter = 0;
 
 static uint8_t bus_read_data_latest = 0;
 static uint8_t bus_read_data_delayed = 0;
@@ -5927,10 +5926,9 @@ static void oam_write(addr_t addr, uint8_t data);
 static uint8_t palette_read(addr_t addr);
 static void palette_write(addr_t addr, uint8_t data);
 
-static void render_bg(uint8_t *line_buff, int x0, int x1, bool skip_render);
+static void render_bg(uint8_t *line_buff, bool skip_render);
 static void enum_visible_sprites(bool skip_render);
-static void render_sprites(uint8_t *line_buff, int x0, int x1,
-                           bool skip_render);
+static void render_sprites(uint8_t *line_buff, bool skip_render);
 
 static void measure(bool skip_render);
 
@@ -5963,8 +5961,6 @@ result_t reset() {
 
   return result_t::SUCCESS;
 }
-
-bool is_in_hblank() { return focus_x >= SCREEN_WIDTH; }
 
 int current_focus_y() { return focus_y; }
 
@@ -6160,138 +6156,48 @@ static SHAPONES_INLINE void palette_write(addr_t addr, uint8_t data) {
 }
 
 result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
-  if (!semaphore_try_take(SEMAPHORE_PPU)) {
-    status->timing = timing_t::NONE;
-    status->focus_y = focus_y;
+  status->timing = timing_t::NONE;
+  status->focus_y = focus_y;
+
+  cycle_t cycle = cycle_count;
+  cycle_t cycle_diff = cpu::ppu_cycle_leading() - cycle;
+  if (cycle_diff & 0x80000000) {
     return result_t::SUCCESS;
   }
 
-  timing_t timing = timing_t::NONE;
-  bool irq = false;
+  if (!semaphore_try_take(SEMAPHORE_PPU)) {
+    return result_t::SUCCESS;
+  }
 
-  while (true) {
-    flush_write_queue();
+  flush_write_queue();
 
-    cycle_t cycle_diff = cpu::ppu_cycle_leading() - cycle_count;
-    if (cycle_diff <= 0) {
-      break;
-    }
+  bool visible_area = false;
+  bool hblank = false;
+  bool vblank = false;
+  if (focus_y >= SCREEN_HEIGHT) {
+    vblank = true;
+  } else if (focus_x >= SCREEN_WIDTH) {
+    hblank = true;
+  } else {
+    visible_area = true;
+  }
 
-    // events
-    if (focus_x == 0) {
-      if (focus_y == SCREEN_HEIGHT + 1) {
-        // vblank flag/interrupt
-        reg.status.vblank_flag = 1;
-      } else if (focus_y == SCAN_LINES - 1) {
-        // clear flags
-        reg.status.vblank_flag = 0;
-        reg.status.sprite0_hit = 0;
-      }
-    }
+  if (visible_area) {
+    cycle_count = cycle + SCREEN_WIDTH;
 
-    bool nmi_level_new =
-        reg.status.vblank_flag && reg.control.vblank_nmi_enable;
-    if (nmi_level_new && !nmi_level) {
-      interrupt::assert_nmi();
-      irq = true;
-    }
-    nmi_level = nmi_level_new;
-
-    // determine step count
-    uint_fast16_t dist_to_end;
-    if (focus_y < SCREEN_HEIGHT && focus_x < SCREEN_WIDTH) {
-      // visible area
-      dist_to_end = SCREEN_WIDTH - focus_x;
-    } else {
-      // blank_area
-      dist_to_end = LINE_CYCLES - focus_x;
-    }
-    uint_fast16_t step_count =
-        dist_to_end < cycle_diff ? dist_to_end : cycle_diff;
-    uint_fast16_t next_focus_x = focus_x + step_count;
-
-#if SHAPONES_PERF_DETAIL
-    uint64_t t0 = get_time_us();
-#endif
-
-    if (focus_x == 0 && focus_y < SCREEN_HEIGHT && reg.mask.sprite_enable) {
+    if (reg.mask.sprite_enable) {
       // enumerate visible sprites in current line
       enum_visible_sprites(skip_render);
     }
 
-#if SHAPONES_PERF_DETAIL
-    uint64_t t1 = get_time_us();
-    uint32_t t_enum_sprites = t1 - t0;
-#endif
-
     // render background
-    render_bg(line_buff, focus_x, next_focus_x, skip_render);
+    render_bg(line_buff, skip_render);
 
-#if SHAPONES_PERF_DETAIL
-    uint64_t t2 = get_time_us();
-    uint32_t t_render_bg = t2 - t1;
-#endif
-
-    if (focus_x < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT &&
-        reg.mask.sprite_enable) {
+    if (reg.mask.sprite_enable) {
       // render sprites
-      render_sprites(line_buff, focus_x, next_focus_x, skip_render);
+      render_sprites(line_buff, skip_render);
     }
 
-#if SHAPONES_PERF_DETAIL
-    uint64_t t3 = get_time_us();
-    uint32_t t_render_sprites = t3 - t2;
-    if (!skip_render) {
-      perf_accum_t_sprite_enum += t_enum_sprites;
-      perf_accum_t_bg_render += t_render_bg;
-      perf_accum_t_sprite_render += t_render_sprites;
-    }
-#endif
-
-    if (focus_y < SCREEN_HEIGHT) {
-      if (focus_x <= SCREEN_WIDTH && SCREEN_WIDTH < next_focus_x) {
-        irq |= mapper::instance->hblank(reg, focus_y);
-      }
-    } else {
-      if (focus_x == 0) {
-        irq |= mapper::instance->vblank(reg);
-      }
-    }
-
-    // step focus
-    focus_x = next_focus_x;
-    if (focus_x >= LINE_CYCLES) {
-      focus_x -= LINE_CYCLES;
-      focus_y++;
-      if (focus_y >= SCAN_LINES) {
-        focus_y = 0;
-        timing |= timing_t::END_OF_FRAME;
-        measure(skip_render);
-      }
-    }
-
-    // step cycle counter
-    cycle_count += step_count;
-
-    if (focus_y < SCREEN_HEIGHT) {
-      if (focus_x == SCREEN_WIDTH) {
-        timing |= timing_t::END_OF_VISIBLE_LINE;
-        if (focus_y == SCREEN_HEIGHT - 1) {
-          timing |= timing_t::END_OF_VISIBLE_AREA;
-        }
-      }
-    } else {
-      if (focus_x == 0) {
-        timing |= timing_t::START_OF_VBLANK_LINE;
-      }
-    }
-
-    if (timing != timing_t::NONE || irq) {
-      break;
-    }
-  }
-
-  if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
     if (!skip_render) {
       uint32_t *ptr = (uint32_t *)line_buff;
       for (uint32_t x = 0; x < SCREEN_WIDTH / 4; x++) {
@@ -6303,169 +6209,168 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     if (!skip_render) {
       nes::menu::overlay(focus_y, line_buff);
     }
+
+    status->timing |= timing_t::END_OF_VISIBLE_LINE;
+    if (focus_y == SCREEN_HEIGHT - 1) {
+      status->timing |= timing_t::END_OF_VISIBLE_AREA;
+    }
+
+    focus_x = SCREEN_WIDTH;
+  } else if (hblank) {
+    cycle_count = cycle + (LINE_CYCLES - SCREEN_WIDTH);
+    mapper::instance->hblank(reg, focus_y);
+    focus_x = 0;
+    focus_y++;
+  } else /*if (vblank)*/ {
+    cycle_count = cycle + LINE_CYCLES;
+
+    if (focus_y == SCREEN_HEIGHT) {
+      reg.status.vblank_flag = 1;
+      mapper::instance->vblank(reg);
+      status->timing |= timing_t::START_OF_VBLANK_LINE;
+    } else if (focus_y == SCAN_LINES - 2) {
+      reg.status.vblank_flag = 0;
+      reg.status.sprite0_hit = 0;
+    } else if (focus_y == SCAN_LINES - 1) {
+      if (reg.mask.bg_enable) {
+        constexpr uint16_t COPY_MASK = 0x7be0u;
+        scroll_counter &= ~COPY_MASK;
+        scroll_counter |= reg.scroll & COPY_MASK;
+      }
+    }
+
+    focus_x = 0;
+    focus_y++;
+    if (focus_y >= SCAN_LINES) {
+      status->timing |= timing_t::END_OF_FRAME;
+      measure(skip_render);
+      focus_y = 0;
+    }
   }
 
-  if (status) {
-    status->focus_y = focus_y;
-    status->timing = timing;
+  bool nmi_level_new = reg.status.vblank_flag && reg.control.vblank_nmi_enable;
+  if (nmi_level_new && !nmi_level) {
+    interrupt::assert_nmi();
   }
+  nmi_level = nmi_level_new;
 
   semaphore_give(SEMAPHORE_PPU);
 
   return result_t::SUCCESS;
 }
 
-static void render_bg(uint8_t *line_buff, int x0_block, int x1_block,
-                      bool skip_render) {
-  bool visible_area = (x0_block < SCREEN_WIDTH && focus_y < SCREEN_HEIGHT);
-  bool bg_enabled = reg.mask.bg_enable;
-
-  if (skip_render && num_visible_sprites == 0) {
-    // If skip_render is set, only render lines where sprite #0 exists.
-    visible_area = false;
+static void render_bg(uint8_t *line_buff, bool skip_render) {
+  if (!reg.mask.bg_enable) {
+    uint8_t bg_color = palette_file[0];
+    memset(line_buff, bg_color, SCREEN_WIDTH);
   }
+  if (!reg.mask.bg_enable && !reg.mask.sprite_enable) {
+    return;
+  }
+
+  uint_fast16_t scr = scroll_counter;
+  int fine_x = reg.fine_x;
 
   uint32_t bg_offset = (uint32_t)reg.control.bg_name_sel << 12;
 
-  while (x0_block < x1_block) {
-    int x0, x1;
-    uint_fast16_t scr = scroll_counter;
+  constexpr int NUM_BLOCKS = SCREEN_WIDTH / BLOCK_SIZE + 1;
+  for (int i_block = 0; i_block < NUM_BLOCKS; i_block++) {
+    uint32_t chr = 0xFFFFFFFF;
+    const uint8_t *palette = nullptr;
 
-    // determine step count
-    x0 = x0_block;
-    if (visible_area && bg_enabled) {
-      x1 = x0 + (BLOCK_SIZE - ((scr & 0x1) * TILE_SIZE + fine_x_counter));
-    } else {
-      x1 = x0 + 64;
+    if (!skip_render) {
+      // read name table for two tiles
+      addr_t name_addr0 = scr & 0xffeu;
+      addr_t name_addr1 = name_addr0 + 1;
+      uint32_t name0 = memory::vram_read(name_addr0);
+      uint32_t name1 = memory::vram_read(name_addr1);
+
+      // read CHRROM
+      uint32_t fine_y = (scr & SCROLL_MASK_FINE_Y) >> 12;
+      uint32_t chrrom_index0 = (name0 << 4) + fine_y;
+      uint32_t chrrom_index1 = (name1 << 4) + fine_y;
+      chrrom_index0 += bg_offset;
+      chrrom_index1 += bg_offset;
+      uint_fast16_t chr0 = memory::chrrom_read_double(chrrom_index0, false);
+      uint_fast16_t chr1 = memory::chrrom_read_double(chrrom_index1, false);
+      chr = ((uint32_t)chr1 << 16) | (uint32_t)chr0;
+
+      // calc attr index
+      addr_t attr_index = (scr & SCROLL_MASK_NAME_SEL) | 0x3c0 |
+                          ((scr >> 2) & 0x7) | ((scr >> 4) & 0x38);
+      int attr_shift_size = ((scr >> 4) & 0x4) | (scr & 0x2);
+
+      // read attr table
+      uint8_t attr = memory::vram_read(attr_index);
+      attr = (attr >> attr_shift_size) & 0x3;
+      palette = palette_file + attr * PALETTE_SIZE;
     }
-    x1 = x1 < x1_block ? x1 : x1_block;
 
-    if (visible_area) {
-      if (bg_enabled) {
-        uint32_t chr = 0xFFFFFFFF;
-        const uint8_t *palette = nullptr;
-
-        if (!skip_render) {
-          // read name table for two tiles
-          addr_t name_addr0 = scr & 0xffeu;
-          addr_t name_addr1 = name_addr0 + 1;
-          uint32_t name0 = memory::vram_read(name_addr0);
-          uint32_t name1 = memory::vram_read(name_addr1);
-
-          // read CHRROM
-          uint32_t fine_y = (scr & SCROLL_MASK_FINE_Y) >> 12;
-          uint32_t chrrom_index0 = (name0 << 4) + fine_y;
-          uint32_t chrrom_index1 = (name1 << 4) + fine_y;
-          chrrom_index0 += bg_offset;
-          chrrom_index1 += bg_offset;
-          uint_fast16_t chr0 = memory::chrrom_read_double(chrrom_index0, false);
-          uint_fast16_t chr1 = memory::chrrom_read_double(chrrom_index1, false);
-          chr = ((uint32_t)chr1 << 16) | (uint32_t)chr0;
-
-          // adjust CHR bit pos
-          int chr_shift_size = ((scr << 4) & 0x10) | (fine_x_counter << 1);
-          chr >>= chr_shift_size;
-
-          // calc attr index
-          addr_t attr_index = (scr & SCROLL_MASK_NAME_SEL) | 0x3c0 |
-                              ((scr >> 2) & 0x7) | ((scr >> 4) & 0x38);
-          int attr_shift_size = ((scr >> 4) & 0x4) | (scr & 0x2);
-
-          // read attr table
-          uint8_t attr = memory::vram_read(attr_index);
-          attr = (attr >> attr_shift_size) & 0x3;
-          palette = palette_file + attr * PALETTE_SIZE;
-        }
-
-        // render BG block
-        uint8_t bg_color = palette_file[0];
-        for (int x = x0; x < x1; x++) {
-          uint32_t palette_index = chr & 0x3;
-          chr >>= 2;
-          if (palette_index == 0) {
-            line_buff[x] = bg_color;
-          } else {
-            uint8_t col = OPAQUE_FLAG;
-            if (!skip_render) {
-              col |= palette[palette_index];
-            }
-            line_buff[x] = col;
-          }
-        }
+    // render BG block
+    uint8_t bg_color = palette_file[0];
+    int x_offset = i_block * BLOCK_SIZE - (((scr & 1) << 3) | fine_x);
+    for (int x_local = 0; x_local < BLOCK_SIZE; x_local++) {
+      uint32_t palette_index = chr & 0x3;
+      chr >>= 2;
+      // todo: remove branch
+      uint8_t col = 0;
+      if (palette_index == 0) {
+        col = bg_color;
       } else {
-        // blank background
-        uint8_t bg_color = palette_file[0];
-        memset(&line_buff[x0], bg_color, x1 - x0);
+        col = OPAQUE_FLAG;
+        if (!skip_render) {
+          col |= palette[palette_index];
+        }
+      }
+      int x = x_offset + x_local;
+      if (0 <= x && x < SCREEN_WIDTH) {
+        line_buff[x] = col;
       }
     }
 
-    // update scroll counter
-    // see: https://www.nesdev.org/wiki/PPU_scrolling
-    if (reg.mask.bg_enable || reg.mask.sprite_enable) {
-      uint_fast8_t fx = fine_x_counter;
-      if (focus_y < SCREEN_HEIGHT) {
-        if (x0 < SCREEN_WIDTH) {
-          // step scroll counter for x-axis
-          fx += (x1 - x0);
-          while (fx >= TILE_SIZE) {
-            fx -= TILE_SIZE;
-            // if coarse_x < 31
-            if ((scr & SCROLL_MASK_COARSE_X) < SCROLL_MASK_COARSE_X) {
-              scr++;  // coarse_x++
-            } else {
-              // right edge of name table
-              scr &= ~SCROLL_MASK_COARSE_X;  // coarse_x = 0
-              scr ^= 0x0400u;                // switch name table horizontally
-            }
-          }
-
-          scroll_counter = scr;
-          fine_x_counter = fx;
-        } else if (x0 <= SCREEN_WIDTH && SCREEN_WIDTH < x1) {
-          // step scroll counter for y-axis
-          // if fine_y < 7
-          if ((scr & SCROLL_MASK_FINE_Y) < SCROLL_MASK_FINE_Y) {
-            scr += 0x1000u;  // fine_y++
-          } else {
-            // bottom edge of tile
-            scr &= ~SCROLL_MASK_FINE_Y;  // fine_y = 0
-            // if coarse_y == 29
-            if ((scr & SCROLL_MASK_COARSE_Y) == ((NUM_TILE_Y - 1) << 5)) {
-              // bottom edge of name table
-              scr &= ~SCROLL_MASK_COARSE_Y;  // coarse_y = 0
-              scr ^= 0x0800u;                // switch name table vertically
-            }
-            // else if coarse_y == 31
-            else if ((scr & SCROLL_MASK_COARSE_Y) == SCROLL_MASK_COARSE_Y) {
-              scr &= ~SCROLL_MASK_COARSE_Y;  // coarse_y = 0
-            } else {
-              scr += NUM_TILE_X;  // coarse_y++
-            }
-          }
-
-          // horizontal recovery
-          constexpr uint16_t MASK = 0x041fu;
-          scr &= ~MASK;
-          scr |= reg.scroll & MASK;
-          fx = reg.fine_x;
-
-          scroll_counter = scr;
-          fine_x_counter = fx;
-        }
-      } else if (focus_y == SCAN_LINES - 1) {
-        if (280 <= x1 && x0 <= 304) {
-          // vertical recovery
-          constexpr uint16_t COPY_MASK = 0x7be0u;
-          scr &= ~COPY_MASK;
-          scr |= reg.scroll & COPY_MASK;
-
-          scroll_counter = scr;
-        }
+    for (int i = 0; i < 2; i++) {
+      // step scroll counter for two tiles
+      // step scroll counter for x-axis
+      // if coarse_x < 31
+      if ((scr & SCROLL_MASK_COARSE_X) < SCROLL_MASK_COARSE_X) {
+        scr++;  // coarse_x++
+      } else {
+        // right edge of name table
+        scr &= ~SCROLL_MASK_COARSE_X;  // coarse_x = 0
+        scr ^= 0x0400u;                // switch name table horizontally
       }
-    }  // if
+    }
+  }
 
-    x0_block = x1;
-  }  // while
+  // step scroll counter for y-axis
+  // if fine_y < 7
+  if ((scr & SCROLL_MASK_FINE_Y) < SCROLL_MASK_FINE_Y) {
+    scr += 0x1000u;  // fine_y++
+  } else {
+    // bottom edge of tile
+    scr &= ~SCROLL_MASK_FINE_Y;  // fine_y = 0
+    // if coarse_y == 29
+    if ((scr & SCROLL_MASK_COARSE_Y) == ((NUM_TILE_Y - 1) << 5)) {
+      // bottom edge of name table
+      scr &= ~SCROLL_MASK_COARSE_Y;  // coarse_y = 0
+      scr ^= 0x0800u;                // switch name table vertically
+    }
+    // else if coarse_y == 31
+    else if ((scr & SCROLL_MASK_COARSE_Y) == SCROLL_MASK_COARSE_Y) {
+      scr &= ~SCROLL_MASK_COARSE_Y;  // coarse_y = 0
+    } else {
+      scr += NUM_TILE_X;  // coarse_y++
+    }
+  }
+
+  // horizontal recovery
+  {
+    constexpr uint16_t COPY_MASK = 0x041fu;
+    scr &= ~COPY_MASK;
+    scr |= reg.scroll & COPY_MASK;
+  }
+
+  scroll_counter = scr;
 }
 
 static void enum_visible_sprites(bool skip_render) {
@@ -6542,13 +6447,13 @@ static void enum_visible_sprites(bool skip_render) {
   }
 }
 
-static void render_sprites(uint8_t *line_buff, int x0_block, int x1_block,
-                           bool skip_render) {
+static void render_sprites(uint8_t *line_buff, bool skip_render) {
   for (int i = 0; i < num_visible_sprites; i++) {
     const auto &sl = sprite_lines[i];
-    int x0 = (x0_block > sl.x) ? x0_block : sl.x;
-    int x1 = (x1_block < sl.x + TILE_SIZE) ? x1_block : (sl.x + TILE_SIZE);
-    uint_fast16_t chr = sl.chr >> (2 * (x0 - sl.x));
+    int x0 = sl.x;
+    int x1 =
+        (SCREEN_WIDTH < sl.x + TILE_SIZE) ? SCREEN_WIDTH : (sl.x + TILE_SIZE);
+    uint_fast16_t chr = sl.chr;
     uint_fast8_t attr = sl.attr;
     uint8_t *palette = palette_file + sl.palette_offset;
     for (int x = x0; x < x1; x++) {

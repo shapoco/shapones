@@ -5,8 +5,6 @@
 
 namespace nes::ppu {
 
-static constexpr cycle_t MAX_DELAY_CYCLES = 128;
-
 static constexpr int TILE_SIZE = 8;
 static constexpr int NUM_TILE_X = SCREEN_WIDTH / TILE_SIZE;
 static constexpr int NUM_TILE_Y = SCREEN_HEIGHT / TILE_SIZE;
@@ -42,6 +40,8 @@ static constexpr int SPRITE_Y_OFFSET = 1;
 
 static constexpr int LINE_CYCLES = 341;
 static constexpr int SCAN_LINES = 262;
+
+static constexpr cycle_t MAX_DELAY_CYCLES = LINE_CYCLES;
 
 enum class timing_t {
   NONE = 0,
@@ -185,7 +185,6 @@ result_t init();
 void deinit();
 
 result_t reset();
-bool is_in_hblank();
 int current_focus_y();
 
 uint8_t reg_read(addr_t addr);
