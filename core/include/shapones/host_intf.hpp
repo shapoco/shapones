@@ -2,6 +2,7 @@
 #define SHAPONES_HOST_INTF_HPP
 
 #include "shapones/common.hpp"
+#include "shapones/fsys.hpp"
 
 namespace nes {
 
@@ -25,34 +26,23 @@ void unload_ines();
 
 namespace fsys {
 
-struct file_info_t {
-  bool is_dir;
-  const char *name;
-};
-
-using enum_files_cb_t = bool (*)(const file_info_t &info);
-
 result_t mount();
 void unmount();
-result_t get_current_dir(char *out_path);
+void get_ines_dir(char *out_path);
+void get_config_dir(char *out_path);
 result_t enum_files(const char *path, enum_files_cb_t callback);
 bool exists(const char *path);
 result_t open(const char *path, bool write, void **handle);
 void close(void *handle);
 result_t seek(void *handle, size_t offset);
+bool eof(void *handle);
 result_t read(void *handle, uint8_t *buff, size_t size);
 result_t write(void *handle, const uint8_t *buff, size_t size);
 result_t size(void *handle, size_t *out_size);
 result_t remove(const char *path);
+result_t make_dir(const char *path);
 
 }  // namespace fsys
-
-namespace nwk {
-
-result_t start_connect();
-result_t disconnect();
-
-}  // namespace nwk
 
 uint64_t get_time_us();
 

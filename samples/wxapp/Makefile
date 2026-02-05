@@ -1,6 +1,6 @@
 .PHONY: all build install clean
 
-ROM := ../../roms/nestest.nes
+ROM := nestest.nes
 
 BIN_DIR = bin
 BUILD_DIR = build
@@ -57,7 +57,7 @@ $(APP_BUILD_DIR)/%.o: $(APP_SRC_DIR)/%.cpp $(APP_HPP_LIST)
 	g++ $(CXX_FLAGS) -c $< -o $@
 
 run: $(BIN)
-	./$(BIN) $(ROM)
+	cd ../../roms && $(shell cd $(BIN_DIR) && pwd)/$(BIN_NAME) $(ROM)
 
 clean:
 	rm -rf $(BUILD_DIR)

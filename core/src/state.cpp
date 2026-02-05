@@ -62,10 +62,8 @@ void hsync(int focus_y, const uint8_t *line_buff, bool skip_render) {
     uint8_t *dst = &ss_buff[(wr_index * SS_SIZE_BYTES) + (dy * SS_WIDTH)];
     for (int dx = 0; dx < SS_WIDTH; dx++) {
       int sx = SS_CLIP_LEFT + dx * SS_SCALING;
-      uint8_t c01 =
-          blend_colors(line_buff[sx] & 0x3F, line_buff[sx + 1] & 0x3F);
-      uint8_t c23 =
-          blend_colors(line_buff[sx + 2] & 0x3F, line_buff[sx + 3] & 0x3F);
+      uint8_t c01 = blend_colors(line_buff[sx], line_buff[sx + 1]);
+      uint8_t c23 = blend_colors(line_buff[sx + 2], line_buff[sx + 3]);
       dst[dx] = blend_colors(c01, c23);
     }
     if (dy == SS_HEIGHT - 1) {
@@ -272,7 +270,8 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
 static result_t write_screenshot(void *f) {
   SemaphoreBlock lock(SEMAPHORE_PPU);
   int rd_index = (ss_wr_index + SS_BUFF_DEPTH - ss_num_stored) % SS_BUFF_DEPTH;
-  result_t res = fsys::write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
+  result_t res =
+      fsys::write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
   return res;
 }
 

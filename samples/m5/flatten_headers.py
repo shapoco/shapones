@@ -46,9 +46,6 @@ with open(OUTPUT_HPP, "w") as out_f:
     out_f.write("#define SHAPONES_ENABLE_LOG (1)\n")
     out_f.write("\n")
     
-    out_f.write("#pragma GCC optimize (\"O2\")\n")
-    out_f.write("\n")
-    
     include_file("shapones/shapones.hpp")
 
     out_f.write("#ifdef SHAPONES_IMPLEMENTATION\n")

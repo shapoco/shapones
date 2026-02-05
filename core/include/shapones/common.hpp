@@ -70,6 +70,7 @@ using int_fast32_t = int32_t;
   do {                                                  \
     Serial.printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
     Serial.printf((fmt), ##__VA_ARGS__);                \
+    Serial.flush();                                     \
   } while (0)
 
 #define SHAPONES_ERRORF(fmt, ...)                       \
@@ -77,6 +78,7 @@ using int_fast32_t = int32_t;
     Serial.printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
     Serial.printf("*ERROR: ");                          \
     Serial.printf(fmt, ##__VA_ARGS__);                  \
+    Serial.flush();                                     \
     nes::stop();                                        \
   } while (0)
 
@@ -186,6 +188,13 @@ enum class result_t {
   ERR_STATE_SIZE_MISMATCH,
   ERR_STATE_SLOT_FULL,
   ERR_STATE_NO_SLOT_DATA,
+
+  ERR_NET_BASE = 0x500,
+  ERR_NET_NO_INTERFACE,
+
+  ERR_INI_BASE = 0x600,
+  ERR_INI_PARSE_FAILED,
+  ERR_INI_STRING_TOO_LONG,
 
   ERR_HOST_BASE = 0xF00,
   ERR_FLASH_ERASE_FAILED,

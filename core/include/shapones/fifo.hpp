@@ -19,12 +19,20 @@ class AsyncFifo {
  public:
   AsyncFifo() : rd_ptr(0), wr_ptr(0) {}
 
-  void clear() {
+  SHAPONES_INLINE void clear() {
     rd_ptr = 0;
     wr_ptr = 0;
   }
 
   SHAPONES_INLINE bool is_empty() const { return rd_ptr == wr_ptr; }
+
+  SHAPONES_INLINE uint32_t stored() const {
+    return (wr_ptr + CAPACITY - rd_ptr) & (CAPACITY - 1);
+  }
+
+  SHAPONES_INLINE uint32_t space() const {
+    return (rd_ptr + CAPACITY - wr_ptr - 1) & (CAPACITY - 1);
+  }
 
   SHAPONES_INLINE bool is_full() const {
     uint32_t wp = (wr_ptr + 1) & (CAPACITY - 1);
@@ -34,9 +42,7 @@ class AsyncFifo {
   SHAPONES_INLINE bool try_push(const T &item) {
     uint32_t wp = wr_ptr;
     uint32_t wp_next = (wp + 1) & (CAPACITY - 1);
-    if (wp_next == rd_ptr) {
-      return false;  // full
-    }
+    if (wp_next == rd_ptr) return false;
     buffer[wp] = item;
     SHAPONES_THREAD_FENCE_SEQ_CST();
     wr_ptr = wp_next;
@@ -48,7 +54,7 @@ class AsyncFifo {
     do {
       wp = wr_ptr;
       wp_next = (wp + 1) & (CAPACITY - 1);
-    } while (wp_next == rd_ptr);  // wait until not full
+    } while (wp_next == rd_ptr);
     SHAPONES_THREAD_FENCE_SEQ_CST();
     buffer[wp] = item;
     wr_ptr = wp_next;
@@ -56,18 +62,14 @@ class AsyncFifo {
 
   SHAPONES_INLINE bool try_peek(T *out_item) {
     uint32_t rp = rd_ptr;
-    if (rp == wr_ptr) {
-      return false;  // empty
-    }
+    if (rp == wr_ptr) return false;
     *out_item = buffer[rp];
     return true;
   }
 
   SHAPONES_INLINE bool try_pop(T *out_item) {
     uint32_t rp = rd_ptr;
-    if (rp == wr_ptr) {
-      return false;  // empty
-    }
+    if (rp == wr_ptr) return false;
     *out_item = buffer[rp];
     SHAPONES_THREAD_FENCE_SEQ_CST();
     rd_ptr = (rp + 1) & (CAPACITY - 1);
@@ -78,7 +80,7 @@ class AsyncFifo {
     uint32_t rp;
     do {
       rp = rd_ptr;
-    } while (rp == wr_ptr);  // wait until not empty
+    } while (rp == wr_ptr);
     T item = buffer[rp];
     SHAPONES_THREAD_FENCE_SEQ_CST();
     rd_ptr = (rp + 1) & (CAPACITY - 1);
@@ -86,5 +88,13 @@ class AsyncFifo {
   }
 };
 }  // namespace nes
+
+template < uint32_t prm_ADDR_BITS>
+class AsyncByteFifoRle {
+    public:
+    static constexpr uint32_t ADDR_BITS = prm_ADDR_BITS;
+    static constexpr uint32_t CAPACITY = 1 << ADDR_BITS;
+
+};
 
 #endif

@@ -426,6 +426,13 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
   }
 
   if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
+    if (!skip_render) {
+      uint32_t *ptr = (uint32_t *)line_buff;
+      for (uint32_t x = 0; x < SCREEN_WIDTH / 4; x++) {
+        *(ptr++) &= 0x3F3F3F3F;
+      }
+    }
+
     nes::state::hsync(focus_y, line_buff, skip_render);
     if (!skip_render) {
       nes::menu::overlay(focus_y, line_buff);
@@ -760,8 +767,7 @@ result_t save_state(void *file_handle) {
 
   SHAPONES_TRY(fsys::write(file_handle, palette_file, sizeof(palette_file)));
 
-  uint8_t *oam_buff;
-  SHAPONES_TRY(ram_alloc(sizeof(oam), (void **)&oam_buff));
+  uint8_t oam_buff[sizeof(oam)];
   for (size_t i = 0; i < sizeof(oam); i += 4) {
     uint32_t word = oam[i / 4];
     oam_buff[i + 0] = (word >> 0) & 0xff;
@@ -770,7 +776,6 @@ result_t save_state(void *file_handle) {
     oam_buff[i + 3] = (word >> 24) & 0xff;
   }
   SHAPONES_TRY(fsys::write(file_handle, oam_buff, sizeof(oam)));
-  ram_free(oam_buff);
 
   return result_t::SUCCESS;
 }
@@ -795,8 +800,7 @@ result_t load_state(void *file_handle) {
   nmi_level = reader.b();
   SHAPONES_TRY(fsys::read(file_handle, palette_file, sizeof(palette_file)));
 
-  uint8_t *oam_buff;
-  SHAPONES_TRY(ram_alloc(sizeof(oam), (void **)&oam_buff));
+  uint8_t oam_buff[sizeof(oam)];
   SHAPONES_TRY(fsys::read(file_handle, oam_buff, sizeof(oam)));
   for (size_t i = 0; i < sizeof(oam); i += 4) {
     uint32_t word = 0;
@@ -806,7 +810,6 @@ result_t load_state(void *file_handle) {
     word |= ((uint32_t)oam_buff[i + 3]) << 24;
     oam[i / 4] = word;
   }
-  ram_free(oam_buff);
 
   return result_t::SUCCESS;
 }

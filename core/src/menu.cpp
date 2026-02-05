@@ -2,6 +2,7 @@
 #include "shapones/font8x16.hpp"
 #include "shapones/fsys.hpp"
 #include "shapones/host_intf.hpp"
+#include "shapones/ini.hpp"
 #include "shapones/input.hpp"
 #include "shapones/interrupt.hpp"
 #include "shapones/state.hpp"
@@ -37,7 +38,6 @@ static constexpr int POPUP_Y = (BUFF_HEIGHT - POPUP_MAX_ITEMS - 3) / 2;
 enum class tab_t {
   NES_LIST,
   SAVE_LIST,
-  NETWORK,
   COUNT,
 };
 
@@ -45,14 +45,22 @@ static constexpr int NUM_TABS = (int)tab_t::COUNT;
 
 enum class icon_t {
   NONE,
+  RESERVED_00,
   PARENT,
   FOLDER,
   FILE,
   ADD,
+  SAVE,
+  PLAY,
+  NETWORK,
+  BACK,
+  RESERVED_0A,
   WARNING,
   ERROR,
-  PLAY,
-  SAVE,
+  REMOVE,
+  RESERVED_0E,
+  DOOR,
+  CONNECT,
 };
 
 enum class action_t {
@@ -64,6 +72,13 @@ enum class action_t {
   LOAD_STATE,
   SAVE_STATE,
   DELETE_STATE,
+  NET_NETWORK_ENUM,
+  NET_NETWORK_SELECT,
+  NET_WAIT_FRIEND,
+  NET_NEW_FRIEND_ENTRY,
+  NET_SELECT_FRIEND,
+  NET_DISCONNECT,
+  NET_REMOVE_SERVER,
   CLOSE_POPUP,
 };
 
@@ -84,8 +99,8 @@ class ListItem {
   const icon_t icon;
   const action_t action;
   const char *label;
-  const int32_t tag;
-  ListItem(icon_t icon, action_t action, const char *label, int32_t tag = 0)
+  const uint64_t tag;
+  ListItem(icon_t icon, action_t action, const char *label, uint64_t tag = 0)
       : icon(icon), action(action), label(strdup_safe(label)), tag(tag) {}
   ~ListItem() {
     if (label != nullptr) {
@@ -144,7 +159,7 @@ class ListBox {
   }
 
   void add_item(icon_t icon, action_t action, const char *label,
-                int32_t tag = 0) {
+                uint64_t tag = 0) {
     if (num_items >= capacity) return;
     items[num_items++] = new ListItem(icon, action, label, tag);
     request_redraw();
@@ -183,7 +198,7 @@ int last_menu_index[NUM_TABS] = {0};
 volatile bool vsync = false;
 
 const uint8_t PALETTE_FILE[] = {0x1D, 0x00, 0x10, 0x20, 0x21, 0x11, 0x01, 0x3F,
-                                0x2D, 0x00, 0x10, 0x3D, 0x3F, 0x0C, 0x1C, 0x2C};
+                                0x2D, 0x00, 0x10, 0x3D, 0x3F, 0x1C, 0x2C, 0x3C};
 static constexpr int NUM_PALETTES = sizeof(PALETTE_FILE) / 4;
 
 uint8_t text_buff[BUFF_WIDTH * BUFF_HEIGHT];
@@ -280,6 +295,10 @@ void hide() {
 static result_t load_tab(tab_t t, bool force) {
   if (tab == t && !force) return result_t::SUCCESS;
 
+  menu.set_bounds(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, CLIENT_HEIGHT);
+  menu.clear();
+  ss_enable = false;
+
   tab = t;
 
   switch (tab) {
@@ -299,9 +318,8 @@ static result_t load_tab(tab_t t, bool force) {
 }
 
 static result_t load_file_list_tab() {
-  menu.set_bounds(CLIENT_X, CLIENT_Y + 1, CLIENT_WIDTH, CLIENT_HEIGHT - 1);
-
   menu.clear();
+  menu.set_bounds(CLIENT_X, CLIENT_Y + 1, CLIENT_WIDTH, CLIENT_HEIGHT - 1);
 
   if (!disk_mounted) {
     if (fsys::mount() == result_t::SUCCESS) {
@@ -312,7 +330,7 @@ static result_t load_file_list_tab() {
   }
 
   if (current_dir[0] == '\0') {
-    SHAPONES_TRY(fsys::get_current_dir(current_dir));
+    fsys::get_ines_dir(current_dir);
     SHAPONES_TRY(fsys::append_separator(current_dir));
   }
 
@@ -321,21 +339,22 @@ static result_t load_file_list_tab() {
     menu.add_item(icon_t::PARENT, action_t::OPEN_DIR, "../");
   }
 
-  result_t res = fsys::enum_files(current_dir, [](const fsys::file_info_t &info) {
-    char *name = (char *)info.name;
-    if (info.is_dir) {
-      // append '/' to directory names
-      size_t len = strnlen(name, nes::MAX_FILENAME_LENGTH + 1);
-      char name[nes::MAX_FILENAME_LENGTH + 2];
-      strncpy(name, info.name, nes::MAX_FILENAME_LENGTH);
-      name[len++] = '/';
-      name[len] = '\0';
-    }
-    icon_t icon = info.is_dir ? icon_t::FOLDER : icon_t::FILE;
-    action_t action = info.is_dir ? action_t::OPEN_DIR : action_t::LOAD_ROM;
-    menu.add_item(icon, action, name);
-    return (menu.num_items < menu.capacity);
-  });
+  result_t res =
+      fsys::enum_files(current_dir, [](const fsys::file_info_t &info) {
+        char *name = (char *)info.name;
+        if (info.is_dir) {
+          // append '/' to directory names
+          size_t len = strnlen(name, nes::MAX_FILENAME_LENGTH + 1);
+          char name[nes::MAX_FILENAME_LENGTH + 2];
+          strncpy(name, info.name, nes::MAX_FILENAME_LENGTH);
+          name[len++] = '/';
+          name[len] = '\0';
+        }
+        icon_t icon = info.is_dir ? icon_t::FOLDER : icon_t::FILE;
+        action_t action = info.is_dir ? action_t::OPEN_DIR : action_t::LOAD_ROM;
+        menu.add_item(icon, action, name);
+        return (menu.num_items < menu.capacity);
+      });
   if (res != result_t::SUCCESS) {
     menu.clear();
     return res;
@@ -360,7 +379,6 @@ static result_t load_file_list_tab() {
     }
   }
 
-  ss_enable = false;
   request_redraw();
   return res;
 }
@@ -368,9 +386,8 @@ static result_t load_file_list_tab() {
 static result_t load_state_list_tab() {
   result_t res = result_t::SUCCESS;
 
-  menu.set_bounds(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, CLIENT_HEIGHT);
-
   menu.clear();
+
   char state_path[nes::MAX_PATH_LENGTH + 1];
   strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
   SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
@@ -406,7 +423,7 @@ static result_t load_state_list_tab() {
     }
 
     if (menu.num_items < state::MAX_SLOTS) {
-      menu.add_item(icon_t::ADD, action_t::ADD_STATE_SLOT, "New Slot", -1);
+      menu.add_item(icon_t::ADD, action_t::ADD_STATE_SLOT, "New Slot");
     }
 
     load_state_screenshot();
@@ -415,8 +432,8 @@ static result_t load_state_list_tab() {
   if (res != result_t::SUCCESS) {
     menu.clear();
     popup_close();
-    popup_list.add_item(icon_t::NONE, action_t::DELETE_STATE, "DELETE FILE");
-    popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+    popup_list.add_item(icon_t::REMOVE, action_t::DELETE_STATE, "Delete");
+    popup_list.add_item(icon_t::BACK, action_t::CLOSE_POPUP, "Cancel");
     popup_list.sel_index = 1;
     popup_show(icon_t::ERROR, "Data Broken.");
   }
@@ -488,32 +505,34 @@ static result_t process_input() {
     }
   }
 
-  if (key_up.A) {
-    ListItem *mi = nullptr;
-    if (popup_shown) {
-      mi = popup_list.get_selected_item();
+  if (popup_shown) {
+    if (key_up.A) {
+      ListItem *mi = popup_list.get_selected_item();
+      if (mi) on_menu_selected(mi);
     } else {
-      mi = menu.get_selected_item();
+      popup_list.on_key_down(key_down);
     }
-    if (mi) {
-      on_menu_selected(mi);
-    }
-  } else if (key_down.select) {
-    if (!popup_shown) {
+  } else {
+    if (key_up.A) {
+      ListItem *mi = menu.get_selected_item();
+      if (mi) on_menu_selected(mi);
+    } else if (key_down.right) {
       tab_t new_tab =
           static_cast<tab_t>((static_cast<int>(tab) + 1) % NUM_TABS);
       load_tab(new_tab);
+    } else if (key_down.left) {
+      tab_t new_tab =
+          static_cast<tab_t>((static_cast<int>(tab) + NUM_TABS - 1) % NUM_TABS);
+      load_tab(new_tab);
+    } else {
+      int prev_sel = menu.sel_index;
+      menu.on_key_down(key_down);
+      int new_sel = menu.sel_index;
+      if (tab == tab_t::SAVE_LIST && prev_sel != new_sel) {
+        load_state_screenshot();
+      }
+      last_menu_index[static_cast<int>(tab)] = menu.sel_index;
     }
-  } else if (popup_shown) {
-    popup_list.on_key_down(key_down);
-  } else {
-    int prev_sel = menu.sel_index;
-    menu.on_key_down(key_down);
-    int new_sel = menu.sel_index;
-    if (tab == tab_t::SAVE_LIST && prev_sel != new_sel) {
-      load_state_screenshot();
-    }
-    last_menu_index[static_cast<int>(tab)] = menu.sel_index;
   }
   return result_t::SUCCESS;
 }
@@ -582,7 +601,7 @@ static result_t on_state_select(ListItem *mi) {
   popup_message[0] = '\0';
   popup_list.add_item(icon_t::PLAY, action_t::LOAD_STATE, "Load", mi->tag);
   popup_list.add_item(icon_t::SAVE, action_t::SAVE_STATE, "Save", mi->tag);
-  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+  popup_list.add_item(icon_t::BACK, action_t::CLOSE_POPUP, "Cancel");
   popup_show(icon_t::NONE, "Action?");
   return result_t::SUCCESS;
 }
@@ -616,7 +635,7 @@ static result_t on_delete_state() {
 
 static result_t show_message(icon_t icon, const char *msg) {
   popup_list.clear();
-  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Close");
+  popup_list.add_item(icon_t::BACK, action_t::CLOSE_POPUP, "Close");
   popup_show(icon, msg);
   return result_t::SUCCESS;
 }
@@ -625,7 +644,7 @@ static result_t show_confirm(icon_t icon, const char *msg,
                              action_t confirm_action) {
   popup_list.clear();
   popup_list.add_item(icon_t::NONE, confirm_action, "OK");
-  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+  popup_list.add_item(icon_t::BACK, action_t::CLOSE_POPUP, "Cancel");
   popup_show(icon, msg);
   return result_t::SUCCESS;
 }
@@ -725,16 +744,17 @@ static void perform_redraw() {
              '\x80');
 
   // tab bar
-  draw_text(CLIENT_X, CLIENT_Y - 1, "\x88\x89");
   for (int itab = 0; itab < NUM_TABS; itab++) {
     for (int i = 0; i < 3; i++) {
       char c = '\xA0' + itab * 3 + i;
       if (itab == (int)tab) {
         c += 0x10;
       }
-      draw_char(CLIENT_X + 2 + itab * 3 + i, CLIENT_Y - 1, c);
+      draw_char(CLIENT_X + 1 + itab * 3 + i, CLIENT_Y - 1, c);
     }
   }
+  draw_text(CLIENT_X, CLIENT_Y - 1, "\x88");
+  draw_text(CLIENT_X + 1 + NUM_TABS * 3, CLIENT_Y - 1, "\x89");
 
   if (tab == tab_t::NES_LIST) {
     // current directory
@@ -785,16 +805,14 @@ static void draw_char(int x, int y, char c) {
 }
 
 static void draw_icon(int x, int y, icon_t icon) {
-  const char *text = nullptr;
-  switch (icon) {
-    case icon_t::PARENT: text = "\xC0\xC1"; break;
-    case icon_t::FOLDER: text = "\xC2\xC3"; break;
-    case icon_t::FILE: text = "\xC4\xC5"; break;
-    case icon_t::ADD: text = "\xC8\xC9"; break;
-    case icon_t::SAVE: text = "\xCA\xCB"; break;
-    case icon_t::PLAY: text = "\xCC\xCD"; break;
-  }
-  if (text) draw_text(x, y, text);
+  int index = static_cast<int>(icon) - 1;
+  if (index < 0) return;
+  const char text[] = {
+      (char)('\xC0' + index * 2 + 0),
+      (char)('\xC0' + index * 2 + 1),
+      '\0',
+  };
+  draw_text(x, y, text);
 }
 
 static void draw_frame(int x, int y, int w, int h, char offset) {

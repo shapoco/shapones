@@ -1,83 +1,19 @@
+#pragma GCC optimize("O2")
+
 #include <M5Unified.h>
-#include "FS.h"
-#include "SD.h"
 #include <driver/i2s.h>
 
+#include "shapones_config.hpp"
 #include "shapones_core.h"
+#include "shapones_host_impl.hpp"
 
 #include "AdcButton.hpp"
 
-#pragma GCC optimize("O2")
+#define EXPERIMENTAL_ENABLE_REMOTE (0)
 
-#define SHAPONES_USE_CANVAS (0)
-
-#if defined(ARDUINO_M5STACK_ATOMS3)
-
-#define SHAPONES_ENABLE_PDM_AUDIO (1)
-#define SHAPONES_ENABLE_HALF_SCREEN (1)
-
-static constexpr int TF_CS_PIN = -1;
-static constexpr int TF_SCK_PIN = 7;
-static constexpr int TF_MISO_PIN = 8;
-static constexpr int TF_MOSI_PIN = 6;
-
-static const uint8_t BUTTON_ADC_PINS[] = { 5, 2, 1 };
-static constexpr int DISPLAY_BUTTON_PIN = 41;
-
-static constexpr int AUDIO_DOUT_PIN = 38;
-
-#elif defined(ARDUINO_M5STACK_STICKS3)
-
-#define SHAPONES_ENABLE_I2S_AUDIO (1)
-#define SHAPONES_ENABLE_HALF_SCREEN (1)
-
-static constexpr int TF_CS_PIN = -1;
-static constexpr int TF_SCK_PIN = 1;
-static constexpr int TF_MISO_PIN = 2;
-static constexpr int TF_MOSI_PIN = 3;
-
-static const uint8_t BUTTON_ADC_PINS[] = { 4, 5, 6 };
-static constexpr int DISPLAY_BUTTON_PIN = 11;
-
-static constexpr int AUDIO_MCLK_PIN = 18;
-static constexpr int AUDIO_BCLK_PIN = 17;
-static constexpr int AUDIO_LRCK_PIN = 15;
-static constexpr int AUDIO_DOUT_PIN = 14;
-static constexpr int AUDIO_DIN_PIN = 16;
-
-#else
-
-static constexpr int TF_CS_PIN = 4;
-static const uint8_t BUTTON_ADC_PINS[] = { 5, 2, 1 };
-static constexpr int DISPLAY_BUTTON_PIN = 11;
-
-#endif
-
-#ifndef SHAPONES_ENABLE_PDM_AUDIO
-#define SHAPONES_ENABLE_PDM_AUDIO (0)
-#endif
-
-#ifndef SHAPONES_ENABLE_I2S_AUDIO
-#define SHAPONES_ENABLE_I2S_AUDIO (0)
-#endif
-
-#ifndef SHAPONES_ENABLE_HALF_SCREEN
-#define SHAPONES_ENABLE_HALF_SCREEN (0)
-#endif
-
-#ifndef SHAPONES_FORCE_USE_PSRAM
-#define SHAPONES_FORCE_USE_PSRAM (0)
-#endif
-
-#if SHAPONES_ENABLE_HALF_SCREEN
-static constexpr int BUFF_W = nes::SCREEN_WIDTH / 2;
-static constexpr int BUFF_H = nes::SCREEN_HEIGHT / 2;
-constexpr int DMA_HEIGHT = 120;
-uint32_t resize_buff[BUFF_W];
-#else
-static constexpr int BUFF_W = nes::SCREEN_WIDTH;
-static constexpr int BUFF_H = nes::SCREEN_HEIGHT;
-constexpr int DMA_HEIGHT = 60;
+#if EXPERIMENTAL_ENABLE_REMOTE
+#include <AsyncUDP.h>
+#include <WiFi.h>
 #endif
 
 static constexpr int BUTTON_NUM_PINS =
@@ -93,24 +29,22 @@ static constexpr int BUTTON_LEFT = 6;
 static constexpr int BUTTON_RIGHT = 7;
 static constexpr int BUTTON_DUMMY = 8;
 
-
 #if SHAPONES_ENABLE_PDM_AUDIO || SHAPONES_ENABLE_I2S_AUDIO
 static constexpr uint32_t AUDIO_I2S_FREQ_HZ = 96000;
 static constexpr uint32_t AUDIO_SAMPLE_FREQ_HZ = AUDIO_I2S_FREQ_HZ / 6;
 static constexpr int AUDIO_BUFF_LEN = 256;
 #endif
 
+#if SHAPONES_ENABLE_HALF_SCREEN
+uint32_t resize_buff[BUFF_W];
+#endif
+
 static uint16_t frame_buff[BUFF_W * BUFF_H];
 static int dma_next_y = nes::SCREEN_HEIGHT;
-
-static uint8_t *ines_ptr = nullptr;
 
 static uint8_t line_buff[nes::SCREEN_WIDTH];
 static uint64_t next_vsync_us = 0;
 static bool skip_frame = false;
-
-static spinlock_t spinlocks[nes::NUM_SPINLOCKS];
-static SemaphoreHandle_t semaphores[nes::NUM_SEMAPHORES];
 
 static adc_button::Pin button_pins[BUTTON_NUM_PINS];
 
@@ -150,7 +84,79 @@ static constexpr uint32_t SAMPLE_SIZE = sizeof(audio_buff[0]);
 static uint32_t audio_wr_ptr = 0;
 static uint32_t audio_rd_ptr = 0;
 
-static File file_handle;
+#if EXPERIMENTAL_ENABLE_REMOTE
+static const IPAddress subnet(255, 255, 255, 0);
+static const IPAddress local_ip(192, 168, 1, 100);
+static const uint16_t udp_port = 12345;
+static const char *ssid = "ShapoNES_AP";
+static const char *password = "hogepiyo";
+static AsyncUDP udp;
+static constexpr uint32_t COMP_QUEUE_STRIDE = nes::SCREEN_WIDTH + 1;
+static constexpr uint32_t COMP_QUEUE_DEPTH = 16;
+static uint8_t comp_queue[COMP_QUEUE_STRIDE * COMP_QUEUE_DEPTH];
+static volatile uint32_t comp_wr_ptr = 0;
+static volatile uint32_t comp_rd_ptr = 0;
+static uint8_t udp_buff[2048];
+static uint32_t udp_len = 0;
+
+static void push_comp_queue(int y) {
+  uint32_t wp = comp_wr_ptr;
+  uint32_t wp_next = (wp + 1) % COMP_QUEUE_DEPTH;
+  while (wp_next == comp_rd_ptr) {
+  }
+  uint32_t offset = wp * COMP_QUEUE_STRIDE;
+  comp_queue[offset] = y;
+  memcpy(&comp_queue[offset + 1], line_buff, nes::SCREEN_WIDTH);
+  SHAPONES_THREAD_FENCE_SEQ_CST();
+  comp_wr_ptr = wp_next;
+}
+
+static void pop_comp_queue() {
+  uint32_t rp = comp_rd_ptr;
+  if (comp_wr_ptr == rp) return;
+  uint32_t offset = rp * COMP_QUEUE_STRIDE;
+  uint32_t y = comp_queue[offset];
+  udp_buff[udp_len++] = 0xFF;
+  udp_buff[udp_len++] = y;
+  uint8_t *line = comp_queue + offset + 1;
+  uint8_t b_last = line[0];
+  uint32_t run_length = 1;
+  for (uint32_t x = 1; x < nes::SCREEN_WIDTH; x++) {
+    uint8_t b = line[x];
+    if (b == 0x3F) b = 0x3E;
+    if (b == b_last && run_length < 0x3F) {
+      run_length++;
+    } else {
+      if (run_length < 4) {
+        udp_buff[udp_len++] = b_last | ((run_length - 1) << 6);
+      } else {
+        udp_buff[udp_len++] = b_last | 0xC0;
+        udp_buff[udp_len++] = run_length - 1;
+      }
+      b_last = b;
+      run_length = 1;
+    }
+  }
+  SHAPONES_THREAD_FENCE_SEQ_CST();
+  comp_rd_ptr = (rp + 1) % COMP_QUEUE_DEPTH;
+  SHAPONES_THREAD_FENCE_SEQ_CST();
+  if (run_length < 4) {
+    udp_buff[udp_len++] = b_last | ((run_length - 1) << 6);
+  } else {
+    udp_buff[udp_len++] = b_last | 0xC0;
+    udp_buff[udp_len++] = run_length - 1;
+  }
+  constexpr uint32_t PAYLOAD_SIZE = 1436;
+  if (udp_len >= PAYLOAD_SIZE || y == nes::SCREEN_HEIGHT - 1) {
+    uint32_t to_send = (udp_len < PAYLOAD_SIZE) ? udp_len : PAYLOAD_SIZE;
+    if (millis() > 5000) {
+      udp.broadcastTo(udp_buff, to_send, udp_port);
+    }
+    memcpy(udp_buff, udp_buff + to_send, udp_len - to_send);
+    udp_len -= to_send;
+  }
+}
+#endif
 
 static void input_init();
 static void read_input();
@@ -177,8 +183,14 @@ void setup() {
 
   SHAPONES_PRINTF("ESP-IDF Version: %s\n", esp_get_idf_version());
 
+  init_host_impl();
+
   pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(44, OUTPUT);
+
+#if EXPERIMENTAL_ENABLE_REMOTE
+  WiFi.softAPConfig(local_ip, local_ip, subnet);
+  WiFi.softAP(ssid, password);
+#endif
 
 #if SHAPONES_ENABLE_HALF_SCREEN
   SPI.begin(TF_SCK_PIN, TF_MISO_PIN, TF_MOSI_PIN, TF_CS_PIN);
@@ -198,23 +210,26 @@ void setup() {
 }
 
 void loop() {
-  for (int i = 0; i < 10; i++) {
-    read_input();
+  read_input();
 
-    if (disp_button_down()) {
-      if (nes::menu::is_shown()) {
-        nes::menu::hide();
-      } else {
-        nes::menu::show();
-      }
+  if (disp_button_down()) {
+    if (nes::menu::is_shown()) {
+      nes::menu::hide();
+    } else {
+      nes::menu::show();
     }
+  }
 
+  for (int j = 0; j < 10; j++) {
     for (int i = 0; i < 10; i++) {
       nes::cpu::service();
     }
-
-    audio_stream(false);
+#if EXPERIMENTAL_ENABLE_REMOTE
+    pop_comp_queue();
+#endif
   }
+
+  audio_stream(false);
 }
 
 static void input_init() {
@@ -262,19 +277,22 @@ static void ppu_loop(void *arg) {
     nes::ppu::status_t status;
     nes::ppu::service(line_buff, skip_frame, &status);
     if ((!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) && !skip_frame) {
+#if EXPERIMENTAL_ENABLE_REMOTE
+      push_comp_queue(status.focus_y);
+#endif
 #if SHAPONES_ENABLE_HALF_SCREEN
       if (status.focus_y % 2 == 0) {
         for (int x = 0; x < BUFF_W; x++) {
-          uint32_t c0 = COLOR_TABLE[line_buff[x * 2 + 0] & 0x3f];
-          uint32_t c1 = COLOR_TABLE[line_buff[x * 2 + 1] & 0x3f];
+          uint32_t c0 = COLOR_TABLE[line_buff[x * 2 + 0]];
+          uint32_t c1 = COLOR_TABLE[line_buff[x * 2 + 1]];
           resize_buff[x] = c0 + c1;
         }
       } else {
         uint16_t *wptr = frame_buff + status.focus_y / 2 * BUFF_W;
         for (int x = 0; x < BUFF_W; x++) {
           uint32_t c01 = resize_buff[x];
-          uint32_t c2 = COLOR_TABLE[line_buff[x * 2 + 0] & 0x3f];
-          uint32_t c3 = COLOR_TABLE[line_buff[x * 2 + 1] & 0x3f];
+          uint32_t c2 = COLOR_TABLE[line_buff[x * 2 + 0]];
+          uint32_t c3 = COLOR_TABLE[line_buff[x * 2 + 1]];
           uint32_t c = c01 + c2 + c3 + 0x020202;
           c = ((c >> 7) & 0xF100) | ((c >> 5) & 0x07E0) | ((c >> 2) & 0x001F);
           wptr[x] = ((c << 8) & 0xFF00) | ((c >> 8) & 0x00FF);
@@ -283,7 +301,7 @@ static void ppu_loop(void *arg) {
 #else
       uint16_t *wptr = frame_buff + y * BUFF_W;
       for (int x = 0; x < BUFF_W; x++) {
-        wptr[x] = COLOR_TABLE[line_buff[x] & 0x3f];
+        wptr[x] = COLOR_TABLE[line_buff[x]];
       }
 #endif
     }
@@ -361,8 +379,8 @@ static void audio_init() {
 #if SHAPONES_ENABLE_I2S_AUDIO
   i2s_std_clk_config_t clk_cfg =
     I2S_STD_CLK_DEFAULT_CONFIG(AUDIO_SAMPLE_FREQ_HZ);
-  i2s_std_slot_config_t slot_cfg =
-    I2S_STD_PCM_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+  i2s_std_slot_config_t slot_cfg = I2S_STD_PCM_SLOT_DEFAULT_CONFIG(
+    I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
   i2s_std_config_t std_cfg{
     .clk_cfg = clk_cfg,
     .slot_cfg = slot_cfg,
@@ -385,8 +403,8 @@ static void audio_init() {
 #if SHAPONES_ENABLE_PDM_AUDIO
   i2s_pdm_tx_clk_config_t clk_cfg =
     I2S_PDM_TX_CLK_DAC_DEFAULT_CONFIG(AUDIO_SAMPLE_FREQ_HZ);
-  i2s_pdm_tx_slot_config_t slot_cfg =
-    I2S_PDM_TX_SLOT_DAC_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+  i2s_pdm_tx_slot_config_t slot_cfg = I2S_PDM_TX_SLOT_DAC_DEFAULT_CONFIG(
+    I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
   i2s_pdm_tx_config_t tx_cfg{
     .clk_cfg = clk_cfg,
     .slot_cfg = slot_cfg,
@@ -423,25 +441,27 @@ static void audio_stream(bool preload) {
     size_t to_write = (AUDIO_BUFF_LEN - audio_rd_ptr) * SAMPLE_SIZE;
     size_t written = 0;
     if (preload) {
-      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[audio_rd_ptr], to_write,
-                               &written);
+      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[audio_rd_ptr],
+                               to_write, &written);
     } else {
-      i2s_channel_write(audio_i2s_ch, &audio_buff[audio_rd_ptr], to_write, &written,
-                        0);
+      i2s_channel_write(audio_i2s_ch, &audio_buff[audio_rd_ptr], to_write,
+                        &written, 0);
     }
-    audio_rd_ptr = (audio_rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_LEN - 1);
+    audio_rd_ptr =
+      (audio_rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_LEN - 1);
   }
   if (audio_rd_ptr < audio_wr_ptr) {
     size_t to_write = (audio_wr_ptr - audio_rd_ptr) * SAMPLE_SIZE;
     size_t written = 0;
     if (preload) {
-      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[audio_rd_ptr], to_write,
-                               &written);
+      i2s_channel_preload_data(audio_i2s_ch, &audio_buff[audio_rd_ptr],
+                               to_write, &written);
     } else {
-      i2s_channel_write(audio_i2s_ch, &audio_buff[audio_rd_ptr], to_write, &written,
-                        0);
+      i2s_channel_write(audio_i2s_ch, &audio_buff[audio_rd_ptr], to_write,
+                        &written, 0);
     }
-    audio_rd_ptr = (audio_rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_LEN - 1);
+    audio_rd_ptr =
+      (audio_rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_LEN - 1);
   }
 #endif
 }
@@ -473,217 +493,4 @@ static bool disp_button_down() {
     disp_button_pressed = false;
   }
   return ret;
-}
-
-nes::result_t nes::ram_alloc(size_t size, void **out_ptr) {
-#if SHAPONES_FORCE_USE_PSRAM
-  void *ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-#else
-  void *ptr = heap_caps_malloc(size, MALLOC_CAP_DMA);
-#endif
-  if (!ptr) {
-    return nes::result_t::ERR_RAM_ALLOC_FAILED;
-  }
-  *out_ptr = ptr;
-  return nes::result_t::SUCCESS;
-}
-
-void nes::ram_free(void *ptr) {
-  heap_caps_free(ptr);
-}
-
-nes::result_t nes::spinlock_init(int id) {
-  spinlock_initialize(&spinlocks[id]);
-  return nes::result_t::SUCCESS;
-}
-void nes::spinlock_deinit(int id) {}
-void nes::spinlock_get(int id) {
-  taskENTER_CRITICAL(&spinlocks[id]);
-}
-void nes::spinlock_release(int id) {
-  taskEXIT_CRITICAL(&spinlocks[id]);
-}
-
-nes::result_t nes::semaphore_init(int id) {
-  semaphores[id] = xSemaphoreCreateBinary();
-  xSemaphoreGive(semaphores[id]);
-  return nes::result_t::SUCCESS;
-}
-void nes::semaphore_deinit(int id) {}
-void nes::semaphore_take(int id) {
-  while (xSemaphoreTake(semaphores[id], 0) == pdFALSE) {}
-}
-bool nes::semaphore_try_take(int id) {
-  return (xSemaphoreTake(semaphores[id], 0) == pdTRUE);
-}
-void nes::semaphore_give(int id) {
-  xSemaphoreGive(semaphores[id]);
-}
-
-nes::result_t nes::fsys::mount() {
-  if (SD.begin(TF_CS_PIN, SPI, 10000000)) {
-    return nes::result_t::SUCCESS;
-  } else {
-    Serial.printf("No Disk.\n");
-    vTaskDelay(1000);
-    return nes::result_t::ERR_FS_NO_DISK;
-  }
-}
-
-void nes::fsys::unmount() {
-  SD.end();
-}
-
-nes::result_t nes::fsys::get_current_dir(char *out_path) {
-  strncpy(out_path, "/", nes::MAX_PATH_LENGTH);
-  return nes::result_t::SUCCESS;
-}
-
-nes::result_t nes::fsys::enum_files(const char *path,
-                                 nes::fsys::enum_files_cb_t callback) {
-  bool is_dir;
-  File root = SD.open(path);
-  while (1) {
-    nes::fsys::file_info_t fi;
-    String filename = root.getNextFileName(&fi.is_dir);
-    int sep = filename.lastIndexOf('/');
-    if (sep >= 0) {
-      filename = filename.substring(sep + 1);
-    }
-    if (filename == "") break;
-    fi.name = (char *)filename.c_str();
-    if (!callback(fi)) break;
-  }
-  root.close();
-  return nes::result_t::SUCCESS;
-}
-
-bool nes::fsys::exists(const char *path) {
-  return SD.exists(path);
-}
-
-nes::result_t nes::fsys::open(const char *path, bool write, void **handle) {
-  file_handle = SD.open(path, write ? FILE_WRITE : FILE_READ);
-  if (!file_handle) {
-    Serial.printf("Open failed: %s\n", path);
-    return nes::result_t::ERR_FS_OPEN_FAILED;
-  }
-  *handle = &file_handle;
-  return nes::result_t::SUCCESS;
-}
-
-void nes::fsys::close(void *handle) {
-  File *f = (File *)handle;
-  f->close();
-}
-
-nes::result_t nes::fsys::seek(void *handle, size_t offset) {
-  File *f = (File *)handle;
-  if (f->seek(offset)) {
-    return nes::result_t::SUCCESS;
-  } else {
-    return nes::result_t::ERR_FS_SEEK_FAILED;
-  }
-}
-
-nes::result_t nes::fsys::size(void *handle, size_t *out_size) {
-  File *f = (File *)handle;
-  *out_size = f->size();
-  return nes::result_t::SUCCESS;
-}
-
-nes::result_t nes::fsys::read(void *handle, uint8_t *buff, size_t size) {
-  File *f = (File *)handle;
-  size_t s = f->read(buff, size);
-  if (s == size) {
-    return nes::result_t::SUCCESS;
-  } else {
-    return nes::result_t::ERR_FS_READ_FAILED;
-  }
-}
-
-nes::result_t nes::fsys::write(void *handle, const uint8_t *buff, size_t size) {
-  File *f = (File *)handle;
-  size_t s = f->write(buff, size);
-  if (s == size) {
-    return nes::result_t::SUCCESS;
-  } else {
-    return nes::result_t::ERR_FS_WRITE_FAILED;
-  }
-}
-
-nes::result_t nes::fsys::remove(const char *path) {
-  if (SD.remove(path)) {
-    return nes::result_t::SUCCESS;
-  } else {
-    return nes::result_t::ERR_FS_DELETE_FAILED;
-  }
-}
-
-nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
-                             size_t *out_size) {
-  nes::result_t res = nes::result_t::SUCCESS;
-  esp_err_t esp_err;
-  uint8_t *buff = nullptr;
-
-  nes::unload_ines();
-
-  SHAPONES_PRINTF("Loading iNES: %s\n", path);
-  File f = SD.open(path, FILE_READ);
-  if (!f) {
-    return nes::result_t::ERR_FS_OPEN_FAILED;
-  }
-
-  size_t file_size = f.size();
-  SHAPONES_PRINTF("size: %d\n", (int)file_size);
-
-  do {
-
-    if (file_size < 130 * 1024 && !SHAPONES_FORCE_USE_PSRAM) {
-      // Load to SRAM
-      ines_ptr = (uint8_t *)heap_caps_malloc(file_size, MALLOC_CAP_DMA);
-    }
-
-    if (!ines_ptr) {
-      // Load to PSRAM
-      ines_ptr = (uint8_t *)heap_caps_malloc(file_size, MALLOC_CAP_SPIRAM);
-    }
-
-    if (!ines_ptr) {
-      return nes::result_t::ERR_RAM_ALLOC_FAILED;
-    }
-
-    size_t s = f.read(ines_ptr, file_size);
-    if (s != file_size) {
-      res = nes::result_t::ERR_FS_READ_FAILED;
-      break;
-    }
-  } while (0);
-
-  f.close();
-
-  if (buff) {
-    delete[] buff;
-  }
-
-  *out_ines = ines_ptr;
-  *out_size = file_size;
-
-  input_init();
-
-  return res;
-}
-
-void nes::unload_ines() {
-  if (ines_ptr) {
-    heap_caps_free(ines_ptr);
-  }
-  ines_ptr = nullptr;
-}
-
-uint64_t nes::get_time_us() {
-  digitalWrite(44, 1);
-  uint64_t t = micros();
-  digitalWrite(44, 0);
-  return t;
 }

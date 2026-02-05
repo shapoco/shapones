@@ -306,7 +306,7 @@ void nes::spinlock_release(int id) { spin_unlock(lock_hws[id], lock_irqs[id]); }
 
 nes::result_t nes::fsys::mount() { return nes::result_t::SUCCESS; }
 void nes::fsys::unmount() {}
-nes::result_t nes::fsys::get_current_dir(char *out_path) {
+nes::result_t nes::fsys::get_ines_dir(char *out_path) {
   return nes::result_t::SUCCESS;
 }
 nes::result_t nes::fsys::enum_files(const char *path,

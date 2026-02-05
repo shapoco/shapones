@@ -4,8 +4,6 @@
 #define SHAPONES_MENU_LARGE_FONT (1)
 #define SHAPONES_ENABLE_LOG (1)
 
-#pragma GCC optimize ("O2")
-
 #ifndef SHAPONES_HPP
 #define SHAPONES_HPP
 
@@ -89,6 +87,7 @@ using int_fast32_t = int32_t;
   do {                                                  \
     Serial.printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
     Serial.printf((fmt), ##__VA_ARGS__);                \
+    Serial.flush();                                     \
   } while (0)
 
 #define SHAPONES_ERRORF(fmt, ...)                       \
@@ -96,6 +95,7 @@ using int_fast32_t = int32_t;
     Serial.printf("[%s:%d] ", __FILE_NAME__, __LINE__); \
     Serial.printf("*ERROR: ");                          \
     Serial.printf(fmt, ##__VA_ARGS__);                  \
+    Serial.flush();                                     \
     nes::stop();                                        \
   } while (0)
 
@@ -205,6 +205,13 @@ enum class result_t {
   ERR_STATE_SIZE_MISMATCH,
   ERR_STATE_SLOT_FULL,
   ERR_STATE_NO_SLOT_DATA,
+
+  ERR_NET_BASE = 0x500,
+  ERR_NET_NO_INTERFACE,
+
+  ERR_INI_BASE = 0x600,
+  ERR_INI_PARSE_FAILED,
+  ERR_INI_STRING_TOO_LONG,
 
   ERR_HOST_BASE = 0xF00,
   ERR_FLASH_ERASE_FAILED,
@@ -730,6 +737,33 @@ result_t load_state(void *file_handle);
 
 // #include "shapones/common.hpp"
 
+// #include "shapones/fsys.hpp"
+
+#ifndef SHAPONES_FS_HPP
+#define SHAPONES_FS_HPP
+
+// #include "shapones/common.hpp"
+
+
+namespace nes::fsys {
+
+struct file_info_t {
+  bool is_dir;
+  const char *name;
+};
+
+using enum_files_cb_t = bool (*)(const file_info_t &info);
+
+bool is_root_dir(const char *path);
+int find_parent_separator(const char *path);
+int find_char_rev(const char *path, char c, int start_idx = -1);
+result_t append_separator(char *path);
+result_t append_path(char *path, const char *name);
+result_t replace_ext(char *path, const char *new_ext);
+
+}  // namespace nes::fsys
+
+#endif
 
 namespace nes {
 
@@ -753,34 +787,23 @@ void unload_ines();
 
 namespace fsys {
 
-struct file_info_t {
-  bool is_dir;
-  const char *name;
-};
-
-using enum_files_cb_t = bool (*)(const file_info_t &info);
-
 result_t mount();
 void unmount();
-result_t get_current_dir(char *out_path);
+void get_ines_dir(char *out_path);
+void get_config_dir(char *out_path);
 result_t enum_files(const char *path, enum_files_cb_t callback);
 bool exists(const char *path);
 result_t open(const char *path, bool write, void **handle);
 void close(void *handle);
 result_t seek(void *handle, size_t offset);
+bool eof(void *handle);
 result_t read(void *handle, uint8_t *buff, size_t size);
 result_t write(void *handle, const uint8_t *buff, size_t size);
 result_t size(void *handle, size_t *out_size);
 result_t remove(const char *path);
+result_t make_dir(const char *path);
 
 }  // namespace fsys
-
-namespace nwk {
-
-result_t start_connect();
-result_t disconnect();
-
-}  // namespace nwk
 
 uint64_t get_time_us();
 
@@ -1457,9 +1480,12 @@ const char* result_to_string(result_t res) {
     case result_t::ERR_STATE_INVALID_FORMAT: return "Bad State Format";
     case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
     case result_t::ERR_STATE_SLOT_FULL: return "State Slot Full";
+    case result_t::ERR_STATE_NO_SLOT_DATA: return "No Slot Data";
+    case result_t::ERR_NET_NO_INTERFACE: return "No Interface";
+    case result_t::ERR_INI_PARSE_FAILED: return "INI Parse Failed";
+    case result_t::ERR_INI_STRING_TOO_LONG: return "String Too Long";
     case result_t::ERR_FLASH_ERASE_FAILED: return "Erase Failed";
     case result_t::ERR_FLASH_PROGRAM_FAILED: return "Flash Failed";
-    case result_t::ERR_STATE_NO_SLOT_DATA: return "No Slot Data";
     case result_t::ERR_MMAP_FAILED: return "MMap Failed";
     default: return "Unknown Error";
   }
@@ -1518,12 +1544,20 @@ class AsyncFifo {
  public:
   AsyncFifo() : rd_ptr(0), wr_ptr(0) {}
 
-  void clear() {
+  SHAPONES_INLINE void clear() {
     rd_ptr = 0;
     wr_ptr = 0;
   }
 
   SHAPONES_INLINE bool is_empty() const { return rd_ptr == wr_ptr; }
+
+  SHAPONES_INLINE uint32_t stored() const {
+    return (wr_ptr + CAPACITY - rd_ptr) & (CAPACITY - 1);
+  }
+
+  SHAPONES_INLINE uint32_t space() const {
+    return (rd_ptr + CAPACITY - wr_ptr - 1) & (CAPACITY - 1);
+  }
 
   SHAPONES_INLINE bool is_full() const {
     uint32_t wp = (wr_ptr + 1) & (CAPACITY - 1);
@@ -1533,9 +1567,7 @@ class AsyncFifo {
   SHAPONES_INLINE bool try_push(const T &item) {
     uint32_t wp = wr_ptr;
     uint32_t wp_next = (wp + 1) & (CAPACITY - 1);
-    if (wp_next == rd_ptr) {
-      return false;  // full
-    }
+    if (wp_next == rd_ptr) return false;
     buffer[wp] = item;
     SHAPONES_THREAD_FENCE_SEQ_CST();
     wr_ptr = wp_next;
@@ -1547,7 +1579,7 @@ class AsyncFifo {
     do {
       wp = wr_ptr;
       wp_next = (wp + 1) & (CAPACITY - 1);
-    } while (wp_next == rd_ptr);  // wait until not full
+    } while (wp_next == rd_ptr);
     SHAPONES_THREAD_FENCE_SEQ_CST();
     buffer[wp] = item;
     wr_ptr = wp_next;
@@ -1555,18 +1587,14 @@ class AsyncFifo {
 
   SHAPONES_INLINE bool try_peek(T *out_item) {
     uint32_t rp = rd_ptr;
-    if (rp == wr_ptr) {
-      return false;  // empty
-    }
+    if (rp == wr_ptr) return false;
     *out_item = buffer[rp];
     return true;
   }
 
   SHAPONES_INLINE bool try_pop(T *out_item) {
     uint32_t rp = rd_ptr;
-    if (rp == wr_ptr) {
-      return false;  // empty
-    }
+    if (rp == wr_ptr) return false;
     *out_item = buffer[rp];
     SHAPONES_THREAD_FENCE_SEQ_CST();
     rd_ptr = (rp + 1) & (CAPACITY - 1);
@@ -1577,7 +1605,7 @@ class AsyncFifo {
     uint32_t rp;
     do {
       rp = rd_ptr;
-    } while (rp == wr_ptr);  // wait until not empty
+    } while (rp == wr_ptr);
     T item = buffer[rp];
     SHAPONES_THREAD_FENCE_SEQ_CST();
     rd_ptr = (rp + 1) & (CAPACITY - 1);
@@ -1585,6 +1613,14 @@ class AsyncFifo {
   }
 };
 }  // namespace nes
+
+template < uint32_t prm_ADDR_BITS>
+class AsyncByteFifoRle {
+    public:
+    static constexpr uint32_t ADDR_BITS = prm_ADDR_BITS;
+    static constexpr uint32_t CAPACITY = 1 << ADDR_BITS;
+
+};
 
 #endif
 // #include "shapones/interrupt.hpp"
@@ -3228,25 +3264,6 @@ result_t load_state(void *file_handle) {
 }  // namespace nes::cpu
 // #include "shapones/fsys.hpp"
 
-#ifndef SHAPONES_FS_HPP
-#define SHAPONES_FS_HPP
-
-// #include "shapones/common.hpp"
-
-
-namespace nes::fsys {
-
-
- bool is_root_dir(const char *path);
- int find_parent_separator(const char *path);
- int find_char_rev(const char *path, char c, int start_idx = -1);
- result_t append_separator(char *path);
- result_t append_path(char *path, const char *name);
- result_t replace_ext(char *path, const char *new_ext);
-
-}  // namespace nes::fsys
-
-#endif
 
 namespace nes::fsys {
 
@@ -4042,8 +4059,10 @@ uint32_t chrram_size = 0;
 result_t init() {
   deinit();
   unmap_ines();
-  SHAPONES_TRY(nes::ram_alloc(1, (void **)&prgram));
-  SHAPONES_TRY(nes::ram_alloc(1, (void **)&chrram));
+  prgram_size = 8192;
+  SHAPONES_TRY(nes::ram_alloc(prgram_size, (void **)&prgram));
+  chrram_size = CHRROM_RANGE;
+  SHAPONES_TRY(nes::ram_alloc(chrram_size, (void **)&chrram));
   return result_t::SUCCESS;
 }
 
@@ -4051,10 +4070,12 @@ void deinit() {
   if (prgram) {
     nes::ram_free(prgram);
     prgram = nullptr;
+    prgram_size = 0;
   }
   if (chrram) {
     nes::ram_free(chrram);
     chrram = nullptr;
+    chrram_size = 0;
   }
 }
 
@@ -4137,15 +4158,21 @@ result_t map_ines(const uint8_t *ines) {
   }
   set_nametable_arrangement(mode);
 
-  prgram_size = ines[8] * 8192;
-  if (prgram_size == 0) {
-    prgram_size = 8192;  // 8KB PRG RAM if not specified
+  uint32_t new_prgram_size = ines[8] * 8192;
+  if (new_prgram_size == 0) {
+    new_prgram_size = 8192;  // 8KB PRG RAM if not specified
   }
-  SHAPONES_PRINTF("PRG RAM size = %d kB\n", prgram_size / 1024);
-  if (prgram) {
-    nes::ram_free(prgram);
+  SHAPONES_PRINTF("PRG RAM size = %d kB\n", new_prgram_size / 1024);
+  if (new_prgram_size != prgram_size) {
+    if (prgram) {
+      nes::ram_free(prgram);
+      prgram = nullptr;
+    }
+    if (new_prgram_size > 0) {
+      SHAPONES_TRY(nes::ram_alloc(new_prgram_size, (void **)&prgram));
+    }
+    prgram_size = new_prgram_size;
   }
-  SHAPONES_TRY(nes::ram_alloc(prgram_size, (void **)&prgram));
   prgram_addr_mask = prgram_size - 1;
 
   // 512-byte trainer at $7000-$71FF (stored before PRG data)
@@ -4154,17 +4181,21 @@ result_t map_ines(const uint8_t *ines) {
   int start_of_prg_rom = 0x10;
   if (has_trainer) start_of_prg_rom += 0x200;
   prgrom = ines + start_of_prg_rom;
-  
-  if (chrram) {
-    nes::ram_free(chrram);
+
+  uint32_t new_chrram_size = (num_chr_rom_pages == 0) ? CHRROM_RANGE : 0;
+  if (new_chrram_size != chrram_size) {
+    if (chrram) {
+      nes::ram_free(chrram);
+      chrram = nullptr;
+    }
+    if (new_chrram_size > 0) {
+      SHAPONES_TRY(nes::ram_alloc(new_chrram_size, (void **)&chrram));
+    }
+    chrram_size = new_chrram_size;
   }
-  if (num_chr_rom_pages == 0) {
-    chrram_size = CHRROM_RANGE;
-    SHAPONES_TRY(nes::ram_alloc(CHRROM_RANGE, (void **)&chrram));
+  if (chrram_size > 0) {
     chrrom = chrram;
   } else {
-    chrram_size = 0;
-    SHAPONES_TRY(nes::ram_alloc(1, (void **)&chrram));
     int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
     chrrom = ines + start_of_chr_rom;
   }
@@ -4255,7 +4286,7 @@ result_t load_state(void *file_handle) {
 namespace nes::menu {
 
 const uint16_t FONT8X16_CODE_FIRST = 0x20;
-const uint16_t FONT8X16_CODE_LAST = 0xCF;
+const uint16_t FONT8X16_CODE_LAST = 0xDF;
 const uint16_t FONT8X16_DATA[] = {
   // 0x20 ' '
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
@@ -4542,249 +4573,297 @@ const uint16_t FONT8X16_DATA[] = {
   // 0x7E '~'
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xF1F4, 0xF3FC,
   0xFF3C, 0x7D3C, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x7F ''
+  // 0x7F
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x80 ''
+  // 0x80
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0xA400, 0xA900, 0xAA00, 0x6A00,
-  // 0x81 ''
+  // 0x81
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0x82 ''
+  // 0x82
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x001A, 0x006A, 0x00AA, 0x00A9,
-  // 0x83 ''
+  // 0x83
   0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00,
   0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00, 0x2A00,
-  // 0x84 ''
+  // 0x84
   0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8,
   0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8, 0x00A8,
-  // 0x85 ''
+  // 0x85
   0x6A00, 0xAA00, 0xA900, 0xA400, 0x0000, 0x0000, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x86 ''
+  // 0x86
   0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000, 0x0000, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x87 ''
+  // 0x87
   0x00A9, 0x00AA, 0x006A, 0x001A, 0x0000, 0x0000, 0x0000, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x88 ''
-  0x0000, 0x0000, 0xA2A4, 0xA028, 0xA028, 0xA1A4, 0xA280, 0xA280,
-  0xA1A8, 0x0000, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0x89 ''
-  0x0000, 0x0000, 0x028A, 0x0280, 0x0280, 0x028A, 0x0280, 0x0280,
-  0x2A8A, 0x0000, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0x8A ''
+  // 0x88
+  0x0000, 0x0000, 0x0000, 0x0800, 0x0A00, 0x0A80, 0x0AA0, 0x0A80,
+  0x0A00, 0x0800, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0x89
+  0x0000, 0x0000, 0x0000, 0x0080, 0x0280, 0x0A80, 0x2A80, 0x0A80,
+  0x0280, 0x0080, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0x8A
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x8B ''
+  // 0x8B
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x8C ''
+  // 0x8C
   0x6AA9, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0xA96A, 0xA82A, 0xA41A,
   0xA00A, 0x9006, 0x8002, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x6AA9,
-  // 0x8D ''
+  // 0x8D
   0x6AA9, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x8002, 0x9006, 0xA00A,
   0xA41A, 0xA82A, 0xA96A, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x6AA9,
-  // 0x8E ''
+  // 0x8E
   0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111,
   0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111, 0x4444, 0x1111,
-  // 0x8F ''
+  // 0x8F
   0x5555, 0x6AA9, 0xAAAA, 0xAAAA, 0xAAAA, 0xAFFA, 0xA55A, 0xAFFA,
   0xA55A, 0xAFFA, 0xA55A, 0xAAAA, 0xAAAA, 0xAAAA, 0x6AA9, 0x5555,
-  // 0x90 ''
+  // 0x90
   0x0000, 0xAA90, 0xAAA4, 0xAAA8, 0xAAA8, 0xAAA8, 0xAAA8, 0xAAA8,
   0xAAA8, 0xAAA8, 0xAAA8, 0x0068, 0x0028, 0x0028, 0x0028, 0x0028,
-  // 0x91 ''
+  // 0x91
   0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA,
   0xAAAA, 0xAAAA, 0xAAAA, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x92 ''
+  // 0x92
   0x0000, 0x06AA, 0x1AAA, 0x2AAA, 0x2AAA, 0x2AAA, 0x2AAA, 0x2AAA,
   0x2AAA, 0x2AAA, 0x2AAA, 0x2900, 0x2800, 0x2800, 0x2800, 0x2800,
-  // 0x93 ''
+  // 0x93
   0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028,
   0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028,
-  // 0x94 ''
+  // 0x94
   0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800,
   0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800, 0x2800,
-  // 0x95 ''
+  // 0x95
   0x0028, 0x0028, 0x0028, 0x0028, 0x0068, 0xAAA4, 0xAA90, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x96 ''
+  // 0x96
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x97 ''
+  // 0x97
   0x2800, 0x2800, 0x2800, 0x2800, 0x2900, 0x1AAA, 0x06AA, 0x0000,
   0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0x98 ''
+  // 0x98
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x99 ''
+  // 0x99
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x9A ''
+  // 0x9A
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x9B ''
+  // 0x9B
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x9C ''
+  // 0x9C
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x9D ''
+  // 0x9D
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x9E ''
+  // 0x9E
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0x9F ''
+  // 0x9F
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xA0 ' '
+  // 0xA0
   0x0000, 0x5540, 0x5550, 0x5554, 0x0154, 0x4054, 0x4054, 0x5454,
   0x5454, 0x4054, 0x4054, 0x0154, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xA1 '¡'
+  // 0xA1
   0x0000, 0x5555, 0x5555, 0x5555, 0x0000, 0x0001, 0x0001, 0x0015,
   0x1015, 0x5401, 0x1001, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xA2 '¢'
+  // 0xA2
   0x0000, 0x0555, 0x1555, 0x5555, 0x5500, 0x5400, 0x5400, 0x5400,
   0x5410, 0x5454, 0x5410, 0x5500, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xA3 '£'
-  0x0000, 0x5540, 0x1550, 0x1554, 0x1554, 0x1554, 0x1554, 0x1554,
+  // 0xA3
+  0x0000, 0x5540, 0x5550, 0x1554, 0x1554, 0x1554, 0x1554, 0x1554,
   0x1554, 0x1554, 0x1554, 0x1554, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xA4 '¤'
+  // 0xA4
   0x0000, 0x5555, 0x0000, 0x1550, 0x1150, 0x1150, 0x0000, 0x5554,
   0x5004, 0x5554, 0x5404, 0x5554, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xA5 '¥'
+  // 0xA5
   0x0000, 0x0555, 0x1555, 0x5554, 0x5550, 0x5550, 0x5550, 0x5550,
   0x5550, 0x5550, 0x5550, 0x5550, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xA6 '¦'
-  0x0000, 0x5540, 0x5550, 0x5554, 0x5554, 0x0554, 0x0154, 0x0054,
-  0x0154, 0x0554, 0x1554, 0x5554, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xA7 '§'
-  0x0000, 0x5555, 0x5555, 0x4005, 0x0000, 0x0000, 0x0000, 0x4000,
-  0x4000, 0x5000, 0x1540, 0x5014, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xA8 '¨'
-  0x0000, 0x0555, 0x1555, 0x5555, 0x5554, 0x5545, 0x5501, 0x5401,
-  0x5500, 0x5540, 0x5550, 0x5550, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xA9 '©'
+  // 0xA6
+  0x0000, 0x5540, 0x0550, 0x0154, 0x1054, 0x1054, 0x0054, 0x4054,
+  0x0154, 0x1554, 0x0554, 0x0154, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xA7
+  0x0000, 0x5555, 0x1550, 0x0540, 0x4104, 0x4104, 0x0100, 0x0101,
+  0x0540, 0x5554, 0x1550, 0x0540, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xA8
+  0x0000, 0x0555, 0x1540, 0x5500, 0x5410, 0x5410, 0x5400, 0x5405,
+  0x5500, 0x5550, 0x5540, 0x5500, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xA9
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xAA 'ª'
+  // 0xAA
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xAB '«'
+  // 0xAB
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xAC '¬'
+  // 0xAC
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xAD '­'
+  // 0xAD
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xAE '®'
+  // 0xAE
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xAF '¯'
+  // 0xAF
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xB0 '°'
+  // 0xB0
   0xAA90, 0xAAA4, 0xAAA8, 0x01A8, 0x80A8, 0x80A8, 0xA8A8, 0xA8A8,
   0x80A8, 0x80A8, 0x01A8, 0xAAA8, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xB1 '±'
+  // 0xB1
   0xAAAA, 0xAAAA, 0xAAAA, 0x0000, 0x0002, 0x0002, 0x002A, 0x642A,
   0xA802, 0x6402, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xB2 '²'
+  // 0xB2
   0x1AAA, 0x6AAA, 0xAAAA, 0xA900, 0xA800, 0xA800, 0xA800, 0xA864,
   0xA8A8, 0xA864, 0xA900, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xB3 '³'
+  // 0xB3
   0xAA90, 0x6AA4, 0x2AA8, 0x2AA8, 0x2AA8, 0x2AA8, 0x2AA8, 0x2AA8,
   0x2AA8, 0x2AA8, 0x2AA8, 0x6AA8, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xB4 '´'
+  // 0xB4
   0xAAAA, 0x1550, 0x22A0, 0x22A0, 0x26A0, 0x0000, 0x6AA4, 0xA558,
-  0xAAA8, 0xA958, 0xAAA8, 0x5555, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xB5 'µ'
+  0xAAA8, 0xA958, 0xAAA8, 0x5554, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB5
   0x1AAA, 0x6AAA, 0xAAA8, 0xAAA0, 0xAAA0, 0xAAA0, 0xAAA0, 0xAAA0,
-  0xAAA0, 0xAAA0, 0xAAA0, 0xAAA5, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
-  // 0xB6 '¶'
-  0xAA90, 0xAAA4, 0xAAA8, 0x6AA8, 0x0AA8, 0x02A8, 0x00A8, 0x02A8,
-  0x0AA8, 0x2AA8, 0xAAA8, 0xAAA8, 0xAAAA, 0xAAAA, 0xAAAA, 0x5555,
-  // 0xB7 '·'
-  0xAAAA, 0xAAAA, 0x5016, 0x0000, 0x0000, 0x4000, 0x8000, 0x9000,
-  0x6000, 0x2A90, 0xA468, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x5555,
-  // 0xB8 '¸'
-  0x1AAA, 0x6AAA, 0xAAAA, 0xAAA4, 0xAA86, 0xAA02, 0xA801, 0xAA00,
-  0xAA80, 0xAAA0, 0xAAA8, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x5555,
-  // 0xB9 '¹'
+  0xAAA0, 0xAAA0, 0xAAA0, 0xAAA4, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB6
+  0xAA90, 0x1AA4, 0x02A8, 0x21A8, 0x20A8, 0x00A8, 0x81A8, 0x02A8,
+  0x1AA8, 0x0AA8, 0x02A8, 0x01A8, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB7
+  0xAAAA, 0x6AA4, 0x0A80, 0x8648, 0x8208, 0x0200, 0x0642, 0x0A80,
+  0x6AA4, 0x2AA0, 0x0A80, 0x0640, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB8
+  0x1AAA, 0x6A90, 0xAA00, 0xA920, 0xA820, 0xA800, 0xA90A, 0xAA00,
+  0xAA90, 0xAA80, 0xAA00, 0xA900, 0xAAAA, 0xAAAA, 0xAAAA, 0x0000,
+  // 0xB9
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xBA 'º'
+  // 0xBA
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xBB '»'
+  // 0xBB
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xBC '¼'
+  // 0xBC
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xBD '½'
+  // 0xBD
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xBE '¾'
+  // 0xBE
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xBF '¿'
+  // 0xBF
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xC0 'À'
+  // 0xC0
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xC1
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xC2
   0x0000, 0x0000, 0x2000, 0xA800, 0xAA00, 0xAA80, 0xAAA0, 0xA800,
   0xA800, 0xA800, 0xA800, 0xA800, 0xA400, 0x9000, 0x0000, 0x0000,
-  // 0xC1 'Á'
+  // 0xC3
   0x0000, 0x0000, 0x0000, 0x0000, 0x0002, 0x000A, 0x002A, 0x0000,
   0x0000, 0x0000, 0x0001, 0x0AAA, 0x0AAA, 0x0AAA, 0x0000, 0x0000,
-  // 0xC2 'Â'
+  // 0xC4
   0x0000, 0x0000, 0x1F80, 0x55E0, 0x8070, 0x0030, 0xFE30, 0x0330,
   0x0330, 0x0330, 0x0330, 0x0330, 0xAA90, 0x0000, 0x0000, 0x0000,
-  // 0xC3 'Ã'
+  // 0xC5
   0x0000, 0x0000, 0x0000, 0x0000, 0x007F, 0x0055, 0x07FF, 0x0840,
   0x0840, 0x0840, 0x0840, 0x0840, 0x06AA, 0x0000, 0x0000, 0x0000,
-  // 0xC4 'Ä'
+  // 0xC6
   0x0000, 0x0000, 0xFF80, 0xFFC0, 0x03C0, 0xFFC0, 0x03C0, 0xFFC0,
   0x03C0, 0xFFC0, 0x03C0, 0xFFC0, 0xFFC0, 0xFF80, 0x0000, 0x0000,
-  // 0xC5 'Å'
+  // 0xC7
   0x0000, 0x0000, 0x02FF, 0x03FF, 0x03F0, 0x03FF, 0x03FC, 0x03FF,
-  0x03C0, 0x03FF, 0x0003, 0x01A3, 0x0063, 0x0013, 0x0000, 0x0000,
-  // 0xC6 'Æ'
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xC7 'Ç'
-  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
-  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xC8 'È'
+  0x03C0, 0x03FF, 0x0003, 0x02A3, 0x00A3, 0x0023, 0x0000, 0x0000,
+  // 0xC8
   0x0000, 0x0000, 0xE000, 0xF000, 0xF000, 0xF000, 0xFFE0, 0xFFF0,
   0xFFF0, 0xFFE0, 0xF000, 0xF000, 0xF000, 0xE000, 0x0000, 0x0000,
-  // 0xC9 'É'
+  // 0xC9
   0x0000, 0x0000, 0x000B, 0x000F, 0x000F, 0x000F, 0x0BFF, 0x0FFF,
   0x0FFF, 0x0BFF, 0x000F, 0x000F, 0x000F, 0x000B, 0x0000, 0x0000,
-  // 0xCA 'Ê'
+  // 0xCA
   0x0000, 0x0000, 0xFFE0, 0xFC30, 0xFC30, 0xFC30, 0xF830, 0x0030,
   0xFD30, 0x0330, 0xFF30, 0x0330, 0xFF30, 0xFFE0, 0x0000, 0x0000,
-  // 0xCB 'Ë'
+  // 0xCB
   0x0000, 0x0000, 0x01FF, 0x0733, 0x0C33, 0x0C33, 0x0C2F, 0x0C00,
   0x0C7F, 0x0CF0, 0x0CFF, 0x0CFF, 0x0CFF, 0x0BFF, 0x0000, 0x0000,
-  // 0xCC 'Ì'
+  // 0xCC
   0x0000, 0x0000, 0x01D0, 0x1FF0, 0xFFF0, 0xFFF0, 0xFFF0, 0xFFF0,
   0xFFF0, 0xFFF0, 0xFFF0, 0xFFF0, 0x1FF0, 0x01D0, 0x0000, 0x0000,
-  // 0xCD 'Í'
+  // 0xCD
   0x0000, 0x0000, 0x0000, 0x0000, 0x0001, 0x001F, 0x01FF, 0x1FFF,
   0x1FFF, 0x01FF, 0x001F, 0x0001, 0x0000, 0x0000, 0x0000, 0x0000,
-  // 0xCE 'Î'
+  // 0xCE
+  0x0000, 0xF800, 0x5C00, 0x5C00, 0x5C00, 0xF800, 0x3000, 0x2800,
+  0x0C00, 0x2FF8, 0x355C, 0xF55C, 0x355C, 0x2FF8, 0x0000, 0x0000,
+  // 0xCF
+  0x0000, 0x002F, 0x0035, 0x0035, 0x0035, 0x002F, 0x000C, 0x0028,
+  0x0030, 0x2FF8, 0x355C, 0x355F, 0x355C, 0x2FF8, 0x0000, 0x0000,
+  // 0xD0
+  0x0000, 0x0000, 0x0000, 0x2000, 0x2800, 0x2A00, 0xAA80, 0xAAA0,
+  0xAA80, 0x2A00, 0x2800, 0x2000, 0x0000, 0x0000, 0x0000, 0x0000,
+  // 0xD1
+  0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0AAA, 0x0AAA,
+  0x0AAA, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+  // 0xD2
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
-  // 0xCF 'Ï'
+  // 0xD3
   0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
   0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xD4
+  0x0000, 0x4000, 0xD000, 0xF000, 0x3400, 0x3C00, 0x3D00, 0x3F00,
+  0x3F40, 0x3FC0, 0xFFD0, 0x3FF0, 0x3FF0, 0xFFD0, 0x0000, 0x0000,
+  // 0xD5
+  0x0000, 0x0001, 0x0007, 0x000F, 0x001C, 0x003C, 0x007C, 0x00FC,
+  0x01FC, 0x03FC, 0x07FF, 0x0FFC, 0x0FFC, 0x07FF, 0x0000, 0x0000,
+  // 0xD6
+  0x0000, 0xE400, 0xFE00, 0xFFC0, 0xF3E0, 0xC0F4, 0x43F8, 0x1FFC,
+  0x1FFC, 0x43F8, 0xC0F4, 0xF3E0, 0xFFC0, 0xFE00, 0xE400, 0x0000,
+  // 0xD7
+  0x0000, 0x001B, 0x00BF, 0x03FF, 0x0BCF, 0x1F03, 0x2FC1, 0x3FF4,
+  0x3FF4, 0x2FC1, 0x1F03, 0x0BCF, 0x03FF, 0x00BF, 0x001B, 0x0000,
+  // 0xD8
+  0x0000, 0xF400, 0x0D00, 0xFFE0, 0xFFF0, 0xFFF0, 0x0000, 0xFFC0,
+  0xFFC0, 0xFF80, 0xFF80, 0xFF80, 0xFF40, 0xFF40, 0xFF40, 0x0000,
+  // 0xD9
+  0x0000, 0x001F, 0x0070, 0x0BFF, 0x0FFF, 0x0FFF, 0x0000, 0x07FF,
+  0x03FF, 0x02FF, 0x02FF, 0x02FF, 0x01FF, 0x01FF, 0x01FF, 0x0000,
+  // 0xDA
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xDB
+  0x5555, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001,
+  0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x4001, 0x5555,
+  // 0xDC
+  0x0000, 0x0030, 0xD368, 0x71CC, 0x71CC, 0xD368, 0xA030, 0x3000,
+  0xF400, 0x2800, 0x1C00, 0xFD00, 0x0A00, 0x0700, 0xFF40, 0x0000,
+  // 0xDD
+  0x0000, 0x0C00, 0x29C7, 0x334D, 0x334D, 0x29C7, 0x0C0A, 0x000C,
+  0x001F, 0x0028, 0x0024, 0x007F, 0x00A0, 0x00D0, 0x01FF, 0x0000,
+  // 0xDE
+  0x0000, 0xFD00, 0x0740, 0x01C0, 0xF0C0, 0xC0C0, 0x0080, 0xC080,
+  0xF040, 0xFC40, 0x3F00, 0x0FC0, 0x53F0, 0x00FC, 0x0030, 0x0000,
+  // 0xDF
+  0x0000, 0x07FF, 0x1D00, 0x3400, 0x30FF, 0x30FF, 0x30FF, 0x30FF,
+  0x30F3, 0x30C0, 0x3400, 0x1D00, 0x07FA, 0x0000, 0x0000, 0x0000,
 };
 
 }  // namespace nes
@@ -4794,6 +4873,121 @@ const uint16_t FONT8X16_DATA[] = {
 
 // #include "shapones/host_intf.hpp"
 
+// #include "shapones/ini.hpp"
+
+#ifndef SHAPONES_INI_HPP
+#define SHAPONES_INI_HPP
+
+// #include "shapones/common.hpp"
+
+// #include "shapones/fsys.hpp"
+
+// #include "shapones/host_intf.hpp"
+
+// #include "shapones/text_reader.hpp"
+
+#ifndef SHAPONES_TEXT_READER_HPP
+#define SHAPONES_TEXT_READER_HPP
+
+// #include "shapones/common.hpp"
+
+// #include "shapones/fsys.hpp"
+
+// #include "shapones/host_intf.hpp"
+
+
+namespace nes::fsys {
+
+class TextReader {
+ private:
+  void *handle;
+  char peeked_char;
+  result_t error = result_t::SUCCESS;
+
+ public:
+  TextReader(void *file_handle) : handle(file_handle) { read(); }
+
+  bool eof() { return peeked_char == '\0'; }
+
+  char peek() { return peeked_char; }
+
+  char read() {
+    char ret = peeked_char;
+    if (fsys::eof(handle)) {
+      peeked_char = '\0';
+    } else {
+      char c;
+      error = fsys::read(handle, (uint8_t *)&c, 1);
+      if (error == result_t::SUCCESS) {
+        peeked_char = c;
+      } else {
+        peeked_char = '\0';
+      }
+    }
+    return ret;
+  }
+
+  bool read_if(char c) {
+    if (peeked_char == c) {
+      read();
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  result_t expect(char c) {
+    if (read_if(c)) {
+      return result_t::SUCCESS;
+    } else {
+      return result_t::ERR_INI_PARSE_FAILED;
+    }
+  }
+
+  void skip_whitespace() {
+    while (read_if(' ') || read_if('\t')) {
+    }
+  }
+
+  bool read_if_newline() {
+    if (read_if('\n') || read_if('\r')) {
+      skip_newline();
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  result_t expect_newline() {
+    if (read_if_newline()) {
+      return result_t::SUCCESS;
+    } else {
+      return result_t::ERR_INI_PARSE_FAILED;
+    }
+  }
+
+  void skip_newline() {
+    while (read_if_newline()) {
+    }
+  }
+};
+}  // namespace nes::fsys
+
+#endif
+namespace nes::ini {
+
+static constexpr uint32_t MAX_SECTION_LENGTH = 16;
+static constexpr uint32_t MAX_KEY_LENGTH = 16;
+static constexpr uint32_t MAX_VALUE_LENGTH = 256;
+
+using enum_keys_cb_t = bool (*)(const char *section, const char *key,
+                                const char *value);
+
+result_t read(const char *path, enum_keys_cb_t callback);
+
+}  // namespace nes::ini
+
+#endif
 // #include "shapones/input.hpp"
 
 // #include "shapones/interrupt.hpp"
@@ -4832,7 +5026,6 @@ static constexpr int POPUP_Y = (BUFF_HEIGHT - POPUP_MAX_ITEMS - 3) / 2;
 enum class tab_t {
   NES_LIST,
   SAVE_LIST,
-  NETWORK,
   COUNT,
 };
 
@@ -4840,14 +5033,22 @@ static constexpr int NUM_TABS = (int)tab_t::COUNT;
 
 enum class icon_t {
   NONE,
+  RESERVED_00,
   PARENT,
   FOLDER,
   FILE,
   ADD,
+  SAVE,
+  PLAY,
+  NETWORK,
+  BACK,
+  RESERVED_0A,
   WARNING,
   ERROR,
-  PLAY,
-  SAVE,
+  REMOVE,
+  RESERVED_0E,
+  DOOR,
+  CONNECT,
 };
 
 enum class action_t {
@@ -4859,6 +5060,13 @@ enum class action_t {
   LOAD_STATE,
   SAVE_STATE,
   DELETE_STATE,
+  NET_NETWORK_ENUM,
+  NET_NETWORK_SELECT,
+  NET_WAIT_FRIEND,
+  NET_NEW_FRIEND_ENTRY,
+  NET_SELECT_FRIEND,
+  NET_DISCONNECT,
+  NET_REMOVE_SERVER,
   CLOSE_POPUP,
 };
 
@@ -4879,8 +5087,8 @@ class ListItem {
   const icon_t icon;
   const action_t action;
   const char *label;
-  const int32_t tag;
-  ListItem(icon_t icon, action_t action, const char *label, int32_t tag = 0)
+  const uint64_t tag;
+  ListItem(icon_t icon, action_t action, const char *label, uint64_t tag = 0)
       : icon(icon), action(action), label(strdup_safe(label)), tag(tag) {}
   ~ListItem() {
     if (label != nullptr) {
@@ -4939,7 +5147,7 @@ class ListBox {
   }
 
   void add_item(icon_t icon, action_t action, const char *label,
-                int32_t tag = 0) {
+                uint64_t tag = 0) {
     if (num_items >= capacity) return;
     items[num_items++] = new ListItem(icon, action, label, tag);
     request_redraw();
@@ -4978,7 +5186,7 @@ int last_menu_index[NUM_TABS] = {0};
 volatile bool vsync = false;
 
 const uint8_t PALETTE_FILE[] = {0x1D, 0x00, 0x10, 0x20, 0x21, 0x11, 0x01, 0x3F,
-                                0x2D, 0x00, 0x10, 0x3D, 0x3F, 0x0C, 0x1C, 0x2C};
+                                0x2D, 0x00, 0x10, 0x3D, 0x3F, 0x1C, 0x2C, 0x3C};
 static constexpr int NUM_PALETTES = sizeof(PALETTE_FILE) / 4;
 
 uint8_t text_buff[BUFF_WIDTH * BUFF_HEIGHT];
@@ -5075,6 +5283,10 @@ void hide() {
 static result_t load_tab(tab_t t, bool force) {
   if (tab == t && !force) return result_t::SUCCESS;
 
+  menu.set_bounds(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, CLIENT_HEIGHT);
+  menu.clear();
+  ss_enable = false;
+
   tab = t;
 
   switch (tab) {
@@ -5094,9 +5306,8 @@ static result_t load_tab(tab_t t, bool force) {
 }
 
 static result_t load_file_list_tab() {
-  menu.set_bounds(CLIENT_X, CLIENT_Y + 1, CLIENT_WIDTH, CLIENT_HEIGHT - 1);
-
   menu.clear();
+  menu.set_bounds(CLIENT_X, CLIENT_Y + 1, CLIENT_WIDTH, CLIENT_HEIGHT - 1);
 
   if (!disk_mounted) {
     if (fsys::mount() == result_t::SUCCESS) {
@@ -5107,7 +5318,7 @@ static result_t load_file_list_tab() {
   }
 
   if (current_dir[0] == '\0') {
-    SHAPONES_TRY(fsys::get_current_dir(current_dir));
+    fsys::get_ines_dir(current_dir);
     SHAPONES_TRY(fsys::append_separator(current_dir));
   }
 
@@ -5116,21 +5327,22 @@ static result_t load_file_list_tab() {
     menu.add_item(icon_t::PARENT, action_t::OPEN_DIR, "../");
   }
 
-  result_t res = fsys::enum_files(current_dir, [](const fsys::file_info_t &info) {
-    char *name = (char *)info.name;
-    if (info.is_dir) {
-      // append '/' to directory names
-      size_t len = strnlen(name, nes::MAX_FILENAME_LENGTH + 1);
-      char name[nes::MAX_FILENAME_LENGTH + 2];
-      strncpy(name, info.name, nes::MAX_FILENAME_LENGTH);
-      name[len++] = '/';
-      name[len] = '\0';
-    }
-    icon_t icon = info.is_dir ? icon_t::FOLDER : icon_t::FILE;
-    action_t action = info.is_dir ? action_t::OPEN_DIR : action_t::LOAD_ROM;
-    menu.add_item(icon, action, name);
-    return (menu.num_items < menu.capacity);
-  });
+  result_t res =
+      fsys::enum_files(current_dir, [](const fsys::file_info_t &info) {
+        char *name = (char *)info.name;
+        if (info.is_dir) {
+          // append '/' to directory names
+          size_t len = strnlen(name, nes::MAX_FILENAME_LENGTH + 1);
+          char name[nes::MAX_FILENAME_LENGTH + 2];
+          strncpy(name, info.name, nes::MAX_FILENAME_LENGTH);
+          name[len++] = '/';
+          name[len] = '\0';
+        }
+        icon_t icon = info.is_dir ? icon_t::FOLDER : icon_t::FILE;
+        action_t action = info.is_dir ? action_t::OPEN_DIR : action_t::LOAD_ROM;
+        menu.add_item(icon, action, name);
+        return (menu.num_items < menu.capacity);
+      });
   if (res != result_t::SUCCESS) {
     menu.clear();
     return res;
@@ -5155,7 +5367,6 @@ static result_t load_file_list_tab() {
     }
   }
 
-  ss_enable = false;
   request_redraw();
   return res;
 }
@@ -5163,9 +5374,8 @@ static result_t load_file_list_tab() {
 static result_t load_state_list_tab() {
   result_t res = result_t::SUCCESS;
 
-  menu.set_bounds(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, CLIENT_HEIGHT);
-
   menu.clear();
+
   char state_path[nes::MAX_PATH_LENGTH + 1];
   strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
   SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
@@ -5201,7 +5411,7 @@ static result_t load_state_list_tab() {
     }
 
     if (menu.num_items < state::MAX_SLOTS) {
-      menu.add_item(icon_t::ADD, action_t::ADD_STATE_SLOT, "New Slot", -1);
+      menu.add_item(icon_t::ADD, action_t::ADD_STATE_SLOT, "New Slot");
     }
 
     load_state_screenshot();
@@ -5210,8 +5420,8 @@ static result_t load_state_list_tab() {
   if (res != result_t::SUCCESS) {
     menu.clear();
     popup_close();
-    popup_list.add_item(icon_t::NONE, action_t::DELETE_STATE, "DELETE FILE");
-    popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+    popup_list.add_item(icon_t::REMOVE, action_t::DELETE_STATE, "Delete");
+    popup_list.add_item(icon_t::BACK, action_t::CLOSE_POPUP, "Cancel");
     popup_list.sel_index = 1;
     popup_show(icon_t::ERROR, "Data Broken.");
   }
@@ -5283,32 +5493,34 @@ static result_t process_input() {
     }
   }
 
-  if (key_up.A) {
-    ListItem *mi = nullptr;
-    if (popup_shown) {
-      mi = popup_list.get_selected_item();
+  if (popup_shown) {
+    if (key_up.A) {
+      ListItem *mi = popup_list.get_selected_item();
+      if (mi) on_menu_selected(mi);
     } else {
-      mi = menu.get_selected_item();
+      popup_list.on_key_down(key_down);
     }
-    if (mi) {
-      on_menu_selected(mi);
-    }
-  } else if (key_down.select) {
-    if (!popup_shown) {
+  } else {
+    if (key_up.A) {
+      ListItem *mi = menu.get_selected_item();
+      if (mi) on_menu_selected(mi);
+    } else if (key_down.right) {
       tab_t new_tab =
           static_cast<tab_t>((static_cast<int>(tab) + 1) % NUM_TABS);
       load_tab(new_tab);
+    } else if (key_down.left) {
+      tab_t new_tab =
+          static_cast<tab_t>((static_cast<int>(tab) + NUM_TABS - 1) % NUM_TABS);
+      load_tab(new_tab);
+    } else {
+      int prev_sel = menu.sel_index;
+      menu.on_key_down(key_down);
+      int new_sel = menu.sel_index;
+      if (tab == tab_t::SAVE_LIST && prev_sel != new_sel) {
+        load_state_screenshot();
+      }
+      last_menu_index[static_cast<int>(tab)] = menu.sel_index;
     }
-  } else if (popup_shown) {
-    popup_list.on_key_down(key_down);
-  } else {
-    int prev_sel = menu.sel_index;
-    menu.on_key_down(key_down);
-    int new_sel = menu.sel_index;
-    if (tab == tab_t::SAVE_LIST && prev_sel != new_sel) {
-      load_state_screenshot();
-    }
-    last_menu_index[static_cast<int>(tab)] = menu.sel_index;
   }
   return result_t::SUCCESS;
 }
@@ -5377,7 +5589,7 @@ static result_t on_state_select(ListItem *mi) {
   popup_message[0] = '\0';
   popup_list.add_item(icon_t::PLAY, action_t::LOAD_STATE, "Load", mi->tag);
   popup_list.add_item(icon_t::SAVE, action_t::SAVE_STATE, "Save", mi->tag);
-  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+  popup_list.add_item(icon_t::BACK, action_t::CLOSE_POPUP, "Cancel");
   popup_show(icon_t::NONE, "Action?");
   return result_t::SUCCESS;
 }
@@ -5411,7 +5623,7 @@ static result_t on_delete_state() {
 
 static result_t show_message(icon_t icon, const char *msg) {
   popup_list.clear();
-  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Close");
+  popup_list.add_item(icon_t::BACK, action_t::CLOSE_POPUP, "Close");
   popup_show(icon, msg);
   return result_t::SUCCESS;
 }
@@ -5420,7 +5632,7 @@ static result_t show_confirm(icon_t icon, const char *msg,
                              action_t confirm_action) {
   popup_list.clear();
   popup_list.add_item(icon_t::NONE, confirm_action, "OK");
-  popup_list.add_item(icon_t::NONE, action_t::CLOSE_POPUP, "Cancel");
+  popup_list.add_item(icon_t::BACK, action_t::CLOSE_POPUP, "Cancel");
   popup_show(icon, msg);
   return result_t::SUCCESS;
 }
@@ -5520,16 +5732,17 @@ static void perform_redraw() {
              '\x80');
 
   // tab bar
-  draw_text(CLIENT_X, CLIENT_Y - 1, "\x88\x89");
   for (int itab = 0; itab < NUM_TABS; itab++) {
     for (int i = 0; i < 3; i++) {
       char c = '\xA0' + itab * 3 + i;
       if (itab == (int)tab) {
         c += 0x10;
       }
-      draw_char(CLIENT_X + 2 + itab * 3 + i, CLIENT_Y - 1, c);
+      draw_char(CLIENT_X + 1 + itab * 3 + i, CLIENT_Y - 1, c);
     }
   }
+  draw_text(CLIENT_X, CLIENT_Y - 1, "\x88");
+  draw_text(CLIENT_X + 1 + NUM_TABS * 3, CLIENT_Y - 1, "\x89");
 
   if (tab == tab_t::NES_LIST) {
     // current directory
@@ -5580,16 +5793,14 @@ static void draw_char(int x, int y, char c) {
 }
 
 static void draw_icon(int x, int y, icon_t icon) {
-  const char *text = nullptr;
-  switch (icon) {
-    case icon_t::PARENT: text = "\xC0\xC1"; break;
-    case icon_t::FOLDER: text = "\xC2\xC3"; break;
-    case icon_t::FILE: text = "\xC4\xC5"; break;
-    case icon_t::ADD: text = "\xC8\xC9"; break;
-    case icon_t::SAVE: text = "\xCA\xCB"; break;
-    case icon_t::PLAY: text = "\xCC\xCD"; break;
-  }
-  if (text) draw_text(x, y, text);
+  int index = static_cast<int>(icon) - 1;
+  if (index < 0) return;
+  const char text[] = {
+      (char)('\xC0' + index * 2 + 0),
+      (char)('\xC0' + index * 2 + 1),
+      '\0',
+  };
+  draw_text(x, y, text);
 }
 
 static void draw_frame(int x, int y, int w, int h, char offset) {
@@ -6128,6 +6339,13 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
   }
 
   if (!!(timing & timing_t::END_OF_VISIBLE_LINE)) {
+    if (!skip_render) {
+      uint32_t *ptr = (uint32_t *)line_buff;
+      for (uint32_t x = 0; x < SCREEN_WIDTH / 4; x++) {
+        *(ptr++) &= 0x3F3F3F3F;
+      }
+    }
+
     nes::state::hsync(focus_y, line_buff, skip_render);
     if (!skip_render) {
       nes::menu::overlay(focus_y, line_buff);
@@ -6462,8 +6680,7 @@ result_t save_state(void *file_handle) {
 
   SHAPONES_TRY(fsys::write(file_handle, palette_file, sizeof(palette_file)));
 
-  uint8_t *oam_buff;
-  SHAPONES_TRY(ram_alloc(sizeof(oam), (void **)&oam_buff));
+  uint8_t oam_buff[sizeof(oam)];
   for (size_t i = 0; i < sizeof(oam); i += 4) {
     uint32_t word = oam[i / 4];
     oam_buff[i + 0] = (word >> 0) & 0xff;
@@ -6472,7 +6689,6 @@ result_t save_state(void *file_handle) {
     oam_buff[i + 3] = (word >> 24) & 0xff;
   }
   SHAPONES_TRY(fsys::write(file_handle, oam_buff, sizeof(oam)));
-  ram_free(oam_buff);
 
   return result_t::SUCCESS;
 }
@@ -6497,8 +6713,7 @@ result_t load_state(void *file_handle) {
   nmi_level = reader.b();
   SHAPONES_TRY(fsys::read(file_handle, palette_file, sizeof(palette_file)));
 
-  uint8_t *oam_buff;
-  SHAPONES_TRY(ram_alloc(sizeof(oam), (void **)&oam_buff));
+  uint8_t oam_buff[sizeof(oam)];
   SHAPONES_TRY(fsys::read(file_handle, oam_buff, sizeof(oam)));
   for (size_t i = 0; i < sizeof(oam); i += 4) {
     uint32_t word = 0;
@@ -6508,7 +6723,6 @@ result_t load_state(void *file_handle) {
     word |= ((uint32_t)oam_buff[i + 3]) << 24;
     oam[i / 4] = word;
   }
-  ram_free(oam_buff);
 
   return result_t::SUCCESS;
 }
@@ -6590,10 +6804,8 @@ void hsync(int focus_y, const uint8_t *line_buff, bool skip_render) {
     uint8_t *dst = &ss_buff[(wr_index * SS_SIZE_BYTES) + (dy * SS_WIDTH)];
     for (int dx = 0; dx < SS_WIDTH; dx++) {
       int sx = SS_CLIP_LEFT + dx * SS_SCALING;
-      uint8_t c01 =
-          blend_colors(line_buff[sx] & 0x3F, line_buff[sx + 1] & 0x3F);
-      uint8_t c23 =
-          blend_colors(line_buff[sx + 2] & 0x3F, line_buff[sx + 3] & 0x3F);
+      uint8_t c01 = blend_colors(line_buff[sx], line_buff[sx + 1]);
+      uint8_t c23 = blend_colors(line_buff[sx + 2], line_buff[sx + 3]);
       dst[dx] = blend_colors(c01, c23);
     }
     if (dy == SS_HEIGHT - 1) {
@@ -6800,7 +7012,8 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
 static result_t write_screenshot(void *f) {
   SemaphoreBlock lock(SEMAPHORE_PPU);
   int rd_index = (ss_wr_index + SS_BUFF_DEPTH - ss_num_stored) % SS_BUFF_DEPTH;
-  result_t res = fsys::write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
+  result_t res =
+      fsys::write(f, &ss_buff[rd_index * SS_SIZE_BYTES], SS_SIZE_BYTES);
   return res;
 }
 

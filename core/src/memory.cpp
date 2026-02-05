@@ -33,8 +33,10 @@ uint32_t chrram_size = 0;
 result_t init() {
   deinit();
   unmap_ines();
-  SHAPONES_TRY(nes::ram_alloc(1, (void **)&prgram));
-  SHAPONES_TRY(nes::ram_alloc(1, (void **)&chrram));
+  prgram_size = 8192;
+  SHAPONES_TRY(nes::ram_alloc(prgram_size, (void **)&prgram));
+  chrram_size = CHRROM_RANGE;
+  SHAPONES_TRY(nes::ram_alloc(chrram_size, (void **)&chrram));
   return result_t::SUCCESS;
 }
 
@@ -42,10 +44,12 @@ void deinit() {
   if (prgram) {
     nes::ram_free(prgram);
     prgram = nullptr;
+    prgram_size = 0;
   }
   if (chrram) {
     nes::ram_free(chrram);
     chrram = nullptr;
+    chrram_size = 0;
   }
 }
 
@@ -128,15 +132,21 @@ result_t map_ines(const uint8_t *ines) {
   }
   set_nametable_arrangement(mode);
 
-  prgram_size = ines[8] * 8192;
-  if (prgram_size == 0) {
-    prgram_size = 8192;  // 8KB PRG RAM if not specified
+  uint32_t new_prgram_size = ines[8] * 8192;
+  if (new_prgram_size == 0) {
+    new_prgram_size = 8192;  // 8KB PRG RAM if not specified
   }
-  SHAPONES_PRINTF("PRG RAM size = %d kB\n", prgram_size / 1024);
-  if (prgram) {
-    nes::ram_free(prgram);
+  SHAPONES_PRINTF("PRG RAM size = %d kB\n", new_prgram_size / 1024);
+  if (new_prgram_size != prgram_size) {
+    if (prgram) {
+      nes::ram_free(prgram);
+      prgram = nullptr;
+    }
+    if (new_prgram_size > 0) {
+      SHAPONES_TRY(nes::ram_alloc(new_prgram_size, (void **)&prgram));
+    }
+    prgram_size = new_prgram_size;
   }
-  SHAPONES_TRY(nes::ram_alloc(prgram_size, (void **)&prgram));
   prgram_addr_mask = prgram_size - 1;
 
   // 512-byte trainer at $7000-$71FF (stored before PRG data)
@@ -145,17 +155,21 @@ result_t map_ines(const uint8_t *ines) {
   int start_of_prg_rom = 0x10;
   if (has_trainer) start_of_prg_rom += 0x200;
   prgrom = ines + start_of_prg_rom;
-  
-  if (chrram) {
-    nes::ram_free(chrram);
+
+  uint32_t new_chrram_size = (num_chr_rom_pages == 0) ? CHRROM_RANGE : 0;
+  if (new_chrram_size != chrram_size) {
+    if (chrram) {
+      nes::ram_free(chrram);
+      chrram = nullptr;
+    }
+    if (new_chrram_size > 0) {
+      SHAPONES_TRY(nes::ram_alloc(new_chrram_size, (void **)&chrram));
+    }
+    chrram_size = new_chrram_size;
   }
-  if (num_chr_rom_pages == 0) {
-    chrram_size = CHRROM_RANGE;
-    SHAPONES_TRY(nes::ram_alloc(CHRROM_RANGE, (void **)&chrram));
+  if (chrram_size > 0) {
     chrrom = chrram;
   } else {
-    chrram_size = 0;
-    SHAPONES_TRY(nes::ram_alloc(1, (void **)&chrram));
     int start_of_chr_rom = start_of_prg_rom + num_prg_rom_pages * 0x4000;
     chrrom = ines + start_of_chr_rom;
   }

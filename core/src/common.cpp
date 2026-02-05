@@ -36,9 +36,12 @@ const char* result_to_string(result_t res) {
     case result_t::ERR_STATE_INVALID_FORMAT: return "Bad State Format";
     case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
     case result_t::ERR_STATE_SLOT_FULL: return "State Slot Full";
+    case result_t::ERR_STATE_NO_SLOT_DATA: return "No Slot Data";
+    case result_t::ERR_NET_NO_INTERFACE: return "No Interface";
+    case result_t::ERR_INI_PARSE_FAILED: return "INI Parse Failed";
+    case result_t::ERR_INI_STRING_TOO_LONG: return "String Too Long";
     case result_t::ERR_FLASH_ERASE_FAILED: return "Erase Failed";
     case result_t::ERR_FLASH_PROGRAM_FAILED: return "Flash Failed";
-    case result_t::ERR_STATE_NO_SLOT_DATA: return "No Slot Data";
     case result_t::ERR_MMAP_FAILED: return "MMap Failed";
     default: return "Unknown Error";
   }
