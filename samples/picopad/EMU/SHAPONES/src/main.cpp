@@ -306,9 +306,12 @@ nes::result_t nes::fsys::mount() {
 
 void nes::fsys::unmount() { DiskUnmount(); }
 
-nes::result_t nes::fsys::get_ines_dir(char *out_path) {
+void nes::fsys::get_ines_dir(char *out_path) {
   strncpy(out_path, "/EMU/SHAPONES/", nes::MAX_PATH_LENGTH);
-  return nes::result_t::SUCCESS;
+}
+
+void nes::fsys::get_config_dir(char *out_path) {
+  strncpy(out_path, "/EMU/SHAPONES/", nes::MAX_PATH_LENGTH);
 }
 
 nes::result_t nes::fsys::enum_files(const char *path,
