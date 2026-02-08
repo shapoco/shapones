@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::interrupt {
+namespace shapones::interrupt {
 
 enum class source_t : uint32_t {
   APU_FRAME_COUNTER = (1 << 0),
@@ -51,6 +51,6 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::interrupt
+}  // namespace shapones::interrupt
 
 #endif

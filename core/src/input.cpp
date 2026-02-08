@@ -2,7 +2,7 @@
 #include "shapones/host_intf.hpp"
 #include "shapones/menu.hpp"
 
-namespace nes::input {
+namespace shapones::input {
 
 static constexpr uint32_t STATE_SIZE = 16;
 
@@ -99,4 +99,4 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::input
+}  // namespace shapones::input

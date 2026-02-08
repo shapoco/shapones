@@ -1,11 +1,11 @@
 #include "shapones/fsys.hpp"
 
-namespace nes::fsys {
+namespace shapones::fsys {
 
 bool is_root_dir(const char *path) { return find_parent_separator(path) < 0; }
 
 int find_parent_separator(const char *path) {
-  int n = strnlen(path, nes::MAX_PATH_LENGTH);
+  int n = strnlen(path, shapones::MAX_PATH_LENGTH);
   if (n == 0) {
     return -1;
   }
@@ -17,7 +17,7 @@ int find_parent_separator(const char *path) {
 
 int find_char_rev(const char *path, char c, int start_idx) {
   if (start_idx < 0) {
-    start_idx = strnlen(path, nes::MAX_PATH_LENGTH);
+    start_idx = strnlen(path, shapones::MAX_PATH_LENGTH);
   } else if (start_idx == 0) {
     return -1;
   }
@@ -30,11 +30,11 @@ int find_char_rev(const char *path, char c, int start_idx) {
 }
 
 result_t append_separator(char *path) {
-  int len = strnlen(path, nes::MAX_PATH_LENGTH);
+  int len = strnlen(path, shapones::MAX_PATH_LENGTH);
   if (path[len - 1] == '/') {
     return result_t::SUCCESS;
   }
-  if (len + 1 >= nes::MAX_PATH_LENGTH) {
+  if (len + 1 >= shapones::MAX_PATH_LENGTH) {
     return result_t::ERR_FS_PATH_TOO_LONG;
   }
   path[len++] = '/';
@@ -44,9 +44,9 @@ result_t append_separator(char *path) {
 
 result_t append_path(char *path, const char *name) {
   SHAPONES_TRY(append_separator(path));
-  int len = strnlen(path, nes::MAX_PATH_LENGTH);
-  int name_len = strnlen(name, nes::MAX_PATH_LENGTH);
-  if (len + name_len >= nes::MAX_PATH_LENGTH) {
+  int len = strnlen(path, shapones::MAX_PATH_LENGTH);
+  int name_len = strnlen(name, shapones::MAX_PATH_LENGTH);
+  if (len + name_len >= shapones::MAX_PATH_LENGTH) {
     return result_t::ERR_FS_PATH_TOO_LONG;
   }
 
@@ -55,7 +55,7 @@ result_t append_path(char *path, const char *name) {
 }
 
 result_t replace_ext(char *path, const char *new_ext) {
-  int old_path_len = strnlen(path, nes::MAX_PATH_LENGTH);
+  int old_path_len = strnlen(path, shapones::MAX_PATH_LENGTH);
 
   int sep_idx = find_char_rev(path, '/');
   int old_name_len = old_path_len;
@@ -69,15 +69,15 @@ result_t replace_ext(char *path, const char *new_ext) {
   }
 
   int old_ext_len = old_path_len - dot_idx - 1;
-  int new_ext_len = strnlen(new_ext, nes::MAX_FILENAME_LENGTH);
+  int new_ext_len = strnlen(new_ext, shapones::MAX_FILENAME_LENGTH);
 
   int new_path_len = old_path_len - old_ext_len + new_ext_len;
-  if (new_path_len >= nes::MAX_PATH_LENGTH) {
+  if (new_path_len >= shapones::MAX_PATH_LENGTH) {
     return result_t::ERR_FS_PATH_TOO_LONG;
   }
 
   int new_name_len = old_name_len - old_ext_len + new_ext_len;
-  if (new_name_len >= nes::MAX_FILENAME_LENGTH) {
+  if (new_name_len >= shapones::MAX_FILENAME_LENGTH) {
     return result_t::ERR_FS_PATH_TOO_LONG;
   }
 
@@ -86,4 +86,4 @@ result_t replace_ext(char *path, const char *new_ext) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::fsys
+}  // namespace shapones::fsys

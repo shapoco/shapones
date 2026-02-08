@@ -1,7 +1,7 @@
 #include "shapones/shapones.hpp"
 #include "shapones/state.hpp"
 
-namespace nes {
+namespace shapones {
 
 char ines_path[MAX_PATH_LENGTH + 1] = "";
 bool ines_mapped = false;
@@ -20,10 +20,10 @@ result_t init(const config_t &cfg) {
   build_blend_table();
 
   for (int i = 0; i < NUM_SPINLOCKS; i++) {
-    SHAPONES_TRY(nes::spinlock_init(i));
+    SHAPONES_TRY(shapones::spinlock_init(i));
   }
   for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    SHAPONES_TRY(nes::semaphore_init(i));
+    SHAPONES_TRY(shapones::semaphore_init(i));
   }
   SHAPONES_TRY(interrupt::init());
   SHAPONES_TRY(memory::init());
@@ -49,10 +49,10 @@ void deinit() {
   input::deinit();
   interrupt::deinit();
   for (int i = 0; i < NUM_SPINLOCKS; i++) {
-    nes::spinlock_deinit(i);
+    shapones::spinlock_deinit(i);
   }
   for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    nes::semaphore_deinit(i);
+    shapones::semaphore_deinit(i);
   }
 }
 
@@ -110,7 +110,7 @@ void unmap_ines() {
 }
 
 result_t reset() {
-  nes::state::reset();
+  shapones::state::reset();
   SHAPONES_TRY(mapper::instance->reset());
   SHAPONES_TRY(ppu::reset());
   SHAPONES_TRY(apu::reset());
@@ -161,4 +161,4 @@ static void build_blend_table() {
   }
 }
 
-}  // namespace nes
+}  // namespace shapones

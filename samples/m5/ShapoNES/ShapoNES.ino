@@ -40,15 +40,15 @@ uint32_t resize_buff[BUFF_W];
 #endif
 
 static uint16_t frame_buff[BUFF_W * BUFF_H];
-static int dma_next_y = nes::SCREEN_HEIGHT;
+static int dma_next_y = shapones::SCREEN_HEIGHT;
 
-static uint8_t line_buff[nes::SCREEN_WIDTH];
+static uint8_t line_buff[shapones::SCREEN_WIDTH];
 static uint64_t next_vsync_us = 0;
 static bool skip_frame = false;
 
 static adc_button::Pin button_pins[BUTTON_NUM_PINS];
 
-static nes::input::status_t input_state = { 0 };
+static shapones::input::status_t input_state = { 0 };
 
 #if SHAPONES_ENABLE_HALF_SCREEN
 // clang-format off
@@ -91,7 +91,7 @@ static const uint16_t udp_port = 12345;
 static const char *ssid = "ShapoNES_AP";
 static const char *password = "hogepiyo";
 static AsyncUDP udp;
-static constexpr uint32_t COMP_QUEUE_STRIDE = nes::SCREEN_WIDTH + 1;
+static constexpr uint32_t COMP_QUEUE_STRIDE = shapones::SCREEN_WIDTH + 1;
 static constexpr uint32_t COMP_QUEUE_DEPTH = 16;
 static uint8_t comp_queue[COMP_QUEUE_STRIDE * COMP_QUEUE_DEPTH];
 static volatile uint32_t comp_wr_ptr = 0;
@@ -106,7 +106,7 @@ static void push_comp_queue(int y) {
   }
   uint32_t offset = wp * COMP_QUEUE_STRIDE;
   comp_queue[offset] = y;
-  memcpy(&comp_queue[offset + 1], line_buff, nes::SCREEN_WIDTH);
+  memcpy(&comp_queue[offset + 1], line_buff, shapones::SCREEN_WIDTH);
   SHAPONES_THREAD_FENCE_SEQ_CST();
   comp_wr_ptr = wp_next;
 }
@@ -121,7 +121,7 @@ static void pop_comp_queue() {
   uint8_t *line = comp_queue + offset + 1;
   uint8_t b_last = line[0];
   uint32_t run_length = 1;
-  for (uint32_t x = 1; x < nes::SCREEN_WIDTH; x++) {
+  for (uint32_t x = 1; x < shapones::SCREEN_WIDTH; x++) {
     uint8_t b = line[x];
     if (b == 0x3F) b = 0x3E;
     if (b == b_last && run_length < 0x3F) {
@@ -147,7 +147,7 @@ static void pop_comp_queue() {
     udp_buff[udp_len++] = run_length - 1;
   }
   constexpr uint32_t PAYLOAD_SIZE = 1436;
-  if (udp_len >= PAYLOAD_SIZE || y == nes::SCREEN_HEIGHT - 1) {
+  if (udp_len >= PAYLOAD_SIZE || y == shapones::SCREEN_HEIGHT - 1) {
     uint32_t to_send = (udp_len < PAYLOAD_SIZE) ? udp_len : PAYLOAD_SIZE;
     if (millis() > 5000) {
       udp.broadcastTo(udp_buff, to_send, udp_port);
@@ -196,9 +196,9 @@ void setup() {
   SPI.begin(TF_SCK_PIN, TF_MISO_PIN, TF_MOSI_PIN, TF_CS_PIN);
 #endif
 
-  auto nes_cfg = nes::get_default_config();
+  auto nes_cfg = shapones::get_default_config();
   nes_cfg.apu_sampling_rate = AUDIO_SAMPLE_FREQ_HZ;
-  nes::init(nes_cfg);
+  shapones::init(nes_cfg);
 
   xTaskCreatePinnedToCore(ppu_loop, "PPULoop", 8192, NULL, 10, NULL,
                           PRO_CPU_NUM);
@@ -206,22 +206,22 @@ void setup() {
   input_init();
   audio_init();
 
-  nes::menu::show();
+  shapones::menu::show();
 }
 
 void loop() {
   read_input();
 
   if (disp_button_down()) {
-    if (nes::menu::is_shown()) {
-      nes::menu::hide();
+    if (shapones::menu::is_shown()) {
+      shapones::menu::hide();
     } else {
-      nes::menu::show();
+      shapones::menu::show();
     }
   }
 
   for (int i = 0; i < 10; i++) {
-    nes::cpu::service();
+    shapones::cpu::service();
   }
 #if EXPERIMENTAL_ENABLE_REMOTE
   pop_comp_queue();
@@ -266,15 +266,15 @@ static void read_input() {
       code >>= 1;
     }
   }
-  nes::input::set_status(0, input_state);
+  shapones::input::set_status(0, input_state);
 }
 
 static void ppu_loop(void *arg) {
   uint64_t next_wdt_reset_ms = 0;
   while (true) {
-    nes::ppu::status_t status;
-    nes::ppu::service(line_buff, skip_frame, &status);
-    if ((!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) && !skip_frame) {
+    shapones::ppu::status_t status;
+    shapones::ppu::service(line_buff, skip_frame, &status);
+    if ((!!(status.timing & shapones::ppu::timing_t::END_OF_VISIBLE_LINE)) && !skip_frame) {
 #if EXPERIMENTAL_ENABLE_REMOTE
       push_comp_queue(status.focus_y);
 #endif
@@ -304,7 +304,7 @@ static void ppu_loop(void *arg) {
 #endif
     }
 
-    if (!!(status.timing & nes::ppu::timing_t::END_OF_VISIBLE_AREA)) {
+    if (!!(status.timing & shapones::ppu::timing_t::END_OF_VISIBLE_AREA)) {
       if (!skip_frame) {
         dma_start();
       }
@@ -465,7 +465,7 @@ static void audio_stream(bool preload) {
 }
 
 static int audio_fill_buffer(int16_t *buff, int offset, int size) {
-  nes::apu::service(apu_out_buff, size);
+  shapones::apu::service(apu_out_buff, size);
   for (int i = 0; i < size; i++) {
     int16_t val = (int16_t)apu_out_buff[i] - 128;
 #if SHAPONES_ENABLE_PDM_AUDIO

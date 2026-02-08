@@ -3,7 +3,7 @@
 
 #include "shapones/host_intf.hpp"
 
-namespace nes {
+namespace shapones {
 
 class SpinLockBlock {
  public:
@@ -19,6 +19,6 @@ class SemaphoreBlock {
   SHAPONES_INLINE ~SemaphoreBlock() { semaphore_give(id); }
 };
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif

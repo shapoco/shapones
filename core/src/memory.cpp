@@ -3,7 +3,7 @@
 #include "shapones/mapper.hpp"
 #include "shapones/ppu.hpp"
 
-namespace nes::memory {
+namespace shapones::memory {
 
 uint8_t wram[WRAM_SIZE];
 uint8_t vram[VRAM_SIZE];
@@ -34,20 +34,20 @@ result_t init() {
   deinit();
   unmap_ines();
   prgram_size = 8192;
-  SHAPONES_TRY(nes::ram_alloc(prgram_size, (void **)&prgram));
+  SHAPONES_TRY(shapones::ram_alloc(prgram_size, (void **)&prgram));
   chrram_size = CHRROM_RANGE;
-  SHAPONES_TRY(nes::ram_alloc(chrram_size, (void **)&chrram));
+  SHAPONES_TRY(shapones::ram_alloc(chrram_size, (void **)&chrram));
   return result_t::SUCCESS;
 }
 
 void deinit() {
   if (prgram) {
-    nes::ram_free(prgram);
+    shapones::ram_free(prgram);
     prgram = nullptr;
     prgram_size = 0;
   }
   if (chrram) {
-    nes::ram_free(chrram);
+    shapones::ram_free(chrram);
     chrram = nullptr;
     chrram_size = 0;
   }
@@ -139,11 +139,11 @@ result_t map_ines(const uint8_t *ines) {
   SHAPONES_PRINTF("PRG RAM size = %d kB\n", new_prgram_size / 1024);
   if (new_prgram_size != prgram_size) {
     if (prgram) {
-      nes::ram_free(prgram);
+      shapones::ram_free(prgram);
       prgram = nullptr;
     }
     if (new_prgram_size > 0) {
-      SHAPONES_TRY(nes::ram_alloc(new_prgram_size, (void **)&prgram));
+      SHAPONES_TRY(shapones::ram_alloc(new_prgram_size, (void **)&prgram));
     }
     prgram_size = new_prgram_size;
   }
@@ -159,11 +159,11 @@ result_t map_ines(const uint8_t *ines) {
   uint32_t new_chrram_size = (num_chr_rom_pages == 0) ? CHRROM_RANGE : 0;
   if (new_chrram_size != chrram_size) {
     if (chrram) {
-      nes::ram_free(chrram);
+      shapones::ram_free(chrram);
       chrram = nullptr;
     }
     if (new_chrram_size > 0) {
-      SHAPONES_TRY(nes::ram_alloc(new_chrram_size, (void **)&chrram));
+      SHAPONES_TRY(shapones::ram_alloc(new_chrram_size, (void **)&chrram));
     }
     chrram_size = new_chrram_size;
   }
@@ -244,4 +244,4 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::memory
+}  // namespace shapones::memory

@@ -63,12 +63,12 @@ static constexpr int DISPLAY_BUTTON_PIN = 11;
 #endif
 
 #if SHAPONES_ENABLE_HALF_SCREEN
-static constexpr int BUFF_W = nes::SCREEN_WIDTH / 2;
-static constexpr int BUFF_H = nes::SCREEN_HEIGHT / 2;
+static constexpr int BUFF_W = shapones::SCREEN_WIDTH / 2;
+static constexpr int BUFF_H = shapones::SCREEN_HEIGHT / 2;
 constexpr int DMA_HEIGHT = 120;
 #else
-static constexpr int BUFF_W = nes::SCREEN_WIDTH;
-static constexpr int BUFF_H = nes::SCREEN_HEIGHT;
+static constexpr int BUFF_W = shapones::SCREEN_WIDTH;
+static constexpr int BUFF_H = shapones::SCREEN_HEIGHT;
 constexpr int DMA_HEIGHT = 60;
 #endif
 

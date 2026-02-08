@@ -2,14 +2,14 @@
 
 #include "shapones/shapones.hpp"
 
-static constexpr int FRAME_BUFF_STRIDE = nes::SCREEN_WIDTH * 3 / 2;
+static constexpr int FRAME_BUFF_STRIDE = shapones::SCREEN_WIDTH * 3 / 2;
 static constexpr int SOUND_FREQ = 22050;
 static constexpr int SOUND_BUFF_SIZE = 256;
 
 static constexpr uint32_t ROM_OFFSET = 0x100F0000;
 
-static uint8_t line_buff[nes::SCREEN_WIDTH];
-static uint8_t frame_buff[FRAME_BUFF_STRIDE * nes::SCREEN_HEIGHT];
+static uint8_t line_buff[shapones::SCREEN_WIDTH];
+static uint8_t frame_buff[FRAME_BUFF_STRIDE * shapones::SCREEN_HEIGHT];
 
 static uint8_t sound_buff[SOUND_BUFF_SIZE * 2];
 static int sound_buff_index = 0;
@@ -42,9 +42,9 @@ uint64_t disp_next_vsync_us = 0;
 static const uint8_t *sound_refill();
 
 static constexpr int SPINLOCK_ID_BASE = 0;
-static constexpr int SEMAPHORE_ID_BASE = SPINLOCK_ID_BASE + nes::NUM_SPINLOCKS;
+static constexpr int SEMAPHORE_ID_BASE = SPINLOCK_ID_BASE + shapones::NUM_SPINLOCKS;
 
-nes::input::status_t input_status;
+shapones::input::status_t input_status;
 
 sFile file_handle;
 
@@ -79,10 +79,10 @@ static void core0_main() {
   disp_enable_rgb444();
 
   // Setup NES core
-  auto cfg = nes::get_default_config();
+  auto cfg = shapones::get_default_config();
   cfg.apu_sampling_rate = SOUND_FREQ;
-  nes::init(cfg);
-  nes::menu::show();
+  shapones::init(cfg);
+  shapones::menu::show();
 
   // Run PPU
   Core1Exec(core1_main);
@@ -113,16 +113,16 @@ static void core0_main() {
     bool menu_pressed_now = input_status.select && input_status.down;
 
     if (menu_pressed_now && !menu_pressed_last) {
-      if (nes::menu::is_shown()) {
-        nes::menu::hide();
+      if (shapones::menu::is_shown()) {
+        shapones::menu::hide();
       } else {
-        nes::menu::show();
+        shapones::menu::show();
       }
     }
 
-    nes::input::set_status(0, input_status);
+    shapones::input::set_status(0, input_status);
 
-    nes::cpu::service();
+    shapones::cpu::service();
 
     // stream sound
     if (SoundStreamIsEmpty(0)) {
@@ -138,16 +138,16 @@ static void core1_main() {
   LockoutInit(1);
 
   while (true) {
-    nes::ppu::status_t s;
-    nes::ppu::service(line_buff, skip_frame, &s);
+    shapones::ppu::status_t s;
+    shapones::ppu::service(line_buff, skip_frame, &s);
 
     // end of visible line
-    if (!!((s.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE)) &&
+    if (!!((s.timing & shapones::ppu::timing_t::END_OF_VISIBLE_LINE)) &&
         !skip_frame) {
       // Convert palette index to RGB444
       uint8_t *rd_ptr = line_buff;
       uint8_t *wr_ptr = frame_buff + (s.focus_y * FRAME_BUFF_STRIDE);
-      for (int x = 0; x < nes::SCREEN_WIDTH; x += 2) {
+      for (int x = 0; x < shapones::SCREEN_WIDTH; x += 2) {
         uint16_t c0 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
         uint16_t c1 = COLOR_TABLE[*(rd_ptr++) & 0x3f];
         *(wr_ptr++) = (c0 >> 4) & 0xff;
@@ -155,7 +155,7 @@ static void core1_main() {
         *(wr_ptr++) = c1 & 0xff;
       }
     }
-    if (!!(s.timing & nes::ppu::timing_t::END_OF_VISIBLE_AREA)) {
+    if (!!(s.timing & shapones::ppu::timing_t::END_OF_VISIBLE_AREA)) {
       if (!skip_frame) {
         disp_flip();
       }
@@ -205,8 +205,8 @@ static void disp_flip() {
   GPIO_Out1(DISP_CS_PIN);
 
   // select window
-  constexpr int x_offset = (WIDTH - nes::SCREEN_WIDTH) / 2;
-  DispWindow(x_offset, x_offset + nes::SCREEN_WIDTH, 0, nes::SCREEN_HEIGHT);
+  constexpr int x_offset = (WIDTH - shapones::SCREEN_WIDTH) / 2;
+  DispWindow(x_offset, x_offset + shapones::SCREEN_WIDTH, 0, shapones::SCREEN_HEIGHT);
 
   // kick new DMA
   GPIO_Out0(DISP_CS_PIN);
@@ -222,7 +222,7 @@ static void disp_dma_start() {
   DMA_ClearError_hw(disp_dma_hw);
   DMA_SetRead_hw(disp_dma_hw, frame_buff);
   DMA_SetWrite_hw(disp_dma_hw, &disp_spi_hw->dr);
-  DMA_SetCount_hw(disp_dma_hw, FRAME_BUFF_STRIDE * nes::SCREEN_HEIGHT);
+  DMA_SetCount_hw(disp_dma_hw, FRAME_BUFF_STRIDE * shapones::SCREEN_HEIGHT);
   cb();
   DMA_SetCtrlTrig_hw(disp_dma_hw,
                      DMA_CTRL_TREQ(SPI_GetDreq_hw(disp_spi_hw, True)) |
@@ -260,154 +260,154 @@ static bool disp_wait_vsync() {
 
 static const uint8_t *sound_refill() {
   uint8_t *ptr = sound_buff + sound_buff_index * SOUND_BUFF_SIZE;
-  nes::apu::service(ptr, SOUND_BUFF_SIZE);
+  shapones::apu::service(ptr, SOUND_BUFF_SIZE);
   sound_buff_index = (sound_buff_index + 1) & 1;
   return ptr;
 }
 
-nes::result_t nes::ram_alloc(size_t size, void **out_ptr) {
+shapones::result_t shapones::ram_alloc(size_t size, void **out_ptr) {
   void *ptr = malloc(size);
   if (!ptr) {
-    return nes::result_t::ERR_RAM_ALLOC_FAILED;
+    return shapones::result_t::ERR_RAM_ALLOC_FAILED;
   }
   *out_ptr = ptr;
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
 
-void nes::ram_free(void *ptr) { free(ptr); }
+void shapones::ram_free(void *ptr) { free(ptr); }
 
-nes::result_t nes::spinlock_init(int id) {
+shapones::result_t shapones::spinlock_init(int id) {
   SpinClaim(SPINLOCK_ID_BASE + id);
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
-void nes::spinlock_deinit(int id) { SpinUnclaim(SPINLOCK_ID_BASE + id); }
-void nes::spinlock_get(int id) { SpinLock(SPINLOCK_ID_BASE + id); }
-void nes::spinlock_release(int id) { SpinUnlock(SPINLOCK_ID_BASE + id); }
+void shapones::spinlock_deinit(int id) { SpinUnclaim(SPINLOCK_ID_BASE + id); }
+void shapones::spinlock_get(int id) { SpinLock(SPINLOCK_ID_BASE + id); }
+void shapones::spinlock_release(int id) { SpinUnlock(SPINLOCK_ID_BASE + id); }
 
-nes::result_t nes::semaphore_init(int id) {
+shapones::result_t shapones::semaphore_init(int id) {
   SpinClaim(SEMAPHORE_ID_BASE + id);
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
-void nes::semaphore_deinit(int id) { SpinUnclaim(SEMAPHORE_ID_BASE + id); }
-void nes::semaphore_take(int id) { SpinLock(SEMAPHORE_ID_BASE + id); }
-bool nes::semaphore_try_take(int id) {
+void shapones::semaphore_deinit(int id) { SpinUnclaim(SEMAPHORE_ID_BASE + id); }
+void shapones::semaphore_take(int id) { SpinLock(SEMAPHORE_ID_BASE + id); }
+bool shapones::semaphore_try_take(int id) {
   return SpinTryLock(SEMAPHORE_ID_BASE + id);
 }
-void nes::semaphore_give(int id) { SpinUnlock(SEMAPHORE_ID_BASE + id); }
+void shapones::semaphore_give(int id) { SpinUnlock(SEMAPHORE_ID_BASE + id); }
 
-nes::result_t nes::fsys::mount() {
+shapones::result_t shapones::fsys::mount() {
   if (DiskMount()) {
-    return nes::result_t::SUCCESS;
+    return shapones::result_t::SUCCESS;
   } else {
     WaitMs(500);
-    return nes::result_t::ERR_FS_NO_DISK;
+    return shapones::result_t::ERR_FS_NO_DISK;
   }
 }
 
-void nes::fsys::unmount() { DiskUnmount(); }
+void shapones::fsys::unmount() { DiskUnmount(); }
 
-void nes::fsys::get_ines_dir(char *out_path) {
-  strncpy(out_path, "/EMU/SHAPONES/", nes::MAX_PATH_LENGTH);
+void shapones::fsys::get_ines_dir(char *out_path) {
+  strncpy(out_path, "/EMU/SHAPONES/", shapones::MAX_PATH_LENGTH);
 }
 
-void nes::fsys::get_config_dir(char *out_path) {
-  strncpy(out_path, "/EMU/SHAPONES/", nes::MAX_PATH_LENGTH);
+void shapones::fsys::get_config_dir(char *out_path) {
+  strncpy(out_path, "/EMU/SHAPONES/", shapones::MAX_PATH_LENGTH);
 }
 
-nes::result_t nes::fsys::enum_files(const char *path,
-                                 nes::fsys::enum_files_cb_t callback) {
+shapones::result_t shapones::fsys::enum_files(const char *path,
+                                 shapones::fsys::enum_files_cb_t callback) {
   // List up NES files
   sFile find;
   if (!FindOpen(&find, path)) {
-    return nes::result_t::ERR_FS_DIR_NOT_FOUND;
+    return shapones::result_t::ERR_FS_DIR_NOT_FOUND;
   }
   sFileInfo fi;
   while (FindNext(&find, &fi, ATTR_ARCH | ATTR_DIR, "*")) {
     if (strncmp(fi.name, ".", 1) == 0 || strncmp(fi.name, "..", 2) == 0) {
       continue;
     }
-    nes::fsys::file_info_t fi2;
+    shapones::fsys::file_info_t fi2;
     fi2.name = fi.name;
     fi2.is_dir = !!(fi.attr & ATTR_DIR);
     if (!callback(fi2)) break;
   }
   FindClose(&find);
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
 
-bool nes::fsys::exists(char const *path) { return FileExist(path); }
+bool shapones::fsys::exists(char const *path) { return FileExist(path); }
 
-nes::result_t nes::fsys::open(const char *path, bool write, void **handle) {
+shapones::result_t shapones::fsys::open(const char *path, bool write, void **handle) {
   if (!FileExist(path)) {
     if (!FileCreate(&file_handle, path)) {
-      return nes::result_t::ERR_FS_OPEN_FAILED;
+      return shapones::result_t::ERR_FS_OPEN_FAILED;
     }
   } else {
     if (!FileOpen(&file_handle, path)) {
-      return nes::result_t::ERR_FS_OPEN_FAILED;
+      return shapones::result_t::ERR_FS_OPEN_FAILED;
     }
   }
   *handle = &file_handle;
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
 
-void nes::fsys::close(void *handle) {
+void shapones::fsys::close(void *handle) {
   sFile *f = (sFile *)handle;
   FileClose(f);
 }
 
-nes::result_t nes::fsys::seek(void *handle, size_t offset) {
+shapones::result_t shapones::fsys::seek(void *handle, size_t offset) {
   sFile *f = (sFile *)handle;
   if (!FileSeek(f, offset)) {
-    return nes::result_t::ERR_FS_SEEK_FAILED;
+    return shapones::result_t::ERR_FS_SEEK_FAILED;
   }
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
 
-nes::result_t nes::fsys::size(void *handle, size_t *out_size) {
+shapones::result_t shapones::fsys::size(void *handle, size_t *out_size) {
   sFile *f = (sFile *)handle;
   *out_size = FileSize(f);
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
 
-nes::result_t nes::fsys::read(void *handle, uint8_t *buff, size_t size) {
+shapones::result_t shapones::fsys::read(void *handle, uint8_t *buff, size_t size) {
   sFile *f = (sFile *)handle;
   int s = FileRead(f, buff, size);
   if (s == (int)size) {
-    return nes::result_t::SUCCESS;
+    return shapones::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FS_READ_FAILED;
+    return shapones::result_t::ERR_FS_READ_FAILED;
   }
 }
 
-nes::result_t nes::fsys::write(void *handle, const uint8_t *buff, size_t size) {
+shapones::result_t shapones::fsys::write(void *handle, const uint8_t *buff, size_t size) {
   sFile *f = (sFile *)handle;
   int s = FileWrite(f, buff, size);
   if (s == (int)size) {
-    return nes::result_t::SUCCESS;
+    return shapones::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FS_WRITE_FAILED;
+    return shapones::result_t::ERR_FS_WRITE_FAILED;
   }
 }
 
-nes::result_t nes::fsys::remove(const char *path) {
+shapones::result_t shapones::fsys::remove(const char *path) {
   if (FileDelete(path)) {
-    return nes::result_t::SUCCESS;
+    return shapones::result_t::SUCCESS;
   } else {
-    return nes::result_t::ERR_FS_DELETE_FAILED;
+    return shapones::result_t::ERR_FS_DELETE_FAILED;
   }
 }
 
-nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
+shapones::result_t shapones::load_ines(const char *path, const uint8_t **out_ines,
                              size_t *out_size) {
-  nes::result_t res = nes::result_t::SUCCESS;
+  shapones::result_t res = shapones::result_t::SUCCESS;
 
-  nes::unload_ines();
+  shapones::unload_ines();
 
   // Load NES file
   sFile ines_file;
   if (!FileOpen(&ines_file, path)) {
-    return nes::result_t::ERR_FS_OPEN_FAILED;
+    return shapones::result_t::ERR_FS_OPEN_FAILED;
   }
   int ines_size = ines_file.size;
   if (ines_size < (128 + 1) * 1024) {
@@ -416,7 +416,7 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
     ines_allocated = true;
     int ret = FileRead(&ines_file, ines_rom, ines_size);
     if (ret != ines_size) {
-      res = nes::result_t::ERR_FS_READ_FAILED;
+      res = shapones::result_t::ERR_FS_READ_FAILED;
     }
   } else if (ines_size < (1024 + 1) * 1024) {
     // Load to Flash
@@ -431,7 +431,7 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
       int to_read = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
       int ret = FileRead(&ines_file, buff, to_read);
       if (ret <= 0) {
-        res = nes::result_t::ERR_FS_READ_FAILED;
+        res = shapones::result_t::ERR_FS_READ_FAILED;
         break;
       }
       FlashProgram(ROM_OFFSET + (ines_size - remaining), buff, ret);
@@ -439,27 +439,27 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
     }
     LockoutStop();
     delete[] buff;
-    if (res != nes::result_t::SUCCESS) {
-      return nes::result_t::ERR_FS_READ_FAILED;
+    if (res != shapones::result_t::SUCCESS) {
+      return shapones::result_t::ERR_FS_READ_FAILED;
     }
     ines_rom = (uint8_t *)ROM_OFFSET;
     ines_allocated = false;
   } else {
-    res = nes::result_t::ERR_INES_TOO_LARGE;
+    res = shapones::result_t::ERR_INES_TOO_LARGE;
   }
   FileClose(&ines_file);
 
-  if (res != nes::result_t::SUCCESS) {
+  if (res != shapones::result_t::SUCCESS) {
     return res;
   }
 
   *out_ines = ines_rom;
   *out_size = ines_size;
 
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
 
-void nes::unload_ines() {
+void shapones::unload_ines() {
   if (ines_allocated) {
     delete[] ines_rom;
   }
@@ -467,6 +467,6 @@ void nes::unload_ines() {
   ines_allocated = false;
 }
 
-uint64_t nes::get_time_us() {
+uint64_t shapones::get_time_us() {
   return Time64();
 }

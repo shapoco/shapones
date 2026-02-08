@@ -1,7 +1,7 @@
 #include "shapones/interrupt.hpp"
 #include "shapones/lock.hpp"
 
-namespace nes::interrupt {
+namespace shapones::interrupt {
 
 static constexpr uint32_t STATE_SIZE = 16;
 
@@ -57,4 +57,4 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::interrupt
+}  // namespace shapones::interrupt

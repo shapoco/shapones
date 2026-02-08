@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::input {
+namespace shapones::input {
 
 static constexpr int BTN_A = 0;
 static constexpr int BTN_B = 1;
@@ -52,6 +52,6 @@ uint32_t state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::input
+}  // namespace shapones::input
 
 #endif

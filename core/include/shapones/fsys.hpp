@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::fsys {
+namespace shapones::fsys {
 
 struct file_info_t {
   bool is_dir;
@@ -19,6 +19,6 @@ result_t append_separator(char *path);
 result_t append_path(char *path, const char *name);
 result_t replace_ext(char *path, const char *new_ext);
 
-}  // namespace nes::fsys
+}  // namespace shapones::fsys
 
 #endif

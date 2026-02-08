@@ -33,7 +33,7 @@ FcScreen::FcScreen(wxFrame *parent, wxWindowID id)
                        wxNO_FULL_REPAINT_ON_RESIZE) {
   owner = parent;
   SetBackgroundColour(*wxBLACK);
-  frame_buff = wxImage(nes::SCREEN_WIDTH * 2, nes::SCREEN_HEIGHT * 2);
+  frame_buff = wxImage(shapones::SCREEN_WIDTH * 2, shapones::SCREEN_HEIGHT * 2);
   next_vsync_ms = get_time_ms();
 }
 
@@ -44,11 +44,11 @@ EVT_KEY_UP(FcScreen::OnKeyUp)
 END_EVENT_TABLE();
 
 void FcScreen::Render() {
-  nes::result_t res;
+  shapones::result_t res;
 
   static int itvl = 0;
   bool upd = (((itvl++) & 0x3) == 0);
-  uint8_t line_buff[nes::SCREEN_WIDTH];
+  uint8_t line_buff[shapones::SCREEN_WIDTH];
 
   double now_ms = get_time_ms();
   if (now_ms < next_vsync_ms) {
@@ -56,15 +56,15 @@ void FcScreen::Render() {
   }
   next_vsync_ms += 1000.0 / 60.0;
 
-  res = nes::vsync(line_buff);
+  res = shapones::vsync(line_buff);
   auto wr_ptr = frame_buff.GetData();
-  for (int y = 0; y < nes::SCREEN_HEIGHT; y++) {
+  for (int y = 0; y < shapones::SCREEN_HEIGHT; y++) {
     auto t_start = get_time_ms();
-    nes::render_next_line(line_buff);
+    shapones::render_next_line(line_buff);
     total_emu_time_ms += get_time_ms() - t_start;
 
     auto rd_ptr = line_buff;
-    for (int x = 0; x < nes::SCREEN_WIDTH; x++) {
+    for (int x = 0; x < shapones::SCREEN_WIDTH; x++) {
       int color_index = *(rd_ptr++) & 0x3f;
       uint32_t color = colors[color_index];
       *(wr_ptr++) = (color >> 16) & 0xff;
@@ -74,7 +74,7 @@ void FcScreen::Render() {
       *(wr_ptr++) = (color >> 8) & 0xff;
       *(wr_ptr++) = color & 0xff;
     }
-    size_t line_length = 3 * 2 * nes::SCREEN_WIDTH;
+    size_t line_length = 3 * 2 * shapones::SCREEN_WIDTH;
     memcpy(wr_ptr, wr_ptr - line_length, line_length);
     wr_ptr += line_length;
   }
@@ -100,7 +100,7 @@ void FcScreen::OnPaint(wxPaintEvent &event) {
 }
 
 void FcScreen::OnKeyDown(wxKeyEvent &event) {
-  auto input0 = nes::input::get_status(0);
+  auto input0 = shapones::input::get_status(0);
   switch (event.GetKeyCode()) {
     case 'Z': input0.A = 1; break;
     case 'X': input0.B = 1; break;
@@ -111,18 +111,18 @@ void FcScreen::OnKeyDown(wxKeyEvent &event) {
     case wxKeyCode::WXK_LEFT: input0.left = 1; break;
     case wxKeyCode::WXK_RIGHT: input0.right = 1; break;
     case 'Q':
-      if (nes::menu::is_shown()) {
-        nes::menu::hide();
+      if (shapones::menu::is_shown()) {
+        shapones::menu::hide();
       } else {
-        nes::menu::show();
+        shapones::menu::show();
       }
       break;
   }
-  nes::input::set_status(0, input0);
+  shapones::input::set_status(0, input0);
 }
 
 void FcScreen::OnKeyUp(wxKeyEvent &event) {
-  auto input0 = nes::input::get_status(0);
+  auto input0 = shapones::input::get_status(0);
   switch (event.GetKeyCode()) {
     case 'Z': input0.A = 0; break;
     case 'X': input0.B = 0; break;
@@ -134,5 +134,5 @@ void FcScreen::OnKeyUp(wxKeyEvent &event) {
     case wxKeyCode::WXK_RIGHT: input0.right = 0; break;
     case wxKeyCode::WXK_ESCAPE: owner->Close(); break;
   }
-  nes::input::set_status(0, input0);
+  shapones::input::set_status(0, input0);
 }

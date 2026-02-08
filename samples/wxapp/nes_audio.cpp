@@ -55,7 +55,7 @@ static void play_thread_func() {
   printf("Audio stream opened.\n");
 
   while (continue_flag) {
-    nes::apu::service(buffer_u8, CHUNK_SIZE);
+    shapones::apu::service(buffer_u8, CHUNK_SIZE);
     for (int i = 0; i < CHUNK_SIZE; i++) {
       // Convert u8 sample [0,255] to s16 sample [-32768,32767] with DC offset
       // removal

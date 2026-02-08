@@ -75,7 +75,7 @@ using int_fast32_t = int32_t;
     Serial.printf("*ERROR: ");                          \
     Serial.printf(fmt, ##__VA_ARGS__);                  \
     Serial.flush();                                     \
-    nes::stop();                                        \
+    shapones::stop();                                        \
   } while (0)
 
 #else
@@ -97,7 +97,7 @@ using int_fast32_t = int32_t;
     printf("*ERROR: ");                          \
     printf(fmt, ##__VA_ARGS__);                  \
     fflush(stdout);                              \
-    nes::stop();                                 \
+    shapones::stop();                                 \
   } while (0)
 
 #endif
@@ -110,17 +110,17 @@ using int_fast32_t = int32_t;
 
 #define SHAPONES_ERRORF(fmt, ...) \
   do {                            \
-    nes::stop();                  \
+    shapones::stop();                  \
   } while (0)
 
 #endif
 
 #define SHAPONES_TRY(expr)                               \
   do {                                                   \
-    ::nes::result_t res = (expr);                        \
-    if (res != ::nes::result_t::SUCCESS) {               \
+    ::shapones::result_t res = (expr);                        \
+    if (res != ::shapones::result_t::SUCCESS) {               \
       SHAPONES_PRINTF("Error Code: %d (%s)\n", (int)res, \
-                      ::nes::result_to_string(res));     \
+                      ::shapones::result_to_string(res));     \
       return res;                                        \
     }                                                    \
   } while (false)
@@ -133,7 +133,7 @@ using int_fast32_t = int32_t;
   std::atomic_thread_fence(std::memory_order_seq_cst);
 #endif
 
-namespace nes {
+namespace shapones {
 
 using addr_t = uint_fast16_t;
 using cycle_t = uint32_t;
@@ -315,6 +315,6 @@ static SHAPONES_INLINE uint8_t blend_colors(uint8_t a, uint8_t b) {
   return blend_table[(a << 6) | b];
 }
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif

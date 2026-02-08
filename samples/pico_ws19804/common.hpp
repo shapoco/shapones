@@ -17,8 +17,8 @@ static constexpr uint32_t SYS_CLK_FREQ = 250 * MHZ;
 // frame buffer for DMA (RGB444)
 constexpr int FRAME_BUFF_WIDTH = 240;
 constexpr int FRAME_BUFF_STRIDE = FRAME_BUFF_WIDTH * 3 / 2;
-constexpr int FRAME_BUFF_HEIGHT = nes::SCREEN_HEIGHT;
-extern uint8_t frame_buff[FRAME_BUFF_STRIDE * nes::SCREEN_HEIGHT];
+constexpr int FRAME_BUFF_HEIGHT = shapones::SCREEN_HEIGHT;
+extern uint8_t frame_buff[FRAME_BUFF_STRIDE * shapones::SCREEN_HEIGHT];
 
 // pad pins
 static constexpr int PIN_PAD_A = 2;

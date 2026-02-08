@@ -9,7 +9,7 @@
 #include "shapones/menu.hpp"
 #include "shapones/state.hpp"
 
-namespace nes::ppu {
+namespace shapones::ppu {
 
 static constexpr uint32_t STATE_HEADER_SIZE = registers_t::STATE_SIZE + 32;
 
@@ -340,9 +340,9 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
       }
     }
 
-    nes::state::hsync(focus_y, line_buff, skip_render);
+    shapones::state::hsync(focus_y, line_buff, skip_render);
     if (!skip_render) {
-      nes::menu::overlay(focus_y, line_buff);
+      shapones::menu::overlay(focus_y, line_buff);
     }
 
     status->timing |= timing_t::END_OF_VISIBLE_LINE;
@@ -720,4 +720,4 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::ppu
+}  // namespace shapones::ppu

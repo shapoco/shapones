@@ -1,6 +1,6 @@
 #include "shapones/common.hpp"
 
-namespace nes {
+namespace shapones {
 
 const uint32_t NES_PALETTE_24BPP[64] = {
     0x808080, 0x003DA6, 0x0012B0, 0x440096, 0xA1005E, 0xC70028, 0xBA0600,
@@ -71,4 +71,4 @@ uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b) {
   return best_index;
 }
 
-}  // namespace nes
+}  // namespace shapones

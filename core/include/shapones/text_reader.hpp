@@ -5,7 +5,7 @@
 #include "shapones/fsys.hpp"
 #include "shapones/host_intf.hpp"
 
-namespace nes::fsys {
+namespace shapones::fsys {
 
 class TextReader {
  private:
@@ -80,6 +80,6 @@ class TextReader {
     }
   }
 };
-}  // namespace nes::fsys
+}  // namespace shapones::fsys
 
 #endif

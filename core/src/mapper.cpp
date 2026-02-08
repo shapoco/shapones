@@ -9,7 +9,7 @@
 #include "shapones/mappers/map003.hpp"
 #include "shapones/mappers/map004.hpp"
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
 Mapper *instance = nullptr;
 
@@ -56,4 +56,4 @@ result_t map_ines(const uint8_t *ines) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper

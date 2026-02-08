@@ -50,13 +50,13 @@ static const uint16_t COLOR_TABLE[] = {
 // |    :    |           :           |    |
 // +---------+-----------------------+    V
 static constexpr int LINE_FIFO_DEPTH = 8;
-static constexpr int LINE_FIFO_STRIDE = nes::SCREEN_WIDTH + 1;
+static constexpr int LINE_FIFO_STRIDE = shapones::SCREEN_WIDTH + 1;
 static uint8_t line_buff[LINE_FIFO_DEPTH * LINE_FIFO_STRIDE];
 static volatile int line_fifo_wptr = 0;
 static volatile int line_fifo_rptr = 0;
 
-static spin_lock_t *lock_hws[nes::NUM_SPINLOCKS];
-static uint32_t lock_irqs[nes::NUM_SPINLOCKS];
+static spin_lock_t *lock_hws[shapones::NUM_SPINLOCKS];
+static uint32_t lock_irqs[shapones::NUM_SPINLOCKS];
 
 // sound buffer for DMA
 static uint8_t spk_buff[SPK_LATENCY];
@@ -113,9 +113,9 @@ int main() {
   ws19804::init(SYS_CLK_FREQ);
 
   // reset
-  auto cfg = nes::get_default_config();
+  auto cfg = shapones::get_default_config();
   cfg.apu_sampling_rate = SPK_PWM_FREQ;
-  nes::init(cfg);
+  shapones::init(cfg);
 
   // show boot menu
   if (!boot_menu()) {
@@ -149,17 +149,17 @@ static void cpu_loop() {
 #endif
   for (;;) {
     // update input status
-    nes::input::status_t input_status;
+    shapones::input::status_t input_status;
     input_status.raw = 0;
     for (int i = 0; i < 8; i++) {
       if (!gpio_get(input_pins[i])) {
         input_status.raw |= (1 << i);
       }
     }
-    nes::input::set_status(0, input_status);
+    shapones::input::set_status(0, input_status);
 
     // run CPU
-    nes::cpu::service();
+    shapones::cpu::service();
 
 #if SHAPONES_DISP_DMA_CORE == 0
     // check line buffer FIFO state
@@ -167,7 +167,7 @@ static void cpu_loop() {
     if (line_fifo_wptr != fifo_rptr) {
       // convert color number to RGB444
       int y = line_buff[fifo_rptr * LINE_FIFO_STRIDE];
-      int x0 = (nes::SCREEN_WIDTH - FRAME_BUFF_WIDTH) / 2;
+      int x0 = (shapones::SCREEN_WIDTH - FRAME_BUFF_WIDTH) / 2;
       uint8_t *rd_ptr = line_buff + (fifo_rptr * LINE_FIFO_STRIDE + x0 + 1);
       uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
       for (int x = 0; x < FRAME_BUFF_WIDTH; x += 2) {
@@ -179,7 +179,7 @@ static void cpu_loop() {
       }
       line_fifo_rptr = (fifo_rptr + 1) % LINE_FIFO_DEPTH;
 
-      if (y == nes::SCREEN_HEIGHT - 1) {
+      if (y == shapones::SCREEN_HEIGHT - 1) {
         // fps measurement
         auto t_now = get_absolute_time();
         if (frame_count < 60 - 1) {
@@ -218,21 +218,21 @@ static void ppu_loop() {
   for (;;) {
 #if SHAPONES_DISP_DMA_CORE == 0
     int wptr = line_fifo_wptr;
-    nes::ppu::status_t s;
-    nes::ppu::service(&line_buff[wptr * LINE_FIFO_STRIDE + 1], skip_frame, &s);
-    if (!!(s.timing & nes::ppu::timing_t::END_OF_VISIBLE_LINE) && !skip_frame) {
+    shapones::ppu::status_t s;
+    shapones::ppu::service(&line_buff[wptr * LINE_FIFO_STRIDE + 1], skip_frame, &s);
+    if (!!(s.timing & shapones::ppu::timing_t::END_OF_VISIBLE_LINE) && !skip_frame) {
       // push new line
       line_buff[wptr * LINE_FIFO_STRIDE] = s.focus_y;
       line_fifo_wptr = (wptr + 1) % LINE_FIFO_DEPTH;
     }
-    if (!!(s.timing & nes::ppu::timing_t::END_OF_VISIBLE_AREA)) {
+    if (!!(s.timing & shapones::ppu::timing_t::END_OF_VISIBLE_AREA)) {
       skip_frame = wait_vsync();
     }
 #else
     int y;
-    uint32_t timing = nes::ppu::service(line_buff, skip_frame, &y);
-    if ((timing & nes::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
-      int x0 = (nes::SCREEN_WIDTH - FRAME_BUFF_WIDTH) / 2;
+    uint32_t timing = shapones::ppu::service(line_buff, skip_frame, &y);
+    if ((timing & shapones::ppu::END_OF_VISIBLE_LINE) && !skip_frame) {
+      int x0 = (shapones::SCREEN_WIDTH - FRAME_BUFF_WIDTH) / 2;
       uint8_t *rd_ptr = line_buff;
       uint8_t *wr_ptr = frame_buff + (y * FRAME_BUFF_STRIDE);
       for (int x = 0; x < FRAME_BUFF_WIDTH; x += 2) {
@@ -243,7 +243,7 @@ static void ppu_loop() {
         *(wr_ptr++) = c1 & 0xff;
       }
     }
-    if (timing & nes::ppu::END_OF_VISIBLE_AREA) {
+    if (timing & shapones::ppu::END_OF_VISIBLE_AREA) {
       if (!skip_frame) {
         // fps measurement
         auto t_now = get_absolute_time();
@@ -289,30 +289,30 @@ static void apu_dma_handler() {
 }
 
 static void apu_fill_buffer(PwmAudio::sample_t *buff) {
-  nes::apu::service(spk_buff, speaker.LATENCY);
+  shapones::apu::service(spk_buff, speaker.LATENCY);
   for (int i = 0; i < speaker.LATENCY; i++) {
     buff[i] = spk_buff[i];
   }
 }
 
-nes::result_t nes::spinlock_init(int id) {
+shapones::result_t shapones::spinlock_init(int id) {
   lock_hws[id] = spin_lock_init(id);
   spin_lock_claim(id);
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
-void nes::spinlock_deinit(int id) { spin_lock_unclaim(id); }
-void nes::spinlock_get(int id) { lock_irqs[id] = spin_lock_blocking(lock_hws[id]); }
-void nes::spinlock_release(int id) { spin_unlock(lock_hws[id], lock_irqs[id]); }
+void shapones::spinlock_deinit(int id) { spin_lock_unclaim(id); }
+void shapones::spinlock_get(int id) { lock_irqs[id] = spin_lock_blocking(lock_hws[id]); }
+void shapones::spinlock_release(int id) { spin_unlock(lock_hws[id], lock_irqs[id]); }
 
-nes::result_t nes::fsys::mount() { return nes::result_t::SUCCESS; }
-void nes::fsys::unmount() {}
-nes::result_t nes::fsys::get_ines_dir(char *out_path) {
-  return nes::result_t::SUCCESS;
+shapones::result_t shapones::fsys::mount() { return shapones::result_t::SUCCESS; }
+void shapones::fsys::unmount() {}
+shapones::result_t shapones::fsys::get_ines_dir(char *out_path) {
+  return shapones::result_t::SUCCESS;
 }
-nes::result_t nes::fsys::enum_files(const char *path,
-                                 nes::enum_files_cb_t callback) {
-  return nes::result_t::SUCCESS;
+shapones::result_t shapones::fsys::enum_files(const char *path,
+                                 shapones::enum_files_cb_t callback) {
+  return shapones::result_t::SUCCESS;
 }
-nes::result_t nes::request_load_nes_file(const char *path) {
-  return nes::result_t::SUCCESS;
+shapones::result_t shapones::request_load_nes_file(const char *path) {
+  return shapones::result_t::SUCCESS;
 }

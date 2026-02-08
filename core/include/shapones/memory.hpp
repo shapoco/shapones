@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::memory {
+namespace shapones::memory {
 
 static constexpr int PRGROM_PAGE_SIZE = 16384;
 static constexpr int CHRROM_PAGE_SIZE = 8192;
@@ -185,6 +185,6 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::memory
+}  // namespace shapones::memory
 
 #endif

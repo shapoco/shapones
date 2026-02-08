@@ -1,7 +1,7 @@
 #include "shapones/ini.hpp"
 #include "shapones/text_reader.hpp"
 
-namespace nes::ini {
+namespace shapones::ini {
 
 enum class state_t {
   LINE_START,
@@ -119,4 +119,4 @@ static bool is_id_char(char c) {
          (c >= '0' && c <= '9') || c == '_';
 }
 
-}  // namespace nes::ini
+}  // namespace shapones::ini

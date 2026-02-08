@@ -60,7 +60,7 @@ with open(options.output, "w") as f:
     f.write("#if !(SHAPONES_NO_STDLIB)\n")
     f.write('#include "shapones/common.hpp"\n')
     f.write("#endif\n\n")
-    f.write("namespace nes::menu {\n\n")
+    f.write("namespace shapones::menu {\n\n")
     f.write("const uint16_t FONT8X16_CODE_FIRST = 0x%02X;\n" % CODE_FIRST)
     f.write("const uint16_t FONT8X16_CODE_LAST = 0x%02X;\n" % CODE_LAST)
     f.write("const uint16_t FONT8X16_DATA[] = {\n")
@@ -89,5 +89,5 @@ with open(options.output, "w") as f:
             else:
                 f.write(" ")
     f.write("};\n\n")
-    f.write("}  // namespace nes\n\n")
+    f.write("}  // namespace shapones\n\n")
     f.write("#endif // SHAPONES_FONT8X16_HPP\n")

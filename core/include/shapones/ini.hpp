@@ -6,7 +6,7 @@
 #include "shapones/host_intf.hpp"
 #include "shapones/text_reader.hpp"
 
-namespace nes::ini {
+namespace shapones::ini {
 
 static constexpr uint32_t MAX_SECTION_LENGTH = 16;
 static constexpr uint32_t MAX_KEY_LENGTH = 16;
@@ -17,6 +17,6 @@ using enum_keys_cb_t = bool (*)(const char *section, const char *key,
 
 result_t read(const char *path, enum_keys_cb_t callback);
 
-}  // namespace nes::ini
+}  // namespace shapones::ini
 
 #endif

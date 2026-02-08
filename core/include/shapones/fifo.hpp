@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes {
+namespace shapones {
 
 template <typename T, uint32_t prm_ADDR_BITS>
 class AsyncFifo {
@@ -87,7 +87,7 @@ class AsyncFifo {
     return item;
   }
 };
-}  // namespace nes
+}  // namespace shapones
 
 template < uint32_t prm_ADDR_BITS>
 class AsyncByteFifoRle {

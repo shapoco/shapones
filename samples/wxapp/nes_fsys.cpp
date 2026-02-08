@@ -5,7 +5,7 @@
 
 namespace fs = std::filesystem;
 
-namespace nes::fsys {
+namespace shapones::fsys {
 
 result_t mount() { return result_t::SUCCESS; }
 void unmount() {}

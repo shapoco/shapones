@@ -129,12 +129,12 @@ static int rom_select(int num_files, char **file_list) {
     update_lcd();
 
     switch (wait_key()) {
-      case nes::input::BTN_UP:
+      case shapones::input::BTN_UP:
         sel_index = (sel_index + num_files - 1) % num_files;
         break;
-      case nes::input::BTN_DOWN: sel_index = (sel_index + 1) % num_files; break;
-      case nes::input::BTN_A:
-      case nes::input::BTN_START: return sel_index;
+      case shapones::input::BTN_DOWN: sel_index = (sel_index + 1) % num_files; break;
+      case shapones::input::BTN_A:
+      case shapones::input::BTN_START: return sel_index;
     }
   }
 }
@@ -196,7 +196,7 @@ static bool load_nes(const char *fname, int size) {
 
   f_close(&fil);
 
-  nes::map_ines(ines);
+  shapones::map_ines(ines);
   ws19804::set_spi_speed(SYS_CLK_FREQ / 4);
 
   return true;

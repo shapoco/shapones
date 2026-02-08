@@ -11,14 +11,14 @@
 #include "shapones/menu.hpp"
 #include "shapones/ppu.hpp"
 
-namespace nes::state {
+namespace shapones::state {
 
 static constexpr int SS_BUFF_DEPTH = 2;
-static constexpr int SS_SCALING = nes::SCREEN_HEIGHT / state::SS_HEIGHT;
+static constexpr int SS_SCALING = shapones::SCREEN_HEIGHT / state::SS_HEIGHT;
 static constexpr int SS_CLIP_LEFT =
-    (nes::SCREEN_WIDTH - state::SS_WIDTH * SS_SCALING) / 2;
+    (shapones::SCREEN_WIDTH - state::SS_WIDTH * SS_SCALING) / 2;
 static constexpr int SS_CLIP_TOP =
-    (nes::SCREEN_HEIGHT - state::SS_HEIGHT * SS_SCALING) / 2;
+    (shapones::SCREEN_HEIGHT - state::SS_HEIGHT * SS_SCALING) / 2;
 
 uint8_t ss_buff[SS_SIZE_BYTES * SS_BUFF_DEPTH];
 volatile int ss_wr_index = 0;
@@ -336,4 +336,4 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
   return res;
 }
 
-}  // namespace nes::state
+}  // namespace shapones::state

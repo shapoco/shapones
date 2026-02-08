@@ -1,6 +1,6 @@
 #include "common.hpp"
 
-uint8_t frame_buff[FRAME_BUFF_STRIDE * nes::SCREEN_HEIGHT];
+uint8_t frame_buff[FRAME_BUFF_STRIDE * shapones::SCREEN_HEIGHT];
 
 const int input_pins[] = {PIN_PAD_A,     PIN_PAD_B,    PIN_PAD_SELECT,
                           PIN_PAD_START, PIN_PAD_UP,   PIN_PAD_DOWN,

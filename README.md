@@ -121,43 +121,43 @@ If you use the `load_ines_file` function described below, add `SHAPONES_SUPPORT_
 
 ### Defining Exclusive Control Functions
 
-Implement the following function. The argument `id` takes values ​​from 0 to `nes::NUM_LOCKS - 1`.
+Implement the following function. The argument `id` takes values ​​from 0 to `shapones::NUM_LOCKS - 1`.
 
-- `void nes::spinlock_init(int id)`: Initializes the mutex or spinlock corresponding to `id`.
-- `void nes::spinlock_deinit(int id)`: Destroys the mutex or spinlock corresponding to `id`.
-- `void nes::spinlock_get(int id)`: Acquires the lock on the mutex or spinlock corresponding to `id`.
-- `void nes::spinlock_release(int id)`: Releases the lock on the mutex or spinlock corresponding to `id`.
+- `void shapones::spinlock_init(int id)`: Initializes the mutex or spinlock corresponding to `id`.
+- `void shapones::spinlock_deinit(int id)`: Destroys the mutex or spinlock corresponding to `id`.
+- `void shapones::spinlock_get(int id)`: Acquires the lock on the mutex or spinlock corresponding to `id`.
+- `void shapones::spinlock_release(int id)`: Releases the lock on the mutex or spinlock corresponding to `id`.
 
 If you want the entire emulator to run single-threaded, the function body can be empty.
 
 ### Allocating the Output Buffers and Table
 
-- Create a line buffer for image output as a `uint8_t` array. Specify the size as `nes::SCREEN_WIDTH`.
+- Create a line buffer for image output as a `uint8_t` array. Specify the size as `shapones::SCREEN_WIDTH`.
 - Create a 64-length color table. The index is the NES color number, and the element is the actual display color (See also: [PPU palettes](https://www.nesdev.org/wiki/PPU_palettes)).
 - Create the audio stream buffer as a `uint8_t` array. Specify a size sufficient for your environment.
 
 ### Launching iNES File
 
 1. Load the iNES file content into binary array.
-2. Pass the binary array of the iNES file as an argument to `nes::memory::map_ines(const uint8_t *ines)`.
-3. Get the default configuration structure with `auto cfg = nes::get_default_config()`, modify the settings as needed, and pass it to `nes::init(const nes::Config& cfg)`.
+2. Pass the binary array of the iNES file as an argument to `shapones::memory::map_ines(const uint8_t *ines)`.
+3. Get the default configuration structure with `auto cfg = shapones::get_default_config()`, modify the settings as needed, and pass it to `shapones::init(const shapones::Config& cfg)`.
     - `cfg.apu_sampling_rate`: Specifies the audio stream sampling frequency in Hz.
-4. Pass the audio stream buffer to `nes::apu::service(uint8_t *buff, int len)` to fill the buffer and begin playback.
+4. Pass the audio stream buffer to `shapones::apu::service(uint8_t *buff, int len)` to fill the buffer and begin playback.
 
-Steps 1 and 2 can be completed on PC using `nes::load_ines_file(const char* path)` if `SHAPONES_SUPPORT_INES_FILE=1` is defined.
+Steps 1 and 2 can be completed on PC using `shapones::load_ines_file(const char* path)` if `SHAPONES_SUPPORT_INES_FILE=1` is defined.
 
 ### Main Loop
 
 Call the following functions within the application loop:
 
-- `nes::cpu::service();`
-- `nes::ppu::service(uint8_t *line_buff, bool skip_render, int *y);`
+- `shapones::cpu::service();`
+- `shapones::ppu::service(uint8_t *line_buff, bool skip_render, int *y);`
 
-Pass the line buffer as an argument to `nes::ppu::service`. `nes::ppu::service` returns a timing flags.
+Pass the line buffer as an argument to `shapones::ppu::service`. `shapones::ppu::service` returns a timing flags.
 
 The timing flag `ppu::END_OF_VISIBLE_LINE` means that `line_buff` is filled with visible pixels. The lowest 6 bits of each element of `line_buff` store the NES color palette number. **The highest 2 bits are flags used internally by ShapoNES and should be ignored.** When an application detects this flag, it should convert the contents of `line_buff` to actual colors and transfer them to the framebuffer.
 
-The current line number returned to argument `y` as a value between 0 and `nes::ppu::SCAN_LINES - 1`.
+The current line number returned to argument `y` as a value between 0 and `shapones::ppu::SCAN_LINES - 1`.
 
 The timing flag `ppu::END_OF_VISIBLE_AREA` means the visible area of ​​the current frame has ended. Applications using a frame buffer should detect this flag and start transferring data from the frame buffer to the display. Also, insert a sleep here to ensure the frame rate remains at 60 FPS.
 
@@ -165,17 +165,17 @@ If the PPU processing or display update takes too long, you can skip the renderi
 
 ### Controller Input
 
-1. Set the controller's input state in a variable of type `nes::input::InputStatus`.
-2. Pass that variable to `nes::input::set_status(int player, nes::input::InputStatus s)` to update the input state. The `player` variable specifies the controller's player number, either 0 or 1.
+1. Set the controller's input state in a variable of type `shapones::input::InputStatus`.
+2. Pass that variable to `shapones::input::set_status(int player, shapones::input::InputStatus s)` to update the input state. The `player` variable specifies the controller's player number, either 0 or 1.
 
 ### Audio Stream Output
 
-When the audio stream buffer is empty, fill it using `nes::apu::service(uint8_t *buff, int len)`.
+When the audio stream buffer is empty, fill it using `shapones::apu::service(uint8_t *buff, int len)`.
 
 The audio data is zero during silence, has only positive amplitude, and has a maximum value of 255. Because this value has a large DC bias, you must implement a DC cut filter if necessary.
 
 ### Multi-Thread Operation
 
-`nes::cpu::service`, `nes::ppu::service` and `nes::apu::service` can run on separate threads (or CPU cores). In that case, the mutual exclusion functions mentioned above must be correctly implemented.
+`shapones::cpu::service`, `shapones::ppu::service` and `shapones::apu::service` can run on separate threads (or CPU cores). In that case, the mutual exclusion functions mentioned above must be correctly implemented.
 
-`nes::input::set_status` should run on the same thread as `nes::cpu::service`.
+`shapones::input::set_status` should run on the same thread as `shapones::cpu::service`.

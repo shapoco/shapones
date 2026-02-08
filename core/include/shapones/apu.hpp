@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::apu {
+namespace shapones::apu {
 
 static constexpr int TIMER_PREC = 16;
 
@@ -287,6 +287,6 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::apu
+}  // namespace shapones::apu
 
 #endif

@@ -41,7 +41,7 @@ FcFrame::FcFrame(const wxString &title) : wxFrame(NULL, ID_FCFRAME, title) {
   screen = new FcScreen(this, ID_FCSCREEN);
 
   SetTitle(title);
-  SetClientSize(wxSize(nes::SCREEN_WIDTH * 2, nes::SCREEN_HEIGHT * 2));
+  SetClientSize(wxSize(shapones::SCREEN_WIDTH * 2, shapones::SCREEN_HEIGHT * 2));
   CenterOnScreen();
 
   nes_audio::play();
@@ -59,7 +59,7 @@ void FcFrame::OnTimer(wxTimerEvent &event) { screen->Render(); }
 
 void FcFrame::OnClose(wxCloseEvent &event) {
   nes_audio::stop();
-  nes::deinit();
+  shapones::deinit();
   event.Skip();
 }
 
@@ -70,26 +70,26 @@ class FcApp : public wxApp {
 };
 
 bool FcApp::OnInit() {
-  nes::result_t res = nes::result_t::SUCCESS;
+  shapones::result_t res = shapones::result_t::SUCCESS;
 
   frame = new FcFrame(wxT("ShapoNES"));
 
-  auto cfg = nes::get_default_config();
+  auto cfg = shapones::get_default_config();
   cfg.apu_sampling_rate = nes_audio::FREQ_HZ;
-  nes::init(cfg);
+  shapones::init(cfg);
 
   bool loaded = false;
   if (wxApp::argc >= 2) {
     do {
       const uint8_t *ines_data = nullptr;
       size_t ines_size = 0;
-      res = nes::load_ines(wxApp::argv[1], &ines_data, &ines_size);
-      if (res != nes::result_t::SUCCESS) {
+      res = shapones::load_ines(wxApp::argv[1], &ines_data, &ines_size);
+      if (res != shapones::result_t::SUCCESS) {
         break;
       }
 
-      res = nes::map_ines(ines_data, wxApp::argv[1]);
-      if (res != nes::result_t::SUCCESS) {
+      res = shapones::map_ines(ines_data, wxApp::argv[1]);
+      if (res != shapones::result_t::SUCCESS) {
         break;
       }
 
@@ -98,7 +98,7 @@ bool FcApp::OnInit() {
   }
 
   if (!loaded) {
-    nes::menu::show();
+    shapones::menu::show();
   }
 
   frame->Show(true);
@@ -109,30 +109,30 @@ bool FcApp::OnInit() {
 DECLARE_APP(FcApp)
 IMPLEMENT_APP(FcApp)
 
-nes::result_t nes::ram_alloc(size_t size, void **out_ptr) {
+shapones::result_t shapones::ram_alloc(size_t size, void **out_ptr) {
   void *ptr = malloc(size);
   if (!ptr) {
-    return nes::result_t::ERR_RAM_ALLOC_FAILED;
+    return shapones::result_t::ERR_RAM_ALLOC_FAILED;
   }
   *out_ptr = ptr;
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
 
-void nes::ram_free(void *ptr) { free(ptr); }
+void shapones::ram_free(void *ptr) { free(ptr); }
 
 // Exclusive control is not required because it is single-threaded
-nes::result_t nes::spinlock_init(int id) { return nes::result_t::SUCCESS; }
-void nes::spinlock_deinit(int id) {}
-void nes::spinlock_get(int id) {}
-void nes::spinlock_release(int id) {}
+shapones::result_t shapones::spinlock_init(int id) { return shapones::result_t::SUCCESS; }
+void shapones::spinlock_deinit(int id) {}
+void shapones::spinlock_get(int id) {}
+void shapones::spinlock_release(int id) {}
 
-nes::result_t nes::semaphore_init(int id) { return nes::result_t::SUCCESS; }
-void nes::semaphore_deinit(int id) {}
-void nes::semaphore_take(int id) {}
-bool nes::semaphore_try_take(int id) { return true; }
-void nes::semaphore_give(int id) {}
+shapones::result_t shapones::semaphore_init(int id) { return shapones::result_t::SUCCESS; }
+void shapones::semaphore_deinit(int id) {}
+void shapones::semaphore_take(int id) {}
+bool shapones::semaphore_try_take(int id) { return true; }
+void shapones::semaphore_give(int id) {}
 
-nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
+shapones::result_t shapones::load_ines(const char *path, const uint8_t **out_ines,
                              size_t *out_size) {
   try {
     std::ifstream ifs(path, std::ios::binary);
@@ -153,17 +153,17 @@ nes::result_t nes::load_ines(const char *path, const uint8_t **out_ines,
     SHAPONES_PRINTF("iNES file loaded\n");
   } catch (...) {
     SHAPONES_PRINTF("Failed to load iNES file\n");
-    return nes::result_t::ERR_FS_READ_FAILED;
+    return shapones::result_t::ERR_FS_READ_FAILED;
   }
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
 
-void nes::unload_ines() {
+void shapones::unload_ines() {
   SHAPONES_PRINTF("Unloading iNES file\n");
   ines_image.clear();
 }
 
-uint64_t nes::get_time_us() {
+uint64_t shapones::get_time_us() {
   auto now = std::chrono::high_resolution_clock::now();
   auto us = std::chrono::duration_cast<std::chrono::microseconds>(
                 now.time_since_epoch())

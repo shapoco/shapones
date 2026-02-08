@@ -7,7 +7,7 @@
 #include "shapones/interrupt.hpp"
 #include "shapones/state.hpp"
 
-namespace nes::menu {
+namespace shapones::menu {
 
 static constexpr int CHAR_WIDTH = 8;
 static constexpr int CHAR_HEIGHT = 16;
@@ -210,7 +210,7 @@ input::status_t key_down;
 input::status_t key_up;
 
 bool disk_mounted = false;
-char current_dir[nes::MAX_PATH_LENGTH + 1] = "";
+char current_dir[shapones::MAX_PATH_LENGTH + 1] = "";
 
 bool redraw_requested = false;
 
@@ -344,9 +344,9 @@ static result_t load_file_list_tab() {
         char *name = (char *)info.name;
         if (info.is_dir) {
           // append '/' to directory names
-          size_t len = strnlen(name, nes::MAX_FILENAME_LENGTH + 1);
-          char name[nes::MAX_FILENAME_LENGTH + 2];
-          strncpy(name, info.name, nes::MAX_FILENAME_LENGTH);
+          size_t len = strnlen(name, shapones::MAX_FILENAME_LENGTH + 1);
+          char name[shapones::MAX_FILENAME_LENGTH + 2];
+          strncpy(name, info.name, shapones::MAX_FILENAME_LENGTH);
           name[len++] = '/';
           name[len] = '\0';
         }
@@ -388,12 +388,12 @@ static result_t load_state_list_tab() {
 
   menu.clear();
 
-  char state_path[nes::MAX_PATH_LENGTH + 1];
-  strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
+  char state_path[shapones::MAX_PATH_LENGTH + 1];
+  strncpy(state_path, get_ines_path(), shapones::MAX_PATH_LENGTH);
   SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   do {
-    if (nes::fsys::exists(state_path)) {
+    if (shapones::fsys::exists(state_path)) {
       res = state::enum_slots(
           state_path, [](const state::state_slot_entry_t &entry) {
             if (!entry.is_used()) {
@@ -402,7 +402,7 @@ static result_t load_state_list_tab() {
               return (bool)true;
             }
 
-            char label[nes::MAX_FILENAME_LENGTH + 1];
+            char label[shapones::MAX_FILENAME_LENGTH + 1];
             float t = (float)entry.frame_count / 60;
             if (t < 60) {
               snprintf(label, sizeof(label), "#%02d %.2fs", entry.index, t);
@@ -444,8 +444,8 @@ static result_t load_state_list_tab() {
 }
 
 static result_t load_state_screenshot() {
-  char state_path[nes::MAX_PATH_LENGTH + 1];
-  strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
+  char state_path[shapones::MAX_PATH_LENGTH + 1];
+  strncpy(state_path, get_ines_path(), shapones::MAX_PATH_LENGTH);
   SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   ss_enable = false;
@@ -574,8 +574,8 @@ static result_t on_open_dir(ListItem *mi) {
 }
 
 static result_t on_load_rom(ListItem *mi) {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  strncpy(path, current_dir, nes::MAX_PATH_LENGTH);
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  strncpy(path, current_dir, shapones::MAX_PATH_LENGTH);
   SHAPONES_TRY(fsys::append_path(path, mi->label));
   unmap_ines();
   const uint8_t *ines = nullptr;
@@ -587,8 +587,8 @@ static result_t on_load_rom(ListItem *mi) {
 }
 
 static result_t on_add_state_slot() {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
   int slot = find_empty_slot();
   if (slot < 0) return result_t::ERR_STATE_SLOT_FULL;
   state::save(path, slot);
@@ -607,8 +607,8 @@ static result_t on_state_select(ListItem *mi) {
 }
 
 static result_t on_save_state(ListItem *mi) {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
   SHAPONES_TRY(state::save(path, mi->tag));
   popup_close();
   load_state_list_tab();
@@ -616,8 +616,8 @@ static result_t on_save_state(ListItem *mi) {
 }
 
 static result_t on_load_state(ListItem *mi) {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
   SHAPONES_TRY(state::load(path, mi->tag));
   popup_close();
   hide();
@@ -625,9 +625,9 @@ static result_t on_load_state(ListItem *mi) {
 }
 
 static result_t on_delete_state() {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
-  SHAPONES_TRY(nes::fsys::remove(path));
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_TRY(shapones::fsys::remove(path));
   popup_close();
   load_state_list_tab();
   return result_t::SUCCESS;
@@ -912,4 +912,4 @@ static void clip_rect(int *x, int *y, int *w, int *h) {
   }
 }
 
-}  // namespace nes::menu
+}  // namespace shapones::menu

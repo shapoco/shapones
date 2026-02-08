@@ -4,7 +4,7 @@
 #include "shapones/common.hpp"
 #include "shapones/fsys.hpp"
 
-namespace nes {
+namespace shapones {
 
 result_t ram_alloc(size_t size, void **out_ptr);
 void ram_free(void *ptr);
@@ -46,6 +46,6 @@ result_t make_dir(const char *path);
 
 uint64_t get_time_us();
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif

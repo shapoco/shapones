@@ -13,7 +13,7 @@
 #include "shapones/menu.hpp"
 #include "shapones/ppu.hpp"
 
-namespace nes {
+namespace shapones {
 
 config_t get_default_config();
 
@@ -26,6 +26,6 @@ result_t render_next_line(uint8_t *line_buff, bool skip_render = false,
                           ppu::status_t *status = nullptr);
 result_t vsync(uint8_t *line_buff, bool skip_render = false);
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif

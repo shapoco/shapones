@@ -5,7 +5,7 @@
 #include "shapones/common.hpp"
 #endif
 
-namespace nes::menu {
+namespace shapones::menu {
 
 const uint16_t FONT8X16_CODE_FIRST = 0x20;
 const uint16_t FONT8X16_CODE_LAST = 0xDF;
@@ -588,6 +588,6 @@ const uint16_t FONT8X16_DATA[] = {
   0x30F3, 0x30C0, 0x3400, 0x1D00, 0x07FA, 0x0000, 0x0000, 0x0000,
 };
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif // SHAPONES_FONT8X16_HPP

@@ -3,13 +3,13 @@
 
 #include "shapones/mapper.hpp"
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
 class Map000 : public Mapper {
  public:
   Map000() : Mapper(0, "NROM") {}
 };
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 
 #endif

@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::cpu {
+namespace shapones::cpu {
 
 static constexpr int CLOCK_FREQ_NTSC = 1789773;
 
@@ -92,6 +92,6 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::cpu
+}  // namespace shapones::cpu
 
 #endif

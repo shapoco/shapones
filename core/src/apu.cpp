@@ -5,7 +5,7 @@
 #include "shapones/lock.hpp"
 #include "shapones/menu.hpp"
 
-namespace nes::apu {
+namespace shapones::apu {
 
 static constexpr int QUARTER_FRAME_FREQUENCY = 240;
 static constexpr int QUARTER_FRAME_PHASE_PREC = 16;
@@ -608,4 +608,4 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::apu
+}  // namespace shapones::apu

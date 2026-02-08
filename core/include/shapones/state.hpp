@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::state {
+namespace shapones::state {
 
 static const char *STATE_FILE_EXT = "spn";
 
@@ -85,6 +85,6 @@ result_t load(const char *path, int slot);
 
 result_t read_screenshot(const char *path, int slot, uint8_t *out_buff);
 
-}  // namespace nes::state
+}  // namespace shapones::state
 
 #endif

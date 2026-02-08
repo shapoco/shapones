@@ -4,7 +4,7 @@
 #include "shapones/common.hpp"
 #include "shapones/ppu.hpp"
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
 class Mapper {
  public:
@@ -16,8 +16,8 @@ class Mapper {
 
   virtual result_t init() { return result_t::SUCCESS; }
   virtual result_t reset() { return result_t::SUCCESS; }
-  virtual bool vblank(const nes::ppu::registers_t &reg) { return false; }
-  virtual bool hblank(const nes::ppu::registers_t &reg, int y) { return false; }
+  virtual bool vblank(const shapones::ppu::registers_t &reg) { return false; }
+  virtual bool hblank(const shapones::ppu::registers_t &reg, int y) { return false; }
   virtual uint8_t read(addr_t addr) { return 0; }
   virtual void write(addr_t addr, uint8_t value) {}
 
@@ -33,6 +33,6 @@ void deinit();
 
 result_t map_ines(const uint8_t *ines);
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 
 #endif

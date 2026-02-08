@@ -15,8 +15,8 @@ static uint8_t *ines_psram = nullptr;
 static const esp_partition_t *ines_partition = nullptr;
 static spi_flash_mmap_handle_t mmap_handle = 0;
 
-static spinlock_t spinlocks[nes::NUM_SPINLOCKS];
-static SemaphoreHandle_t semaphores[nes::NUM_SEMAPHORES];
+static spinlock_t spinlocks[shapones::NUM_SPINLOCKS];
+static SemaphoreHandle_t semaphores[shapones::NUM_SEMAPHORES];
 
 void init_host_impl() {
   ines_partition = esp_partition_find_first(
@@ -28,8 +28,8 @@ void init_host_impl() {
   }
 }
 
-static nes::result_t load_ines_to_flash(File &f, size_t file_size, const uint8_t **out_ines) {
-  nes::result_t res = nes::result_t::SUCCESS;
+static shapones::result_t load_ines_to_flash(File &f, size_t file_size, const uint8_t **out_ines) {
+  shapones::result_t res = shapones::result_t::SUCCESS;
   esp_err_t esp_err;
 
   constexpr int CHUNK_SIZE = 4096;
@@ -52,7 +52,7 @@ static nes::result_t load_ines_to_flash(File &f, size_t file_size, const uint8_t
     size_t erase_size = (file_size + SPI_FLASH_SEC_SIZE - 1) & ~(SPI_FLASH_SEC_SIZE - 1);
     esp_err = esp_partition_erase_range(ines_partition, 0, erase_size);
     if (esp_err != ESP_OK) {
-      res = nes::result_t::ERR_FLASH_ERASE_FAILED;
+      res = shapones::result_t::ERR_FLASH_ERASE_FAILED;
       break;
     }
 
@@ -62,7 +62,7 @@ static nes::result_t load_ines_to_flash(File &f, size_t file_size, const uint8_t
       size_t bytes_read = f.read(buff, CHUNK_SIZE);
       esp_err = esp_partition_write(ines_partition, offset, buff, bytes_read);
       if (esp_err != ESP_OK) {
-        res = nes::result_t::ERR_FLASH_PROGRAM_FAILED;
+        res = shapones::result_t::ERR_FLASH_PROGRAM_FAILED;
         break;
       }
       offset += bytes_read;
@@ -74,17 +74,17 @@ static nes::result_t load_ines_to_flash(File &f, size_t file_size, const uint8_t
       ines_partition, 0, ines_partition->size,
       ESP_PARTITION_MMAP_DATA, (const void **)out_ines, &mmap_handle);
     if (esp_err != ESP_OK) {
-      res = nes::result_t::ERR_MMAP_FAILED;
+      res = shapones::result_t::ERR_MMAP_FAILED;
       break;
     }
   } while (0);
 
   //delete[] buff;
 
-  return nes::result_t::SUCCESS;
+  return shapones::result_t::SUCCESS;
 }
 
-namespace nes {
+namespace shapones {
 
 result_t ram_alloc(size_t size, void **out_ptr) {
   void *ptr = heap_caps_malloc(size, MALLOC_CAP_DMA);
@@ -309,4 +309,4 @@ result_t remove(const char *path) {
 
 }
 
-}  // namespace nes
+}  // namespace shapones

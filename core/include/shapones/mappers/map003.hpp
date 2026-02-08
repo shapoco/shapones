@@ -4,9 +4,9 @@
 #include "shapones/mapper.hpp"
 #include "shapones/memory.hpp"
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
-using namespace nes::memory;
+using namespace shapones::memory;
 
 class Map003 : public Mapper {
  private:
@@ -32,18 +32,18 @@ class Map003 : public Mapper {
     uint8_t buff[STATE_SIZE];
     memset(buff, 0, sizeof(buff));
     buff[0] = bank;
-    return nes::fsys::write(file_handle, buff, STATE_SIZE);
+    return shapones::fsys::write(file_handle, buff, STATE_SIZE);
   }
 
   result_t load_state(void *file_handle) override {
     uint8_t buff[STATE_SIZE];
-    SHAPONES_TRY(nes::fsys::read(file_handle, buff, STATE_SIZE));
+    SHAPONES_TRY(shapones::fsys::read(file_handle, buff, STATE_SIZE));
     bank = buff[0];
     perform_remap();
     return result_t::SUCCESS;
   }
 };
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 
 #endif

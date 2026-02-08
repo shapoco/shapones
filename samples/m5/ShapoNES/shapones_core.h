@@ -92,7 +92,7 @@ using int_fast32_t = int32_t;
     Serial.printf("*ERROR: ");                          \
     Serial.printf(fmt, ##__VA_ARGS__);                  \
     Serial.flush();                                     \
-    nes::stop();                                        \
+    shapones::stop();                                        \
   } while (0)
 
 #else
@@ -114,7 +114,7 @@ using int_fast32_t = int32_t;
     printf("*ERROR: ");                          \
     printf(fmt, ##__VA_ARGS__);                  \
     fflush(stdout);                              \
-    nes::stop();                                 \
+    shapones::stop();                                 \
   } while (0)
 
 #endif
@@ -127,17 +127,17 @@ using int_fast32_t = int32_t;
 
 #define SHAPONES_ERRORF(fmt, ...) \
   do {                            \
-    nes::stop();                  \
+    shapones::stop();                  \
   } while (0)
 
 #endif
 
 #define SHAPONES_TRY(expr)                               \
   do {                                                   \
-    ::nes::result_t res = (expr);                        \
-    if (res != ::nes::result_t::SUCCESS) {               \
+    ::shapones::result_t res = (expr);                        \
+    if (res != ::shapones::result_t::SUCCESS) {               \
       SHAPONES_PRINTF("Error Code: %d (%s)\n", (int)res, \
-                      ::nes::result_to_string(res));     \
+                      ::shapones::result_to_string(res));     \
       return res;                                        \
     }                                                    \
   } while (false)
@@ -150,7 +150,7 @@ using int_fast32_t = int32_t;
   std::atomic_thread_fence(std::memory_order_seq_cst);
 #endif
 
-namespace nes {
+namespace shapones {
 
 using addr_t = uint_fast16_t;
 using cycle_t = uint32_t;
@@ -332,11 +332,11 @@ static SHAPONES_INLINE uint8_t blend_colors(uint8_t a, uint8_t b) {
   return blend_table[(a << 6) | b];
 }
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif
 
-namespace nes::apu {
+namespace shapones::apu {
 
 static constexpr int TIMER_PREC = 16;
 
@@ -620,7 +620,7 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::apu
+}  // namespace shapones::apu
 
 #endif
 // #include "shapones/common.hpp"
@@ -633,7 +633,7 @@ result_t load_state(void *file_handle);
 // #include "shapones/common.hpp"
 
 
-namespace nes::cpu {
+namespace shapones::cpu {
 
 static constexpr int CLOCK_FREQ_NTSC = 1789773;
 
@@ -722,7 +722,7 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::cpu
+}  // namespace shapones::cpu
 
 #endif
 // #include "shapones/host_intf.hpp"
@@ -740,7 +740,7 @@ result_t load_state(void *file_handle);
 // #include "shapones/common.hpp"
 
 
-namespace nes::fsys {
+namespace shapones::fsys {
 
 struct file_info_t {
   bool is_dir;
@@ -756,11 +756,11 @@ result_t append_separator(char *path);
 result_t append_path(char *path, const char *name);
 result_t replace_ext(char *path, const char *new_ext);
 
-}  // namespace nes::fsys
+}  // namespace shapones::fsys
 
 #endif
 
-namespace nes {
+namespace shapones {
 
 result_t ram_alloc(size_t size, void **out_ptr);
 void ram_free(void *ptr);
@@ -802,7 +802,7 @@ result_t make_dir(const char *path);
 
 uint64_t get_time_us();
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif
 // #include "shapones/input.hpp"
@@ -813,7 +813,7 @@ uint64_t get_time_us();
 // #include "shapones/common.hpp"
 
 
-namespace nes::input {
+namespace shapones::input {
 
 static constexpr int BTN_A = 0;
 static constexpr int BTN_B = 1;
@@ -862,7 +862,7 @@ uint32_t state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::input
+}  // namespace shapones::input
 
 #endif
 // #include "shapones/interrupt.hpp"
@@ -873,7 +873,7 @@ result_t load_state(void *file_handle);
 // #include "shapones/common.hpp"
 
 
-namespace nes::interrupt {
+namespace shapones::interrupt {
 
 enum class source_t : uint32_t {
   APU_FRAME_COUNTER = (1 << 0),
@@ -921,7 +921,7 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::interrupt
+}  // namespace shapones::interrupt
 
 #endif
 // #include "shapones/lock.hpp"
@@ -932,7 +932,7 @@ result_t load_state(void *file_handle);
 // #include "shapones/host_intf.hpp"
 
 
-namespace nes {
+namespace shapones {
 
 class SpinLockBlock {
  public:
@@ -948,7 +948,7 @@ class SemaphoreBlock {
   SHAPONES_INLINE ~SemaphoreBlock() { semaphore_give(id); }
 };
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif// #include "shapones/mapper.hpp"
 
@@ -965,7 +965,7 @@ class SemaphoreBlock {
 // #include "shapones/common.hpp"
 
 
-namespace nes::ppu {
+namespace shapones::ppu {
 
 static constexpr int TILE_SIZE = 8;
 static constexpr int NUM_TILE_X = SCREEN_WIDTH / TILE_SIZE;
@@ -1160,11 +1160,11 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::ppu
+}  // namespace shapones::ppu
 
 #endif
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
 class Mapper {
  public:
@@ -1176,8 +1176,8 @@ class Mapper {
 
   virtual result_t init() { return result_t::SUCCESS; }
   virtual result_t reset() { return result_t::SUCCESS; }
-  virtual bool vblank(const nes::ppu::registers_t &reg) { return false; }
-  virtual bool hblank(const nes::ppu::registers_t &reg, int y) { return false; }
+  virtual bool vblank(const shapones::ppu::registers_t &reg) { return false; }
+  virtual bool hblank(const shapones::ppu::registers_t &reg, int y) { return false; }
   virtual uint8_t read(addr_t addr) { return 0; }
   virtual void write(addr_t addr, uint8_t value) {}
 
@@ -1193,7 +1193,7 @@ void deinit();
 
 result_t map_ines(const uint8_t *ines);
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 
 #endif// #include "shapones/memory.hpp"
 
@@ -1203,7 +1203,7 @@ result_t map_ines(const uint8_t *ines);
 // #include "shapones/common.hpp"
 
 
-namespace nes::memory {
+namespace shapones::memory {
 
 static constexpr int PRGROM_PAGE_SIZE = 16384;
 static constexpr int CHRROM_PAGE_SIZE = 8192;
@@ -1385,7 +1385,7 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::memory
+}  // namespace shapones::memory
 
 #endif
 // #include "shapones/menu.hpp"
@@ -1396,7 +1396,7 @@ result_t load_state(void *file_handle);
 // #include "shapones/common.hpp"
 
 
-namespace nes::menu {
+namespace shapones::menu {
 
 extern bool shown;
 
@@ -1411,13 +1411,13 @@ void hide();
 result_t service();
 result_t overlay(int y, uint8_t *line_buff);
 
-}  // namespace nes::menu
+}  // namespace shapones::menu
 
 #endif
 // #include "shapones/ppu.hpp"
 
 
-namespace nes {
+namespace shapones {
 
 config_t get_default_config();
 
@@ -1430,7 +1430,7 @@ result_t render_next_line(uint8_t *line_buff, bool skip_render = false,
                           ppu::status_t *status = nullptr);
 result_t vsync(uint8_t *line_buff, bool skip_render = false);
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif
 #ifdef SHAPONES_IMPLEMENTATION
@@ -1438,7 +1438,7 @@ result_t vsync(uint8_t *line_buff, bool skip_render = false);
 // #include "shapones/common.hpp"
 
 
-namespace nes {
+namespace shapones {
 
 const uint32_t NES_PALETTE_24BPP[64] = {
     0x808080, 0x003DA6, 0x0012B0, 0x440096, 0xA1005E, 0xC70028, 0xBA0600,
@@ -1509,7 +1509,7 @@ uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b) {
   return best_index;
 }
 
-}  // namespace nes
+}  // namespace shapones
 // #include "shapones/apu.hpp"
 
 // #include "shapones/cpu.hpp"
@@ -1522,7 +1522,7 @@ uint8_t nearest_rgb888(uint8_t r, uint8_t g, uint8_t b) {
 // #include "shapones/common.hpp"
 
 
-namespace nes {
+namespace shapones {
 
 template <typename T, uint32_t prm_ADDR_BITS>
 class AsyncFifo {
@@ -1606,7 +1606,7 @@ class AsyncFifo {
     return item;
   }
 };
-}  // namespace nes
+}  // namespace shapones
 
 template < uint32_t prm_ADDR_BITS>
 class AsyncByteFifoRle {
@@ -1624,7 +1624,7 @@ class AsyncByteFifoRle {
 // #include "shapones/menu.hpp"
 
 
-namespace nes::apu {
+namespace shapones::apu {
 
 static constexpr int QUARTER_FRAME_FREQUENCY = 240;
 static constexpr int QUARTER_FRAME_PHASE_PREC = 16;
@@ -2227,7 +2227,7 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::apu
+}  // namespace shapones::apu
 // #include "shapones/cpu.hpp"
 
 // #include "shapones/apu.hpp"
@@ -2258,7 +2258,7 @@ result_t load_state(void *file_handle) {
 // #include "shapones/common.hpp"
 
 
-namespace nes::state {
+namespace shapones::state {
 
 static const char *STATE_FILE_EXT = "spn";
 
@@ -2340,11 +2340,11 @@ result_t load(const char *path, int slot);
 
 result_t read_screenshot(const char *path, int slot, uint8_t *out_buff);
 
-}  // namespace nes::state
+}  // namespace shapones::state
 
 #endif
 
-namespace nes::cpu {
+namespace shapones::cpu {
 
 static constexpr int BATCH_EXECUTES = 4;
 
@@ -3185,16 +3185,16 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::cpu
+}  // namespace shapones::cpu
 // #include "shapones/fsys.hpp"
 
 
-namespace nes::fsys {
+namespace shapones::fsys {
 
 bool is_root_dir(const char *path) { return find_parent_separator(path) < 0; }
 
 int find_parent_separator(const char *path) {
-  int n = strnlen(path, nes::MAX_PATH_LENGTH);
+  int n = strnlen(path, shapones::MAX_PATH_LENGTH);
   if (n == 0) {
     return -1;
   }
@@ -3206,7 +3206,7 @@ int find_parent_separator(const char *path) {
 
 int find_char_rev(const char *path, char c, int start_idx) {
   if (start_idx < 0) {
-    start_idx = strnlen(path, nes::MAX_PATH_LENGTH);
+    start_idx = strnlen(path, shapones::MAX_PATH_LENGTH);
   } else if (start_idx == 0) {
     return -1;
   }
@@ -3219,11 +3219,11 @@ int find_char_rev(const char *path, char c, int start_idx) {
 }
 
 result_t append_separator(char *path) {
-  int len = strnlen(path, nes::MAX_PATH_LENGTH);
+  int len = strnlen(path, shapones::MAX_PATH_LENGTH);
   if (path[len - 1] == '/') {
     return result_t::SUCCESS;
   }
-  if (len + 1 >= nes::MAX_PATH_LENGTH) {
+  if (len + 1 >= shapones::MAX_PATH_LENGTH) {
     return result_t::ERR_FS_PATH_TOO_LONG;
   }
   path[len++] = '/';
@@ -3233,9 +3233,9 @@ result_t append_separator(char *path) {
 
 result_t append_path(char *path, const char *name) {
   SHAPONES_TRY(append_separator(path));
-  int len = strnlen(path, nes::MAX_PATH_LENGTH);
-  int name_len = strnlen(name, nes::MAX_PATH_LENGTH);
-  if (len + name_len >= nes::MAX_PATH_LENGTH) {
+  int len = strnlen(path, shapones::MAX_PATH_LENGTH);
+  int name_len = strnlen(name, shapones::MAX_PATH_LENGTH);
+  if (len + name_len >= shapones::MAX_PATH_LENGTH) {
     return result_t::ERR_FS_PATH_TOO_LONG;
   }
 
@@ -3244,7 +3244,7 @@ result_t append_path(char *path, const char *name) {
 }
 
 result_t replace_ext(char *path, const char *new_ext) {
-  int old_path_len = strnlen(path, nes::MAX_PATH_LENGTH);
+  int old_path_len = strnlen(path, shapones::MAX_PATH_LENGTH);
 
   int sep_idx = find_char_rev(path, '/');
   int old_name_len = old_path_len;
@@ -3258,15 +3258,15 @@ result_t replace_ext(char *path, const char *new_ext) {
   }
 
   int old_ext_len = old_path_len - dot_idx - 1;
-  int new_ext_len = strnlen(new_ext, nes::MAX_FILENAME_LENGTH);
+  int new_ext_len = strnlen(new_ext, shapones::MAX_FILENAME_LENGTH);
 
   int new_path_len = old_path_len - old_ext_len + new_ext_len;
-  if (new_path_len >= nes::MAX_PATH_LENGTH) {
+  if (new_path_len >= shapones::MAX_PATH_LENGTH) {
     return result_t::ERR_FS_PATH_TOO_LONG;
   }
 
   int new_name_len = old_name_len - old_ext_len + new_ext_len;
-  if (new_name_len >= nes::MAX_FILENAME_LENGTH) {
+  if (new_name_len >= shapones::MAX_FILENAME_LENGTH) {
     return result_t::ERR_FS_PATH_TOO_LONG;
   }
 
@@ -3275,14 +3275,14 @@ result_t replace_ext(char *path, const char *new_ext) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::fsys// #include "shapones/input.hpp"
+}  // namespace shapones::fsys// #include "shapones/input.hpp"
 
 // #include "shapones/host_intf.hpp"
 
 // #include "shapones/menu.hpp"
 
 
-namespace nes::input {
+namespace shapones::input {
 
 static constexpr uint32_t STATE_SIZE = 16;
 
@@ -3379,13 +3379,13 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::input
+}  // namespace shapones::input
 // #include "shapones/interrupt.hpp"
 
 // #include "shapones/lock.hpp"
 
 
-namespace nes::interrupt {
+namespace shapones::interrupt {
 
 static constexpr uint32_t STATE_SIZE = 16;
 
@@ -3441,7 +3441,7 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::interrupt
+}  // namespace shapones::interrupt
 // #include "shapones/mapper.hpp"
 
 // #include "shapones/interrupt.hpp"
@@ -3459,14 +3459,14 @@ result_t load_state(void *file_handle) {
 // #include "shapones/mapper.hpp"
 
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
 class Map000 : public Mapper {
  public:
   Map000() : Mapper(0, "NROM") {}
 };
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 
 #endif
 // #include "shapones/mappers/map001.hpp"
@@ -3479,9 +3479,9 @@ class Map000 : public Mapper {
 // #include "shapones/memory.hpp"
 
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
-using namespace nes::memory;
+using namespace shapones::memory;
 
 class Map001 : public Mapper {
  private:
@@ -3587,12 +3587,12 @@ class Map001 : public Mapper {
     buffer[offset++] = chr_bank0;
     buffer[offset++] = chr_bank1;
     buffer[offset++] = prg_bank;
-    return nes::fsys::write(file_handle, buffer, STATE_SIZE);
+    return shapones::fsys::write(file_handle, buffer, STATE_SIZE);
   }
 
   result_t load_state(void *file_handle) override {
     uint8_t buffer[STATE_SIZE];
-    SHAPONES_TRY(nes::fsys::read(file_handle, buffer, STATE_SIZE));
+    SHAPONES_TRY(shapones::fsys::read(file_handle, buffer, STATE_SIZE));
     uint32_t offset = 0;
     shift_reg = buffer[offset++];
     ctrl_reg = buffer[offset++];
@@ -3604,7 +3604,7 @@ class Map001 : public Mapper {
   }
 };
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 
 #endif
 // #include "shapones/mappers/map002.hpp"
@@ -3617,9 +3617,9 @@ class Map001 : public Mapper {
 // #include "shapones/memory.hpp"
 
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
-using namespace nes::memory;
+using namespace shapones::memory;
 
 // see: https://www.nesdev.org/wiki/UxROM
 class Map002 : public Mapper {
@@ -3654,19 +3654,19 @@ class Map002 : public Mapper {
     uint8_t buff[STATE_SIZE];
     memset(buff, 0, sizeof(buff));
     buff[0] = bank;
-    return nes::fsys::write(file_handle, buff, STATE_SIZE);
+    return shapones::fsys::write(file_handle, buff, STATE_SIZE);
   }
 
   result_t load_state(void *file_handle) override {
     uint8_t buff[STATE_SIZE];
-    SHAPONES_TRY(nes::fsys::read(file_handle, buff, STATE_SIZE));
+    SHAPONES_TRY(shapones::fsys::read(file_handle, buff, STATE_SIZE));
     bank = buff[0];
     perform_remap();
     return result_t::SUCCESS;
   }
 };
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 
 #endif
 // #include "shapones/mappers/map003.hpp"
@@ -3679,9 +3679,9 @@ class Map002 : public Mapper {
 // #include "shapones/memory.hpp"
 
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
-using namespace nes::memory;
+using namespace shapones::memory;
 
 class Map003 : public Mapper {
  private:
@@ -3707,19 +3707,19 @@ class Map003 : public Mapper {
     uint8_t buff[STATE_SIZE];
     memset(buff, 0, sizeof(buff));
     buff[0] = bank;
-    return nes::fsys::write(file_handle, buff, STATE_SIZE);
+    return shapones::fsys::write(file_handle, buff, STATE_SIZE);
   }
 
   result_t load_state(void *file_handle) override {
     uint8_t buff[STATE_SIZE];
-    SHAPONES_TRY(nes::fsys::read(file_handle, buff, STATE_SIZE));
+    SHAPONES_TRY(shapones::fsys::read(file_handle, buff, STATE_SIZE));
     bank = buff[0];
     perform_remap();
     return result_t::SUCCESS;
   }
 };
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 
 #endif
 // #include "shapones/mappers/map004.hpp"
@@ -3734,9 +3734,9 @@ class Map003 : public Mapper {
 // #include "shapones/memory.hpp"
 
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
-using namespace nes::memory;
+using namespace shapones::memory;
 
 class Map004 : public Mapper {
  private:
@@ -3799,7 +3799,7 @@ class Map004 : public Mapper {
     }
   }
 
-  bool hblank(const nes::ppu::registers_t &reg, int y) override {
+  bool hblank(const shapones::ppu::registers_t &reg, int y) override {
     bool irq = false;
     if (reg.mask.bg_enable && reg.mask.sprite_enable) {
       if (irq_counter == 0 || irq_reloading) {
@@ -3869,12 +3869,12 @@ class Map004 : public Mapper {
     buffer[offset++] = irq_reloading ? 1 : 0;
     buffer[offset++] = irq_latch;
     buffer[offset++] = irq_counter;
-    return nes::fsys::write(file_handle, buffer, STATE_SIZE);
+    return shapones::fsys::write(file_handle, buffer, STATE_SIZE);
   }
 
   result_t load_state(void *file_handle) override {
     uint8_t buffer[STATE_SIZE];
-    SHAPONES_TRY(nes::fsys::read(file_handle, buffer, STATE_SIZE));
+    SHAPONES_TRY(shapones::fsys::read(file_handle, buffer, STATE_SIZE));
     uint32_t offset = 0;
     reg_sel = buffer[offset++];
     for (int i = 0; i < 8; i++) {
@@ -3892,11 +3892,11 @@ class Map004 : public Mapper {
   }
 };
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 
 #endif
 
-namespace nes::mapper {
+namespace shapones::mapper {
 
 Mapper *instance = nullptr;
 
@@ -3943,7 +3943,7 @@ result_t map_ines(const uint8_t *ines) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::mapper
+}  // namespace shapones::mapper
 // #include "shapones/memory.hpp"
 
 // #include "shapones/host_intf.hpp"
@@ -3953,7 +3953,7 @@ result_t map_ines(const uint8_t *ines) {
 // #include "shapones/ppu.hpp"
 
 
-namespace nes::memory {
+namespace shapones::memory {
 
 uint8_t wram[WRAM_SIZE];
 uint8_t vram[VRAM_SIZE];
@@ -3984,20 +3984,20 @@ result_t init() {
   deinit();
   unmap_ines();
   prgram_size = 8192;
-  SHAPONES_TRY(nes::ram_alloc(prgram_size, (void **)&prgram));
+  SHAPONES_TRY(shapones::ram_alloc(prgram_size, (void **)&prgram));
   chrram_size = CHRROM_RANGE;
-  SHAPONES_TRY(nes::ram_alloc(chrram_size, (void **)&chrram));
+  SHAPONES_TRY(shapones::ram_alloc(chrram_size, (void **)&chrram));
   return result_t::SUCCESS;
 }
 
 void deinit() {
   if (prgram) {
-    nes::ram_free(prgram);
+    shapones::ram_free(prgram);
     prgram = nullptr;
     prgram_size = 0;
   }
   if (chrram) {
-    nes::ram_free(chrram);
+    shapones::ram_free(chrram);
     chrram = nullptr;
     chrram_size = 0;
   }
@@ -4089,11 +4089,11 @@ result_t map_ines(const uint8_t *ines) {
   SHAPONES_PRINTF("PRG RAM size = %d kB\n", new_prgram_size / 1024);
   if (new_prgram_size != prgram_size) {
     if (prgram) {
-      nes::ram_free(prgram);
+      shapones::ram_free(prgram);
       prgram = nullptr;
     }
     if (new_prgram_size > 0) {
-      SHAPONES_TRY(nes::ram_alloc(new_prgram_size, (void **)&prgram));
+      SHAPONES_TRY(shapones::ram_alloc(new_prgram_size, (void **)&prgram));
     }
     prgram_size = new_prgram_size;
   }
@@ -4109,11 +4109,11 @@ result_t map_ines(const uint8_t *ines) {
   uint32_t new_chrram_size = (num_chr_rom_pages == 0) ? CHRROM_RANGE : 0;
   if (new_chrram_size != chrram_size) {
     if (chrram) {
-      nes::ram_free(chrram);
+      shapones::ram_free(chrram);
       chrram = nullptr;
     }
     if (new_chrram_size > 0) {
-      SHAPONES_TRY(nes::ram_alloc(new_chrram_size, (void **)&chrram));
+      SHAPONES_TRY(shapones::ram_alloc(new_chrram_size, (void **)&chrram));
     }
     chrram_size = new_chrram_size;
   }
@@ -4194,7 +4194,7 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::memory
+}  // namespace shapones::memory
 // #include "shapones/menu.hpp"
 
 // #include "shapones/font8x16.hpp"
@@ -4207,7 +4207,7 @@ result_t load_state(void *file_handle) {
 
 #endif
 
-namespace nes::menu {
+namespace shapones::menu {
 
 const uint16_t FONT8X16_CODE_FIRST = 0x20;
 const uint16_t FONT8X16_CODE_LAST = 0xDF;
@@ -4790,7 +4790,7 @@ const uint16_t FONT8X16_DATA[] = {
   0x30F3, 0x30C0, 0x3400, 0x1D00, 0x07FA, 0x0000, 0x0000, 0x0000,
 };
 
-}  // namespace nes
+}  // namespace shapones
 
 #endif // SHAPONES_FONT8X16_HPP
 // #include "shapones/fsys.hpp"
@@ -4820,7 +4820,7 @@ const uint16_t FONT8X16_DATA[] = {
 // #include "shapones/host_intf.hpp"
 
 
-namespace nes::fsys {
+namespace shapones::fsys {
 
 class TextReader {
  private:
@@ -4895,10 +4895,10 @@ class TextReader {
     }
   }
 };
-}  // namespace nes::fsys
+}  // namespace shapones::fsys
 
 #endif
-namespace nes::ini {
+namespace shapones::ini {
 
 static constexpr uint32_t MAX_SECTION_LENGTH = 16;
 static constexpr uint32_t MAX_KEY_LENGTH = 16;
@@ -4909,7 +4909,7 @@ using enum_keys_cb_t = bool (*)(const char *section, const char *key,
 
 result_t read(const char *path, enum_keys_cb_t callback);
 
-}  // namespace nes::ini
+}  // namespace shapones::ini
 
 #endif
 // #include "shapones/input.hpp"
@@ -4919,7 +4919,7 @@ result_t read(const char *path, enum_keys_cb_t callback);
 // #include "shapones/state.hpp"
 
 
-namespace nes::menu {
+namespace shapones::menu {
 
 static constexpr int CHAR_WIDTH = 8;
 static constexpr int CHAR_HEIGHT = 16;
@@ -5122,7 +5122,7 @@ input::status_t key_down;
 input::status_t key_up;
 
 bool disk_mounted = false;
-char current_dir[nes::MAX_PATH_LENGTH + 1] = "";
+char current_dir[shapones::MAX_PATH_LENGTH + 1] = "";
 
 bool redraw_requested = false;
 
@@ -5256,9 +5256,9 @@ static result_t load_file_list_tab() {
         char *name = (char *)info.name;
         if (info.is_dir) {
           // append '/' to directory names
-          size_t len = strnlen(name, nes::MAX_FILENAME_LENGTH + 1);
-          char name[nes::MAX_FILENAME_LENGTH + 2];
-          strncpy(name, info.name, nes::MAX_FILENAME_LENGTH);
+          size_t len = strnlen(name, shapones::MAX_FILENAME_LENGTH + 1);
+          char name[shapones::MAX_FILENAME_LENGTH + 2];
+          strncpy(name, info.name, shapones::MAX_FILENAME_LENGTH);
           name[len++] = '/';
           name[len] = '\0';
         }
@@ -5300,12 +5300,12 @@ static result_t load_state_list_tab() {
 
   menu.clear();
 
-  char state_path[nes::MAX_PATH_LENGTH + 1];
-  strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
+  char state_path[shapones::MAX_PATH_LENGTH + 1];
+  strncpy(state_path, get_ines_path(), shapones::MAX_PATH_LENGTH);
   SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   do {
-    if (nes::fsys::exists(state_path)) {
+    if (shapones::fsys::exists(state_path)) {
       res = state::enum_slots(
           state_path, [](const state::state_slot_entry_t &entry) {
             if (!entry.is_used()) {
@@ -5314,7 +5314,7 @@ static result_t load_state_list_tab() {
               return (bool)true;
             }
 
-            char label[nes::MAX_FILENAME_LENGTH + 1];
+            char label[shapones::MAX_FILENAME_LENGTH + 1];
             float t = (float)entry.frame_count / 60;
             if (t < 60) {
               snprintf(label, sizeof(label), "#%02d %.2fs", entry.index, t);
@@ -5356,8 +5356,8 @@ static result_t load_state_list_tab() {
 }
 
 static result_t load_state_screenshot() {
-  char state_path[nes::MAX_PATH_LENGTH + 1];
-  strncpy(state_path, get_ines_path(), nes::MAX_PATH_LENGTH);
+  char state_path[shapones::MAX_PATH_LENGTH + 1];
+  strncpy(state_path, get_ines_path(), shapones::MAX_PATH_LENGTH);
   SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   ss_enable = false;
@@ -5486,8 +5486,8 @@ static result_t on_open_dir(ListItem *mi) {
 }
 
 static result_t on_load_rom(ListItem *mi) {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  strncpy(path, current_dir, nes::MAX_PATH_LENGTH);
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  strncpy(path, current_dir, shapones::MAX_PATH_LENGTH);
   SHAPONES_TRY(fsys::append_path(path, mi->label));
   unmap_ines();
   const uint8_t *ines = nullptr;
@@ -5499,8 +5499,8 @@ static result_t on_load_rom(ListItem *mi) {
 }
 
 static result_t on_add_state_slot() {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
   int slot = find_empty_slot();
   if (slot < 0) return result_t::ERR_STATE_SLOT_FULL;
   state::save(path, slot);
@@ -5519,8 +5519,8 @@ static result_t on_state_select(ListItem *mi) {
 }
 
 static result_t on_save_state(ListItem *mi) {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
   SHAPONES_TRY(state::save(path, mi->tag));
   popup_close();
   load_state_list_tab();
@@ -5528,8 +5528,8 @@ static result_t on_save_state(ListItem *mi) {
 }
 
 static result_t on_load_state(ListItem *mi) {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
   SHAPONES_TRY(state::load(path, mi->tag));
   popup_close();
   hide();
@@ -5537,9 +5537,9 @@ static result_t on_load_state(ListItem *mi) {
 }
 
 static result_t on_delete_state() {
-  char path[nes::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, nes::MAX_PATH_LENGTH));
-  SHAPONES_TRY(nes::fsys::remove(path));
+  char path[shapones::MAX_PATH_LENGTH + 1];
+  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_TRY(shapones::fsys::remove(path));
   popup_close();
   load_state_list_tab();
   return result_t::SUCCESS;
@@ -5824,7 +5824,7 @@ static void clip_rect(int *x, int *y, int *w, int *h) {
   }
 }
 
-}  // namespace nes::menu
+}  // namespace shapones::menu
 // #include "shapones/ppu.hpp"
 
 // #include "shapones/cpu.hpp"
@@ -5846,7 +5846,7 @@ static void clip_rect(int *x, int *y, int *w, int *h) {
 // #include "shapones/state.hpp"
 
 
-namespace nes::ppu {
+namespace shapones::ppu {
 
 static constexpr uint32_t STATE_HEADER_SIZE = registers_t::STATE_SIZE + 32;
 
@@ -6177,9 +6177,9 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
       }
     }
 
-    nes::state::hsync(focus_y, line_buff, skip_render);
+    shapones::state::hsync(focus_y, line_buff, skip_render);
     if (!skip_render) {
-      nes::menu::overlay(focus_y, line_buff);
+      shapones::menu::overlay(focus_y, line_buff);
     }
 
     status->timing |= timing_t::END_OF_VISIBLE_LINE;
@@ -6557,7 +6557,7 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::ppu
+}  // namespace shapones::ppu
 // #include "shapones/state.hpp"
 
 // #include "shapones/apu.hpp"
@@ -6583,14 +6583,14 @@ result_t load_state(void *file_handle) {
 // #include "shapones/ppu.hpp"
 
 
-namespace nes::state {
+namespace shapones::state {
 
 static constexpr int SS_BUFF_DEPTH = 2;
-static constexpr int SS_SCALING = nes::SCREEN_HEIGHT / state::SS_HEIGHT;
+static constexpr int SS_SCALING = shapones::SCREEN_HEIGHT / state::SS_HEIGHT;
 static constexpr int SS_CLIP_LEFT =
-    (nes::SCREEN_WIDTH - state::SS_WIDTH * SS_SCALING) / 2;
+    (shapones::SCREEN_WIDTH - state::SS_WIDTH * SS_SCALING) / 2;
 static constexpr int SS_CLIP_TOP =
-    (nes::SCREEN_HEIGHT - state::SS_HEIGHT * SS_SCALING) / 2;
+    (shapones::SCREEN_HEIGHT - state::SS_HEIGHT * SS_SCALING) / 2;
 
 uint8_t ss_buff[SS_SIZE_BYTES * SS_BUFF_DEPTH];
 volatile int ss_wr_index = 0;
@@ -6908,13 +6908,13 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
   return res;
 }
 
-}  // namespace nes::state
+}  // namespace shapones::state
 // #include "shapones/shapones.hpp"
 
 // #include "shapones/state.hpp"
 
 
-namespace nes {
+namespace shapones {
 
 char ines_path[MAX_PATH_LENGTH + 1] = "";
 bool ines_mapped = false;
@@ -6933,10 +6933,10 @@ result_t init(const config_t &cfg) {
   build_blend_table();
 
   for (int i = 0; i < NUM_SPINLOCKS; i++) {
-    SHAPONES_TRY(nes::spinlock_init(i));
+    SHAPONES_TRY(shapones::spinlock_init(i));
   }
   for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    SHAPONES_TRY(nes::semaphore_init(i));
+    SHAPONES_TRY(shapones::semaphore_init(i));
   }
   SHAPONES_TRY(interrupt::init());
   SHAPONES_TRY(memory::init());
@@ -6962,10 +6962,10 @@ void deinit() {
   input::deinit();
   interrupt::deinit();
   for (int i = 0; i < NUM_SPINLOCKS; i++) {
-    nes::spinlock_deinit(i);
+    shapones::spinlock_deinit(i);
   }
   for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    nes::semaphore_deinit(i);
+    shapones::semaphore_deinit(i);
   }
 }
 
@@ -7023,7 +7023,7 @@ void unmap_ines() {
 }
 
 result_t reset() {
-  nes::state::reset();
+  shapones::state::reset();
   SHAPONES_TRY(mapper::instance->reset());
   SHAPONES_TRY(ppu::reset());
   SHAPONES_TRY(apu::reset());
@@ -7074,7 +7074,7 @@ static void build_blend_table() {
   }
 }
 
-}  // namespace nes
+}  // namespace shapones
 #endif
 
 #endif

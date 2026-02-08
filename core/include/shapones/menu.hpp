@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::menu {
+namespace shapones::menu {
 
 extern bool shown;
 
@@ -18,6 +18,6 @@ void hide();
 result_t service();
 result_t overlay(int y, uint8_t *line_buff);
 
-}  // namespace nes::menu
+}  // namespace shapones::menu
 
 #endif

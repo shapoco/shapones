@@ -3,7 +3,7 @@
 
 #include "shapones/common.hpp"
 
-namespace nes::ppu {
+namespace shapones::ppu {
 
 static constexpr int TILE_SIZE = 8;
 static constexpr int NUM_TILE_X = SCREEN_WIDTH / TILE_SIZE;
@@ -198,6 +198,6 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
-}  // namespace nes::ppu
+}  // namespace shapones::ppu
 
 #endif

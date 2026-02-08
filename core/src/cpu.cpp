@@ -11,7 +11,7 @@
 #include "shapones/ppu.hpp"
 #include "shapones/state.hpp"
 
-namespace nes::cpu {
+namespace shapones::cpu {
 
 static constexpr int BATCH_EXECUTES = 4;
 
@@ -852,4 +852,4 @@ result_t load_state(void *file_handle) {
   return result_t::SUCCESS;
 }
 
-}  // namespace nes::cpu
+}  // namespace shapones::cpu
