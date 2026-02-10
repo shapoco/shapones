@@ -9,6 +9,8 @@
 #include "shapones/menu.hpp"
 #include "shapones/state.hpp"
 
+#include <pico/stdlib.h>
+
 namespace shapones::ppu {
 
 static constexpr uint32_t STATE_HEADER_SIZE = registers_t::STATE_SIZE + 32;
@@ -142,6 +144,8 @@ void reg_write(addr_t addr, uint8_t data) {
     write_queue.push_blocking(req);
   }
 }
+
+float get_fps() { return perf_fps; }
 
 static void flush_write_queue() {
   reg_write_t req;
@@ -669,9 +673,10 @@ result_t save_state(void *file_handle) {
   writer.u8(bus_read_data_delayed);
   writer.b(scroll_ppuaddr_high_stored);
   writer.b(nmi_level);
-  SHAPONES_TRY(fsys::write(file_handle, buff, sizeof(buff)));
+  SHAPONES_RET_ERR(fsys::write(file_handle, buff, sizeof(buff)));
 
-  SHAPONES_TRY(fsys::write(file_handle, palette_file, sizeof(palette_file)));
+  SHAPONES_RET_ERR(
+      fsys::write(file_handle, palette_file, sizeof(palette_file)));
 
   uint8_t oam_buff[sizeof(oam)];
   for (size_t i = 0; i < sizeof(oam); i += 4) {
@@ -681,7 +686,7 @@ result_t save_state(void *file_handle) {
     oam_buff[i + 2] = (word >> 16) & 0xff;
     oam_buff[i + 3] = (word >> 24) & 0xff;
   }
-  SHAPONES_TRY(fsys::write(file_handle, oam_buff, sizeof(oam)));
+  SHAPONES_RET_ERR(fsys::write(file_handle, oam_buff, sizeof(oam)));
 
   return result_t::SUCCESS;
 }
@@ -690,7 +695,7 @@ result_t load_state(void *file_handle) {
   write_queue.clear();
 
   uint8_t buff[STATE_HEADER_SIZE];
-  SHAPONES_TRY(fsys::read(file_handle, buff, sizeof(buff)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, buff, sizeof(buff)));
   const uint8_t *p = buff;
   reg.load(p);
   p += registers_t::STATE_SIZE;
@@ -704,10 +709,10 @@ result_t load_state(void *file_handle) {
   bus_read_data_delayed = reader.u8();
   scroll_ppuaddr_high_stored = reader.b();
   nmi_level = reader.b();
-  SHAPONES_TRY(fsys::read(file_handle, palette_file, sizeof(palette_file)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, palette_file, sizeof(palette_file)));
 
   uint8_t oam_buff[sizeof(oam)];
-  SHAPONES_TRY(fsys::read(file_handle, oam_buff, sizeof(oam)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, oam_buff, sizeof(oam)));
   for (size_t i = 0; i < sizeof(oam); i += 4) {
     uint32_t word = 0;
     word |= ((uint32_t)oam_buff[i + 0]) << 0;

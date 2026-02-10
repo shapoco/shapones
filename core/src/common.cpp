@@ -33,6 +33,7 @@ const char* result_to_string(result_t res) {
     case result_t::ERR_FS_READ_FAILED: return "Read Failed";
     case result_t::ERR_FS_WRITE_FAILED: return "Write Failed";
     case result_t::ERR_FS_DELETE_FAILED: return "Delete Failed";
+    case result_t::ERR_FS_ENUM_FAILED: return "Enum Failed";
     case result_t::ERR_STATE_INVALID_FORMAT: return "Bad State Format";
     case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
     case result_t::ERR_STATE_SLOT_FULL: return "State Slot Full";

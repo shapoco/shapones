@@ -35,7 +35,7 @@ result_t append_separator(char *path) {
     return result_t::SUCCESS;
   }
   if (len + 1 >= shapones::MAX_PATH_LENGTH) {
-    return result_t::ERR_FS_PATH_TOO_LONG;
+    SHAPONES_RET_ERR(result_t::ERR_FS_PATH_TOO_LONG);
   }
   path[len++] = '/';
   path[len] = '\0';
@@ -43,11 +43,11 @@ result_t append_separator(char *path) {
 }
 
 result_t append_path(char *path, const char *name) {
-  SHAPONES_TRY(append_separator(path));
+  SHAPONES_RET_ERR(append_separator(path));
   int len = strnlen(path, shapones::MAX_PATH_LENGTH);
   int name_len = strnlen(name, shapones::MAX_PATH_LENGTH);
   if (len + name_len >= shapones::MAX_PATH_LENGTH) {
-    return result_t::ERR_FS_PATH_TOO_LONG;
+    SHAPONES_RET_ERR(result_t::ERR_FS_PATH_TOO_LONG);
   }
 
   strcat(path, name);
@@ -73,12 +73,12 @@ result_t replace_ext(char *path, const char *new_ext) {
 
   int new_path_len = old_path_len - old_ext_len + new_ext_len;
   if (new_path_len >= shapones::MAX_PATH_LENGTH) {
-    return result_t::ERR_FS_PATH_TOO_LONG;
+    SHAPONES_RET_ERR(result_t::ERR_FS_PATH_TOO_LONG);
   }
 
   int new_name_len = old_name_len - old_ext_len + new_ext_len;
   if (new_name_len >= shapones::MAX_FILENAME_LENGTH) {
-    return result_t::ERR_FS_PATH_TOO_LONG;
+    SHAPONES_RET_ERR(result_t::ERR_FS_PATH_TOO_LONG);
   }
 
   path[dot_idx] = '.';

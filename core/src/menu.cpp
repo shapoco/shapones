@@ -293,6 +293,8 @@ void hide() {
 }
 
 static result_t load_tab(tab_t t, bool force) {
+  result_t res = result_t::SUCCESS;
+
   if (tab == t && !force) return result_t::SUCCESS;
 
   menu.set_bounds(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, CLIENT_HEIGHT);
@@ -302,8 +304,12 @@ static result_t load_tab(tab_t t, bool force) {
   tab = t;
 
   switch (tab) {
-    case tab_t::NES_LIST: SHAPONES_TRY(load_file_list_tab()); break;
-    case tab_t::SAVE_LIST: SHAPONES_TRY(load_state_list_tab()); break;
+    case tab_t::NES_LIST: res = load_file_list_tab(); break;
+    case tab_t::SAVE_LIST: res = load_state_list_tab(); break;
+  }
+
+  if (res != result_t::SUCCESS) {
+    show_message(icon_t::ERROR, result_to_string(res));
   }
 
   int i = last_menu_index[static_cast<int>(tab)];
@@ -314,24 +320,28 @@ static result_t load_tab(tab_t t, bool force) {
 
   request_redraw();
 
-  return result_t::SUCCESS;
+  return res;
 }
 
 static result_t load_file_list_tab() {
+  result_t res = result_t::SUCCESS;
+
   menu.clear();
   menu.set_bounds(CLIENT_X, CLIENT_Y + 1, CLIENT_WIDTH, CLIENT_HEIGHT - 1);
 
   if (!disk_mounted) {
-    if (fsys::mount() == result_t::SUCCESS) {
+    res = fsys::mount();
+    if (res == result_t::SUCCESS) {
+      SHAPONES_PRINTF("Filesystem mounted.\n");
       disk_mounted = true;
     } else {
-      return result_t::SUCCESS;
+      return res;
     }
   }
 
   if (current_dir[0] == '\0') {
     fsys::get_ines_dir(current_dir);
-    SHAPONES_TRY(fsys::append_separator(current_dir));
+    SHAPONES_RET_ERR(fsys::append_separator(current_dir));
   }
 
   if (!fsys::is_root_dir(current_dir)) {
@@ -339,25 +349,25 @@ static result_t load_file_list_tab() {
     menu.add_item(icon_t::PARENT, action_t::OPEN_DIR, "../");
   }
 
-  result_t res =
-      fsys::enum_files(current_dir, [](const fsys::file_info_t &info) {
-        char *name = (char *)info.name;
-        if (info.is_dir) {
-          // append '/' to directory names
-          size_t len = strnlen(name, shapones::MAX_FILENAME_LENGTH + 1);
-          char name[shapones::MAX_FILENAME_LENGTH + 2];
-          strncpy(name, info.name, shapones::MAX_FILENAME_LENGTH);
-          name[len++] = '/';
-          name[len] = '\0';
-        }
-        icon_t icon = info.is_dir ? icon_t::FOLDER : icon_t::FILE;
-        action_t action = info.is_dir ? action_t::OPEN_DIR : action_t::LOAD_ROM;
-        menu.add_item(icon, action, name);
-        return (menu.num_items < menu.capacity);
-      });
+  fsys::enum_files_cb_t cb = [](const fsys::file_info_t &info) {
+    char *name = (char *)info.name;
+    if (info.is_dir) {
+      // append '/' to directory names
+      size_t len = strnlen(name, shapones::MAX_FILENAME_LENGTH + 1);
+      char name[shapones::MAX_FILENAME_LENGTH + 2];
+      strncpy(name, info.name, shapones::MAX_FILENAME_LENGTH);
+      name[len++] = '/';
+      name[len] = '\0';
+    }
+    icon_t icon = info.is_dir ? icon_t::FOLDER : icon_t::FILE;
+    action_t action = info.is_dir ? action_t::OPEN_DIR : action_t::LOAD_ROM;
+    menu.add_item(icon, action, name);
+    return (menu.num_items < menu.capacity);
+  };
+  res = fsys::enum_files(current_dir, cb);
   if (res != result_t::SUCCESS) {
     menu.clear();
-    return res;
+    SHAPONES_RET_ERR(res);
   }
 
   // sort by name
@@ -390,36 +400,30 @@ static result_t load_state_list_tab() {
 
   char state_path[shapones::MAX_PATH_LENGTH + 1];
   strncpy(state_path, get_ines_path(), shapones::MAX_PATH_LENGTH);
-  SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
+  SHAPONES_RET_ERR(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   do {
     if (shapones::fsys::exists(state_path)) {
-      res = state::enum_slots(
-          state_path, [](const state::state_slot_entry_t &entry) {
-            if (!entry.is_used()) {
-              // In PicoLibSDK, true/false are defined as int,
-              // so a cast to bool is required.
-              return (bool)true;
-            }
+      state::enum_slot_cb_t cb = [](const state::state_slot_entry_t &entry) {
+        if (!entry.is_used()) {
+          // In PicoLibSDK, true/false are defined as int,
+          // so a cast to bool is required.
+          return (bool)true;
+        }
 
-            char label[shapones::MAX_FILENAME_LENGTH + 1];
-            float t = (float)entry.frame_count / 60;
-            if (t < 60) {
-              snprintf(label, sizeof(label), "#%02d %.2fs", entry.index, t);
-            } else if (t < 3600) {
-              snprintf(label, sizeof(label), "#%02d %.2fm", entry.index,
-                       t / 60);
-            } else {
-              snprintf(label, sizeof(label), "#%02d %.2fh", entry.index,
-                       t / 3600);
-            }
-            menu.add_item(icon_t::FILE, action_t::STATE_SELECT, label,
-                          entry.index);
-            return (menu.num_items < menu.capacity);
-          });
-      if (res != result_t::SUCCESS) {
-        break;
-      }
+        char label[shapones::MAX_FILENAME_LENGTH + 1];
+        float t = (float)entry.frame_count / 60;
+        if (t < 60) {
+          snprintf(label, sizeof(label), "#%02d %.2fs", entry.index, t);
+        } else if (t < 3600) {
+          snprintf(label, sizeof(label), "#%02d %.2fm", entry.index, t / 60);
+        } else {
+          snprintf(label, sizeof(label), "#%02d %.2fh", entry.index, t / 3600);
+        }
+        menu.add_item(icon_t::FILE, action_t::STATE_SELECT, label, entry.index);
+        return (menu.num_items < menu.capacity);
+      };
+      SHAPONES_BRK_ERR(res, state::enum_slots(state_path, cb));
     }
 
     if (menu.num_items < state::MAX_SLOTS) {
@@ -446,7 +450,7 @@ static result_t load_state_list_tab() {
 static result_t load_state_screenshot() {
   char state_path[shapones::MAX_PATH_LENGTH + 1];
   strncpy(state_path, get_ines_path(), shapones::MAX_PATH_LENGTH);
-  SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
+  SHAPONES_RET_ERR(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   ss_enable = false;
   auto *mi = menu.get_selected_item();
@@ -566,9 +570,9 @@ static result_t on_open_dir(ListItem *mi) {
     }
   } else {
     // sub directory
-    SHAPONES_TRY(fsys::append_path(current_dir, mi->label));
+    SHAPONES_RET_ERR(fsys::append_path(current_dir, mi->label));
   }
-  SHAPONES_TRY(fsys::append_separator(current_dir));
+  SHAPONES_RET_ERR(fsys::append_separator(current_dir));
   load_file_list_tab();
   return result_t::SUCCESS;
 }
@@ -576,21 +580,21 @@ static result_t on_open_dir(ListItem *mi) {
 static result_t on_load_rom(ListItem *mi) {
   char path[shapones::MAX_PATH_LENGTH + 1];
   strncpy(path, current_dir, shapones::MAX_PATH_LENGTH);
-  SHAPONES_TRY(fsys::append_path(path, mi->label));
+  SHAPONES_RET_ERR(fsys::append_path(path, mi->label));
   unmap_ines();
   const uint8_t *ines = nullptr;
   size_t ines_size = 0;
-  SHAPONES_TRY(load_ines(path, &ines, &ines_size));
-  SHAPONES_TRY(map_ines(ines, path));
+  SHAPONES_RET_ERR(load_ines(path, &ines, &ines_size));
+  SHAPONES_RET_ERR(map_ines(ines, path));
   hide();
   return result_t::SUCCESS;
 }
 
 static result_t on_add_state_slot() {
   char path[shapones::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_RET_ERR(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
   int slot = find_empty_slot();
-  if (slot < 0) return result_t::ERR_STATE_SLOT_FULL;
+  if (slot < 0) SHAPONES_RET_ERR(result_t::ERR_STATE_SLOT_FULL);
   state::save(path, slot);
   load_state_list_tab();
   return result_t::SUCCESS;
@@ -608,8 +612,8 @@ static result_t on_state_select(ListItem *mi) {
 
 static result_t on_save_state(ListItem *mi) {
   char path[shapones::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
-  SHAPONES_TRY(state::save(path, mi->tag));
+  SHAPONES_RET_ERR(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_RET_ERR(state::save(path, mi->tag));
   popup_close();
   load_state_list_tab();
   return result_t::SUCCESS;
@@ -617,8 +621,8 @@ static result_t on_save_state(ListItem *mi) {
 
 static result_t on_load_state(ListItem *mi) {
   char path[shapones::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
-  SHAPONES_TRY(state::load(path, mi->tag));
+  SHAPONES_RET_ERR(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_RET_ERR(state::load(path, mi->tag));
   popup_close();
   hide();
   return result_t::SUCCESS;
@@ -626,8 +630,8 @@ static result_t on_load_state(ListItem *mi) {
 
 static result_t on_delete_state() {
   char path[shapones::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
-  SHAPONES_TRY(shapones::fsys::remove(path));
+  SHAPONES_RET_ERR(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_RET_ERR(shapones::fsys::remove(path));
   popup_close();
   load_state_list_tab();
   return result_t::SUCCESS;

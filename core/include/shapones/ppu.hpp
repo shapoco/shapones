@@ -198,6 +198,8 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
+float get_fps();
+
 }  // namespace shapones::ppu
 
 #endif

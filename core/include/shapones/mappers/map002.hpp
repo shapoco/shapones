@@ -46,7 +46,7 @@ class Map002 : public Mapper {
 
   result_t load_state(void *file_handle) override {
     uint8_t buff[STATE_SIZE];
-    SHAPONES_TRY(shapones::fsys::read(file_handle, buff, STATE_SIZE));
+    SHAPONES_RET_ERR(shapones::fsys::read(file_handle, buff, STATE_SIZE));
     bank = buff[0];
     perform_remap();
     return result_t::SUCCESS;

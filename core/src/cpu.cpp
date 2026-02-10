@@ -16,7 +16,7 @@ namespace shapones::cpu {
 static constexpr int BATCH_EXECUTES = 4;
 
 static registers_t reg;
-static bool stopped = false;
+static bool stopped = true;
 volatile cycle_t ppu_cycle_count;
 
 cycle_t dma_cycle_steal = 0;
@@ -57,6 +57,7 @@ result_t reset() {
 }
 
 void stop() {
+  if (stopped) return;
   stopped = true;
   SHAPONES_PRINTF("CPU stopped.\n");
   SHAPONES_PRINTF("  PC: 0x%02x\n", (int)reg.PC);
@@ -839,7 +840,7 @@ result_t save_state(void *file_handle) {
 
 result_t load_state(void *file_handle) {
   uint8_t buffer[STATE_SIZE];
-  SHAPONES_TRY(fsys::read(file_handle, buffer, sizeof(buffer)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, buffer, sizeof(buffer)));
   const uint8_t *p = buffer;
   reg.load(p);
   p += registers_t::STATE_SIZE;

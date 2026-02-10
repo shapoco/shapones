@@ -20,21 +20,20 @@ result_t init(const config_t &cfg) {
   build_blend_table();
 
   for (int i = 0; i < NUM_SPINLOCKS; i++) {
-    SHAPONES_TRY(shapones::spinlock_init(i));
+    SHAPONES_RET_ERR(shapones::spinlock_init(i));
   }
   for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    SHAPONES_TRY(shapones::semaphore_init(i));
+    SHAPONES_RET_ERR(shapones::semaphore_init(i));
   }
-  SHAPONES_TRY(interrupt::init());
-  SHAPONES_TRY(memory::init());
-  SHAPONES_TRY(mapper::init());
-  SHAPONES_TRY(cpu::init());
-  SHAPONES_TRY(ppu::init());
-  SHAPONES_TRY(apu::init());
-  SHAPONES_TRY(menu::init());
-  SHAPONES_TRY(input::init());
+  SHAPONES_RET_ERR(interrupt::init());
+  SHAPONES_RET_ERR(memory::init());
+  SHAPONES_RET_ERR(mapper::init());
+  SHAPONES_RET_ERR(cpu::init());
+  SHAPONES_RET_ERR(ppu::init());
+  SHAPONES_RET_ERR(apu::init());
+  SHAPONES_RET_ERR(menu::init());
+  SHAPONES_RET_ERR(input::init());
   apu::set_sampling_rate(cfg.apu_sampling_rate);
-  cpu::stop();
   return result_t::SUCCESS;
 }
 
@@ -65,12 +64,10 @@ result_t map_ines(const uint8_t *ines, const char *path) {
     SemaphoreBlock apu_block(SEMAPHORE_APU);
 
     if (path && strnlen(path, MAX_PATH_LENGTH + 1) == 0) {
-      res = result_t::ERR_FS_PATH_TOO_LONG;
-      break;
+      SHAPONES_BRK_ERR(res, result_t::ERR_FS_PATH_TOO_LONG);
     }
 
-    res = memory::map_ines(ines);
-    if (res != result_t::SUCCESS) break;
+    SHAPONES_BRK_ERR(res, memory::map_ines(ines));
 
     if (path) {
       strncpy(ines_path, path, MAX_PATH_LENGTH);
@@ -111,12 +108,12 @@ void unmap_ines() {
 
 result_t reset() {
   shapones::state::reset();
-  SHAPONES_TRY(mapper::instance->reset());
-  SHAPONES_TRY(ppu::reset());
-  SHAPONES_TRY(apu::reset());
-  SHAPONES_TRY(input::reset());
-  SHAPONES_TRY(interrupt::reset());
-  SHAPONES_TRY(cpu::reset());
+  SHAPONES_RET_ERR(mapper::instance->reset());
+  SHAPONES_RET_ERR(ppu::reset());
+  SHAPONES_RET_ERR(apu::reset());
+  SHAPONES_RET_ERR(input::reset());
+  SHAPONES_RET_ERR(interrupt::reset());
+  SHAPONES_RET_ERR(cpu::reset());
   return result_t::SUCCESS;
 }
 
@@ -127,8 +124,8 @@ result_t render_next_line(uint8_t *line_buff, bool skip_render,
   ppu::status_t s;
   if (!status) status = &s;
   do {
-    SHAPONES_TRY(cpu::service());
-    SHAPONES_TRY(ppu::service(line_buff, skip_render, status));
+    SHAPONES_RET_ERR(cpu::service());
+    SHAPONES_RET_ERR(ppu::service(line_buff, skip_render, status));
   } while (!(status->timing & ppu::timing_t::END_OF_VISIBLE_LINE));
   return result_t::SUCCESS;
 }
@@ -136,8 +133,8 @@ result_t render_next_line(uint8_t *line_buff, bool skip_render,
 result_t vsync(uint8_t *line_buff, bool skip_render) {
   ppu::status_t status;
   do {
-    SHAPONES_TRY(cpu::service());
-    SHAPONES_TRY(ppu::service(line_buff, skip_render, &status));
+    SHAPONES_RET_ERR(cpu::service());
+    SHAPONES_RET_ERR(ppu::service(line_buff, skip_render, &status));
   } while (!(status.timing & ppu::timing_t::END_OF_FRAME));
   return result_t::SUCCESS;
 }

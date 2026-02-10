@@ -36,6 +36,10 @@
 #define SHAPONES_PERF_DETAIL (0)
 #endif
 
+#ifndef SHAPONES_ENABLE_LOG
+#define SHAPONES_ENABLE_LOG (0)
+#endif
+
 #if SHAPONES_PICOLIBSDK
 #include "../include.h"
 #endif
@@ -75,7 +79,7 @@ using int_fast32_t = int32_t;
     Serial.printf("*ERROR: ");                          \
     Serial.printf(fmt, ##__VA_ARGS__);                  \
     Serial.flush();                                     \
-    shapones::stop();                                        \
+    shapones::stop();                                   \
   } while (0)
 
 #else
@@ -97,7 +101,7 @@ using int_fast32_t = int32_t;
     printf("*ERROR: ");                          \
     printf(fmt, ##__VA_ARGS__);                  \
     fflush(stdout);                              \
-    shapones::stop();                                 \
+    ::shapones::stop();                          \
   } while (0)
 
 #endif
@@ -110,20 +114,36 @@ using int_fast32_t = int32_t;
 
 #define SHAPONES_ERRORF(fmt, ...) \
   do {                            \
-    shapones::stop();                  \
+    ::shapones::stop();           \
   } while (0)
 
 #endif
 
-#define SHAPONES_TRY(expr)                               \
-  do {                                                   \
-    ::shapones::result_t res = (expr);                        \
-    if (res != ::shapones::result_t::SUCCESS) {               \
-      SHAPONES_PRINTF("Error Code: %d (%s)\n", (int)res, \
-                      ::shapones::result_to_string(res));     \
-      return res;                                        \
-    }                                                    \
-  } while (false)
+#define SHAPONES_PRINT_ERROR(err)                         \
+  do {                                                    \
+    if (err != ::shapones::result_t::SUCCESS) {           \
+      SHAPONES_PRINTF("Error Code: %d (%s)\n", (int)err,  \
+                      ::shapones::result_to_string(err)); \
+    }                                                     \
+  } while (0)
+
+#define SHAPONES_RET_ERR(expr)                  \
+  do {                                          \
+    ::shapones::result_t res = (expr);          \
+    if (res != ::shapones::result_t::SUCCESS) { \
+      SHAPONES_PRINT_ERROR(res);                \
+      return res;                               \
+    }                                           \
+  } while (0)
+
+#define SHAPONES_BRK_ERR(res, expr)             \
+  {                                             \
+    res = (expr);                               \
+    if (res != ::shapones::result_t::SUCCESS) { \
+      SHAPONES_PRINT_ERROR(res);                \
+      break;                                    \
+    }                                           \
+  }
 
 #define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
@@ -178,6 +198,7 @@ enum class result_t {
   ERR_FS_READ_FAILED,
   ERR_FS_WRITE_FAILED,
   ERR_FS_DELETE_FAILED,
+  ERR_FS_ENUM_FAILED,
 
   ERR_STATE_BASE = 0x400,
   ERR_STATE_INVALID_FORMAT,

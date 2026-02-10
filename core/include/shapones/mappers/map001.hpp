@@ -117,7 +117,7 @@ class Map001 : public Mapper {
 
   result_t load_state(void *file_handle) override {
     uint8_t buffer[STATE_SIZE];
-    SHAPONES_TRY(shapones::fsys::read(file_handle, buffer, STATE_SIZE));
+    SHAPONES_RET_ERR(shapones::fsys::read(file_handle, buffer, STATE_SIZE));
     uint32_t offset = 0;
     shift_reg = buffer[offset++];
     ctrl_reg = buffer[offset++];

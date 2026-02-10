@@ -88,7 +88,7 @@ result_t save_state(void *file_handle) {
 
 result_t load_state(void *file_handle) {
   uint8_t buffer[STATE_SIZE];
-  SHAPONES_TRY(fsys::read(file_handle, buffer, STATE_SIZE));
+  SHAPONES_RET_ERR(fsys::read(file_handle, buffer, STATE_SIZE));
   const uint8_t *p = buffer;
   BufferReader reader(p);
   reg.raw = reader.u8();

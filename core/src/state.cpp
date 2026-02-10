@@ -80,10 +80,10 @@ void hsync(int focus_y, const uint8_t *line_buff, bool skip_render) {
 result_t get_state_path(char *out_path, size_t max_len) {
   const char *ines_path = get_ines_path();
   if (ines_path[0] == '\0') {
-    return result_t::ERR_INES_NOT_LOADED;
+    SHAPONES_RET_ERR(result_t::ERR_INES_NOT_LOADED);
   }
   strncpy(out_path, ines_path, max_len);
-  SHAPONES_TRY(fsys::replace_ext(out_path, STATE_FILE_EXT));
+  SHAPONES_RET_ERR(fsys::replace_ext(out_path, STATE_FILE_EXT));
   return result_t::SUCCESS;
 }
 
@@ -106,10 +106,10 @@ result_t save(const char *path, int slot) {
   uint32_t slot_size = get_slot_size();
 
   void *f;
-  SHAPONES_TRY(fsys::open(path, true, &f));
+  SHAPONES_RET_ERR(fsys::open(path, true, &f));
 
   size_t file_size = 0;
-  SHAPONES_TRY(fsys::size(f, &file_size));
+  SHAPONES_RET_ERR(fsys::size(f, &file_size));
   bool create = file_size < sizeof(state_file_header_t) +
                                 sizeof(state_slot_entry_t) * MAX_SLOTS;
 
@@ -125,33 +125,25 @@ result_t save(const char *path, int slot) {
         fh.slot_size = slot_size;
         fh.store(buff);
 
-        res = fsys::seek(f, 0);
-        if (res != result_t::SUCCESS) break;
-
-        res = fsys::write(f, buff, sizeof(buff));
-        if (res != result_t::SUCCESS) break;
+        SHAPONES_BRK_ERR(res, fsys::seek(f, 0));
+        SHAPONES_BRK_ERR(res, fsys::write(f, buff, sizeof(buff)));
       }
 
       // initialize index
       for (int i = 0; i < MAX_SLOTS; i++) {
         uint8_t buff[state_slot_entry_t::SIZE];
         memset(buff, 0, sizeof(buff));
-        res = fsys::write(f, buff, sizeof(buff));
-        if (res != result_t::SUCCESS) break;
+        SHAPONES_BRK_ERR(res, fsys::write(f, buff, sizeof(buff)));
       }
+      SHAPONES_BRK_ERR(res, res);
     }
 
     // write slot data
     {
       uint32_t offset = get_slot_offset(slot, slot_size);
-      res = fsys::seek(f, offset);
-      if (res != result_t::SUCCESS) break;
-
-      res = write_screenshot(f);
-      if (res != result_t::SUCCESS) break;
-
-      res = write_slot_data(f);
-      if (res != result_t::SUCCESS) break;
+      SHAPONES_BRK_ERR(res, fsys::seek(f, offset));
+      SHAPONES_BRK_ERR(res, write_screenshot(f));
+      SHAPONES_BRK_ERR(res, write_slot_data(f));
     }
 
     // update index
@@ -166,11 +158,8 @@ result_t save(const char *path, int slot) {
 
       int offset = state_file_header_t::SIZE + state_slot_entry_t::SIZE * slot;
 
-      res = fsys::seek(f, offset);
-      if (res != result_t::SUCCESS) break;
-
-      res = fsys::write(f, buff, sizeof(buff));
-      if (res != result_t::SUCCESS) break;
+      SHAPONES_BRK_ERR(res, fsys::seek(f, offset));
+      SHAPONES_BRK_ERR(res, fsys::write(f, buff, sizeof(buff)));
     }
 
     // seek to end
@@ -188,37 +177,34 @@ result_t load(const char *path, int slot) {
   uint32_t slot_size = get_slot_size();
 
   void *f;
-  SHAPONES_TRY(fsys::open(path, false, &f));
+  SHAPONES_RET_ERR(fsys::open(path, false, &f));
 
   do {
     // header check
     {
       uint8_t buff[state_file_header_t::SIZE];
-      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
+      SHAPONES_RET_ERR(fsys::read(f, buff, sizeof(buff)));
       state_file_header_t fh;
       fh.load(buff);
       if (fh.marker != MARKER) {
-        res = result_t::ERR_STATE_INVALID_FORMAT;
-        break;
+        SHAPONES_BRK_ERR(res, result_t::ERR_STATE_INVALID_FORMAT);
       }
       if (fh.slot_size != slot_size) {
-        res = result_t::ERR_STATE_SIZE_MISMATCH;
-        break;
+        SHAPONES_BRK_ERR(res, result_t::ERR_STATE_SIZE_MISMATCH);
       }
     }
 
     // read slot entry
     {
-      SHAPONES_TRY(fsys::seek(
-          f, state_file_header_t::SIZE + state_slot_entry_t::SIZE * slot));
+      SHAPONES_BRK_ERR(res, fsys::seek(f, state_file_header_t::SIZE +
+                                              state_slot_entry_t::SIZE * slot));
       uint8_t buff[state_slot_entry_t::SIZE];
-      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
+      SHAPONES_BRK_ERR(res, fsys::read(f, buff, sizeof(buff)));
       state_slot_entry_t slot_entry;
       slot_entry.index = slot;
       slot_entry.load(buff);
       if (!slot_entry.is_used()) {
-        res = result_t::ERR_STATE_NO_SLOT_DATA;
-        break;
+        SHAPONES_BRK_ERR(res, result_t::ERR_STATE_NO_SLOT_DATA);
       }
       frame_count = slot_entry.frame_count;
     }
@@ -226,17 +212,12 @@ result_t load(const char *path, int slot) {
     // read slot data
     {
       uint32_t offset = get_slot_offset(slot, slot_size);
-      res = fsys::seek(f, offset);
-      if (res != result_t::SUCCESS) break;
-
-      res = fsys::read(f, ss_buff, SS_SIZE_BYTES);
-      if (res != result_t::SUCCESS) break;
+      SHAPONES_BRK_ERR(res, fsys::seek(f, offset));
+      SHAPONES_BRK_ERR(res, fsys::read(f, ss_buff, SS_SIZE_BYTES));
       ss_wr_index = 1;
       ss_num_stored = 1;
       ss_capture_counter = 0;
-
-      res = read_slot_data(f);
-      if (res != result_t::SUCCESS) break;
+      SHAPONES_BRK_ERR(res, read_slot_data(f));
     }
   } while (0);
 
@@ -251,15 +232,12 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
   uint32_t slot_size = get_slot_size();
 
   void *f;
-  SHAPONES_TRY(fsys::open(path, false, &f));
+  SHAPONES_RET_ERR(fsys::open(path, false, &f));
 
   do {
     uint32_t offset = get_slot_offset(slot, slot_size);
-    res = fsys::seek(f, offset);
-    if (res != result_t::SUCCESS) break;
-
-    res = fsys::read(f, out_buff, SS_SIZE_BYTES);
-    if (res != result_t::SUCCESS) break;
+    SHAPONES_BRK_ERR(res, fsys::seek(f, offset));
+    SHAPONES_BRK_ERR(res, fsys::read(f, out_buff, SS_SIZE_BYTES));
   } while (0);
 
   fsys::close(f);
@@ -278,26 +256,26 @@ static result_t write_screenshot(void *f) {
 static result_t write_slot_data(void *f) {
   SemaphoreBlock ppu_block(SEMAPHORE_PPU);
   SemaphoreBlock apu_block(SEMAPHORE_APU);
-  SHAPONES_TRY(cpu::save_state(f));
-  SHAPONES_TRY(ppu::save_state(f));
-  SHAPONES_TRY(apu::save_state(f));
-  SHAPONES_TRY(input::save_state(f));
-  SHAPONES_TRY(interrupt::save_state(f));
-  SHAPONES_TRY(memory::save_state(f));
-  SHAPONES_TRY(mapper::instance->save_state(f));
+  SHAPONES_RET_ERR(cpu::save_state(f));
+  SHAPONES_RET_ERR(ppu::save_state(f));
+  SHAPONES_RET_ERR(apu::save_state(f));
+  SHAPONES_RET_ERR(input::save_state(f));
+  SHAPONES_RET_ERR(interrupt::save_state(f));
+  SHAPONES_RET_ERR(memory::save_state(f));
+  SHAPONES_RET_ERR(mapper::instance->save_state(f));
   return result_t::SUCCESS;
 }
 
 static result_t read_slot_data(void *f) {
   SemaphoreBlock ppu_block(SEMAPHORE_PPU);
   SemaphoreBlock apu_block(SEMAPHORE_APU);
-  SHAPONES_TRY(cpu::load_state(f));
-  SHAPONES_TRY(ppu::load_state(f));
-  SHAPONES_TRY(apu::load_state(f));
-  SHAPONES_TRY(input::load_state(f));
-  SHAPONES_TRY(interrupt::load_state(f));
-  SHAPONES_TRY(memory::load_state(f));
-  SHAPONES_TRY(mapper::instance->load_state(f));
+  SHAPONES_RET_ERR(cpu::load_state(f));
+  SHAPONES_RET_ERR(ppu::load_state(f));
+  SHAPONES_RET_ERR(apu::load_state(f));
+  SHAPONES_RET_ERR(input::load_state(f));
+  SHAPONES_RET_ERR(interrupt::load_state(f));
+  SHAPONES_RET_ERR(memory::load_state(f));
+  SHAPONES_RET_ERR(mapper::instance->load_state(f));
   return result_t::SUCCESS;
 }
 
@@ -305,25 +283,24 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
   result_t res = result_t::SUCCESS;
 
   void *f;
-  SHAPONES_TRY(fsys::open(path, false, &f));
+  SHAPONES_RET_ERR(fsys::open(path, false, &f));
 
   do {
     // header check
     {
       uint8_t buff[state_file_header_t::SIZE];
-      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
+      SHAPONES_BRK_ERR(res, fsys::read(f, buff, sizeof(buff)));
       state_file_header_t fh;
       fh.load(buff);
       if (fh.marker != MARKER) {
-        res = result_t::ERR_STATE_INVALID_FORMAT;
-        break;
+        SHAPONES_BRK_ERR(res, result_t::ERR_STATE_INVALID_FORMAT);
       }
     }
 
     // read slot entries
     for (int i = 0; i < MAX_SLOTS; i++) {
       uint8_t buff[state_slot_entry_t::SIZE];
-      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
+      SHAPONES_BRK_ERR(res, fsys::read(f, buff, sizeof(buff)));
       state_slot_entry_t slot_entry;
       slot_entry.index = i;
       slot_entry.load(buff);
@@ -331,6 +308,7 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
         break;
       }
     }
+    SHAPONES_BRK_ERR(res, res);
   } while (0);
   fsys::close(f);
   return res;

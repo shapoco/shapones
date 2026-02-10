@@ -24,7 +24,7 @@ result_t read(const char *path, enum_keys_cb_t callback) {
   result_t res = result_t::SUCCESS;
 
   void *handle = nullptr;
-  SHAPONES_TRY(fsys::open(path, false, &handle));
+  SHAPONES_RET_ERR(fsys::open(path, false, &handle));
 
   fsys::TextReader reader(handle);
 
@@ -57,8 +57,9 @@ static result_t read_line(fsys::TextReader &reader, enum_keys_cb_t callback) {
   } else if (reader.read_if_newline() || reader.eof()) {
     return result_t::SUCCESS;
   } else {
-    return result_t::ERR_INI_PARSE_FAILED;
+    SHAPONES_RET_ERR(result_t::ERR_INI_PARSE_FAILED);
   }
+  return result_t::SUCCESS;
 }
 
 static result_t read_section_following(fsys::TextReader &reader) {
@@ -66,17 +67,17 @@ static result_t read_section_following(fsys::TextReader &reader) {
   while (is_id_char(reader.peek())) {
     char c = reader.read();
     if (len >= MAX_SECTION_LENGTH) {
-      return result_t::ERR_INI_PARSE_FAILED;
+      SHAPONES_RET_ERR(result_t::ERR_INI_PARSE_FAILED);
     }
     section[len++] = c;
   }
   section[len] = '\0';
   if (len == 0) {
-    return result_t::ERR_INI_PARSE_FAILED;
+    SHAPONES_RET_ERR(result_t::ERR_INI_PARSE_FAILED);
   }
-  SHAPONES_TRY(reader.expect(']'));
+  SHAPONES_RET_ERR(reader.expect(']'));
   reader.skip_whitespace();
-  SHAPONES_TRY(reader.expect_newline());
+  SHAPONES_RET_ERR(reader.expect_newline());
   return result_t::SUCCESS;
 }
 
@@ -86,17 +87,17 @@ static result_t read_key(fsys::TextReader &reader, enum_keys_cb_t callback) {
   while (is_id_char(reader.peek())) {
     char c = reader.read();
     if (key_len >= MAX_KEY_LENGTH) {
-      return result_t::ERR_INI_PARSE_FAILED;
+      SHAPONES_RET_ERR(result_t::ERR_INI_PARSE_FAILED);
     }
     key[key_len++] = c;
   }
   key[key_len] = '\0';
   if (key_len == 0) {
-    return result_t::ERR_INI_PARSE_FAILED;
+    SHAPONES_RET_ERR(result_t::ERR_INI_PARSE_FAILED);
   }
 
   reader.skip_whitespace();
-  SHAPONES_TRY(reader.expect('='));
+  SHAPONES_RET_ERR(reader.expect('='));
   reader.skip_whitespace();
 
   char value[MAX_VALUE_LENGTH + 1] = {0};
@@ -104,7 +105,7 @@ static result_t read_key(fsys::TextReader &reader, enum_keys_cb_t callback) {
   while (!reader.eof() && !reader.read_if_newline()) {
     char c = reader.read();
     if (value_len >= MAX_VALUE_LENGTH) {
-      return result_t::ERR_INI_PARSE_FAILED;
+      SHAPONES_RET_ERR(result_t::ERR_INI_PARSE_FAILED);
     }
     value[value_len++] = c;
   }

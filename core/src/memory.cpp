@@ -34,9 +34,9 @@ result_t init() {
   deinit();
   unmap_ines();
   prgram_size = 8192;
-  SHAPONES_TRY(shapones::ram_alloc(prgram_size, (void **)&prgram));
+  SHAPONES_RET_ERR(shapones::ram_alloc(prgram_size, (void **)&prgram));
   chrram_size = CHRROM_RANGE;
-  SHAPONES_TRY(shapones::ram_alloc(chrram_size, (void **)&chrram));
+  SHAPONES_RET_ERR(shapones::ram_alloc(chrram_size, (void **)&chrram));
   return result_t::SUCCESS;
 }
 
@@ -62,7 +62,7 @@ result_t map_ines(const uint8_t *ines) {
   // marker
   if (ines[0] != 0x4e && ines[1] != 0x45 && ines[2] != 0x53 &&
       ines[3] != 0x1a) {
-    return result_t::ERR_INES_INVALID_FORMAT;
+    SHAPONES_RET_ERR(result_t::ERR_INES_INVALID_FORMAT);
   }
 
   // Size of PRG ROM in 16 KB units
@@ -143,7 +143,7 @@ result_t map_ines(const uint8_t *ines) {
       prgram = nullptr;
     }
     if (new_prgram_size > 0) {
-      SHAPONES_TRY(shapones::ram_alloc(new_prgram_size, (void **)&prgram));
+      SHAPONES_RET_ERR(shapones::ram_alloc(new_prgram_size, (void **)&prgram));
     }
     prgram_size = new_prgram_size;
   }
@@ -163,7 +163,7 @@ result_t map_ines(const uint8_t *ines) {
       chrram = nullptr;
     }
     if (new_chrram_size > 0) {
-      SHAPONES_TRY(shapones::ram_alloc(new_chrram_size, (void **)&chrram));
+      SHAPONES_RET_ERR(shapones::ram_alloc(new_chrram_size, (void **)&chrram));
     }
     chrram_size = new_chrram_size;
   }
@@ -174,7 +174,7 @@ result_t map_ines(const uint8_t *ines) {
     chrrom = ines + start_of_chr_rom;
   }
 
-  SHAPONES_TRY(mapper::map_ines(ines));
+  SHAPONES_RET_ERR(mapper::map_ines(ines));
 
   return result_t::SUCCESS;
 }
@@ -221,25 +221,25 @@ uint32_t get_state_size() {
 }
 
 result_t save_state(void *file_handle) {
-  SHAPONES_TRY(fsys::write(file_handle, wram, WRAM_SIZE));
-  SHAPONES_TRY(fsys::write(file_handle, vram, VRAM_SIZE));
+  SHAPONES_RET_ERR(fsys::write(file_handle, wram, WRAM_SIZE));
+  SHAPONES_RET_ERR(fsys::write(file_handle, vram, VRAM_SIZE));
   if (prgram_size > 0) {
-    SHAPONES_TRY(fsys::write(file_handle, prgram, prgram_size));
+    SHAPONES_RET_ERR(fsys::write(file_handle, prgram, prgram_size));
   }
   if (chrram_size > 0) {
-    SHAPONES_TRY(fsys::write(file_handle, chrram, chrram_size));
+    SHAPONES_RET_ERR(fsys::write(file_handle, chrram, chrram_size));
   }
   return result_t::SUCCESS;
 }
 
 result_t load_state(void *file_handle) {
-  SHAPONES_TRY(fsys::read(file_handle, wram, WRAM_SIZE));
-  SHAPONES_TRY(fsys::read(file_handle, vram, VRAM_SIZE));
+  SHAPONES_RET_ERR(fsys::read(file_handle, wram, WRAM_SIZE));
+  SHAPONES_RET_ERR(fsys::read(file_handle, vram, VRAM_SIZE));
   if (prgram_size > 0) {
-    SHAPONES_TRY(fsys::read(file_handle, prgram, prgram_size));
+    SHAPONES_RET_ERR(fsys::read(file_handle, prgram, prgram_size));
   }
   if (chrram_size > 0) {
-    SHAPONES_TRY(fsys::read(file_handle, chrram, chrram_size));
+    SHAPONES_RET_ERR(fsys::read(file_handle, chrram, chrram_size));
   }
   return result_t::SUCCESS;
 }

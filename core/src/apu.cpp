@@ -587,7 +587,7 @@ result_t load_state(void *file_handle) {
   write_queue.clear();
 
   uint8_t buff[STATE_SIZE];
-  SHAPONES_TRY(fsys::read(file_handle, buff, sizeof(buff)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, buff, sizeof(buff)));
   uint8_t *p = buff;
   for (int i = 0; i < 2; i++) {
     pulse[i].load(p);

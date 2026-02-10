@@ -45,7 +45,7 @@ result_t map_ines(const uint8_t *ines) {
       break;
   }
 
-  SHAPONES_TRY(instance->init());
+  SHAPONES_RET_ERR(instance->init());
 
   SHAPONES_PRINTF("Mapper No.%d (%s) initialized.\n", id, instance->name);
 
