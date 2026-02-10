@@ -14,8 +14,6 @@ static AsyncUDP udp;
 static const uint16_t udp_port = 12345;
 static const char *ssid = "ShapoNES_AP";
 static const char *password = "hogepiyo";
-//static const char *ssid = "shpc1_2.4g";
-//static const char *password = "toguromakimaki";
 static const IPAddress remote_ip(192, 168, 1, 100);
 
 static constexpr uint32_t RECV_BUFF_SIZE = 32 * 1024;

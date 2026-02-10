@@ -52,6 +52,10 @@
 #define SHAPONES_PERF_DETAIL (0)
 #endif
 
+#ifndef SHAPONES_ENABLE_LOG
+#define SHAPONES_ENABLE_LOG (0)
+#endif
+
 #if SHAPONES_PICOLIBSDK
 // #include "../include.h"
 
@@ -92,7 +96,7 @@ using int_fast32_t = int32_t;
     Serial.printf("*ERROR: ");                          \
     Serial.printf(fmt, ##__VA_ARGS__);                  \
     Serial.flush();                                     \
-    shapones::stop();                                        \
+    shapones::stop();                                   \
   } while (0)
 
 #else
@@ -114,7 +118,7 @@ using int_fast32_t = int32_t;
     printf("*ERROR: ");                          \
     printf(fmt, ##__VA_ARGS__);                  \
     fflush(stdout);                              \
-    shapones::stop();                                 \
+    ::shapones::stop();                          \
   } while (0)
 
 #endif
@@ -127,20 +131,36 @@ using int_fast32_t = int32_t;
 
 #define SHAPONES_ERRORF(fmt, ...) \
   do {                            \
-    shapones::stop();                  \
+    ::shapones::stop();           \
   } while (0)
 
 #endif
 
-#define SHAPONES_TRY(expr)                               \
-  do {                                                   \
-    ::shapones::result_t res = (expr);                        \
-    if (res != ::shapones::result_t::SUCCESS) {               \
-      SHAPONES_PRINTF("Error Code: %d (%s)\n", (int)res, \
-                      ::shapones::result_to_string(res));     \
-      return res;                                        \
-    }                                                    \
-  } while (false)
+#define SHAPONES_PRINT_ERROR(err)                         \
+  do {                                                    \
+    if (err != ::shapones::result_t::SUCCESS) {           \
+      SHAPONES_PRINTF("Error Code: %d (%s)\n", (int)err,  \
+                      ::shapones::result_to_string(err)); \
+    }                                                     \
+  } while (0)
+
+#define SHAPONES_RET_ERR(expr)                  \
+  do {                                          \
+    ::shapones::result_t res = (expr);          \
+    if (res != ::shapones::result_t::SUCCESS) { \
+      SHAPONES_PRINT_ERROR(res);                \
+      return res;                               \
+    }                                           \
+  } while (0)
+
+#define SHAPONES_BRK_ERR(res, expr)             \
+  {                                             \
+    res = (expr);                               \
+    if (res != ::shapones::result_t::SUCCESS) { \
+      SHAPONES_PRINT_ERROR(res);                \
+      break;                                    \
+    }                                           \
+  }
 
 #define SHAPONES_INLINE inline __attribute__((always_inline))
 #define SHAPONES_NOINLINE __attribute__((noinline))
@@ -195,6 +215,7 @@ enum class result_t {
   ERR_FS_READ_FAILED,
   ERR_FS_WRITE_FAILED,
   ERR_FS_DELETE_FAILED,
+  ERR_FS_ENUM_FAILED,
 
   ERR_STATE_BASE = 0x400,
   ERR_STATE_INVALID_FORMAT,
@@ -1160,6 +1181,8 @@ uint32_t get_state_size();
 result_t save_state(void *file_handle);
 result_t load_state(void *file_handle);
 
+float get_fps();
+
 }  // namespace shapones::ppu
 
 #endif
@@ -1471,6 +1494,7 @@ const char* result_to_string(result_t res) {
     case result_t::ERR_FS_READ_FAILED: return "Read Failed";
     case result_t::ERR_FS_WRITE_FAILED: return "Write Failed";
     case result_t::ERR_FS_DELETE_FAILED: return "Delete Failed";
+    case result_t::ERR_FS_ENUM_FAILED: return "Enum Failed";
     case result_t::ERR_STATE_INVALID_FORMAT: return "Bad State Format";
     case result_t::ERR_STATE_SIZE_MISMATCH: return "Bad State Size";
     case result_t::ERR_STATE_SLOT_FULL: return "State Slot Full";
@@ -2206,7 +2230,7 @@ result_t load_state(void *file_handle) {
   write_queue.clear();
 
   uint8_t buff[STATE_SIZE];
-  SHAPONES_TRY(fsys::read(file_handle, buff, sizeof(buff)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, buff, sizeof(buff)));
   uint8_t *p = buff;
   for (int i = 0; i < 2; i++) {
     pulse[i].load(p);
@@ -2349,7 +2373,7 @@ namespace shapones::cpu {
 static constexpr int BATCH_EXECUTES = 4;
 
 static registers_t reg;
-static bool stopped = false;
+static bool stopped = true;
 volatile cycle_t ppu_cycle_count;
 
 cycle_t dma_cycle_steal = 0;
@@ -2390,6 +2414,7 @@ result_t reset() {
 }
 
 void stop() {
+  if (stopped) return;
   stopped = true;
   SHAPONES_PRINTF("CPU stopped.\n");
   SHAPONES_PRINTF("  PC: 0x%02x\n", (int)reg.PC);
@@ -3172,7 +3197,7 @@ result_t save_state(void *file_handle) {
 
 result_t load_state(void *file_handle) {
   uint8_t buffer[STATE_SIZE];
-  SHAPONES_TRY(fsys::read(file_handle, buffer, sizeof(buffer)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, buffer, sizeof(buffer)));
   const uint8_t *p = buffer;
   reg.load(p);
   p += registers_t::STATE_SIZE;
@@ -3224,7 +3249,7 @@ result_t append_separator(char *path) {
     return result_t::SUCCESS;
   }
   if (len + 1 >= shapones::MAX_PATH_LENGTH) {
-    return result_t::ERR_FS_PATH_TOO_LONG;
+    SHAPONES_RET_ERR(result_t::ERR_FS_PATH_TOO_LONG);
   }
   path[len++] = '/';
   path[len] = '\0';
@@ -3232,11 +3257,11 @@ result_t append_separator(char *path) {
 }
 
 result_t append_path(char *path, const char *name) {
-  SHAPONES_TRY(append_separator(path));
+  SHAPONES_RET_ERR(append_separator(path));
   int len = strnlen(path, shapones::MAX_PATH_LENGTH);
   int name_len = strnlen(name, shapones::MAX_PATH_LENGTH);
   if (len + name_len >= shapones::MAX_PATH_LENGTH) {
-    return result_t::ERR_FS_PATH_TOO_LONG;
+    SHAPONES_RET_ERR(result_t::ERR_FS_PATH_TOO_LONG);
   }
 
   strcat(path, name);
@@ -3262,12 +3287,12 @@ result_t replace_ext(char *path, const char *new_ext) {
 
   int new_path_len = old_path_len - old_ext_len + new_ext_len;
   if (new_path_len >= shapones::MAX_PATH_LENGTH) {
-    return result_t::ERR_FS_PATH_TOO_LONG;
+    SHAPONES_RET_ERR(result_t::ERR_FS_PATH_TOO_LONG);
   }
 
   int new_name_len = old_name_len - old_ext_len + new_ext_len;
   if (new_name_len >= shapones::MAX_FILENAME_LENGTH) {
-    return result_t::ERR_FS_PATH_TOO_LONG;
+    SHAPONES_RET_ERR(result_t::ERR_FS_PATH_TOO_LONG);
   }
 
   path[dot_idx] = '.';
@@ -3368,7 +3393,7 @@ result_t save_state(void *file_handle) {
 
 result_t load_state(void *file_handle) {
   uint8_t buffer[STATE_SIZE];
-  SHAPONES_TRY(fsys::read(file_handle, buffer, STATE_SIZE));
+  SHAPONES_RET_ERR(fsys::read(file_handle, buffer, STATE_SIZE));
   const uint8_t *p = buffer;
   BufferReader reader(p);
   reg.raw = reader.u8();
@@ -3433,7 +3458,7 @@ result_t save_state(void *file_handle) {
 
 result_t load_state(void *file_handle) {
   uint8_t buffer[STATE_SIZE];
-  SHAPONES_TRY(fsys::read(file_handle, buffer, STATE_SIZE));
+  SHAPONES_RET_ERR(fsys::read(file_handle, buffer, STATE_SIZE));
   const uint8_t *p = buffer;
   BufferReader reader(p);
   irq = static_cast<source_t>(reader.u32());
@@ -3592,7 +3617,7 @@ class Map001 : public Mapper {
 
   result_t load_state(void *file_handle) override {
     uint8_t buffer[STATE_SIZE];
-    SHAPONES_TRY(shapones::fsys::read(file_handle, buffer, STATE_SIZE));
+    SHAPONES_RET_ERR(shapones::fsys::read(file_handle, buffer, STATE_SIZE));
     uint32_t offset = 0;
     shift_reg = buffer[offset++];
     ctrl_reg = buffer[offset++];
@@ -3659,7 +3684,7 @@ class Map002 : public Mapper {
 
   result_t load_state(void *file_handle) override {
     uint8_t buff[STATE_SIZE];
-    SHAPONES_TRY(shapones::fsys::read(file_handle, buff, STATE_SIZE));
+    SHAPONES_RET_ERR(shapones::fsys::read(file_handle, buff, STATE_SIZE));
     bank = buff[0];
     perform_remap();
     return result_t::SUCCESS;
@@ -3712,7 +3737,7 @@ class Map003 : public Mapper {
 
   result_t load_state(void *file_handle) override {
     uint8_t buff[STATE_SIZE];
-    SHAPONES_TRY(shapones::fsys::read(file_handle, buff, STATE_SIZE));
+    SHAPONES_RET_ERR(shapones::fsys::read(file_handle, buff, STATE_SIZE));
     bank = buff[0];
     perform_remap();
     return result_t::SUCCESS;
@@ -3874,7 +3899,7 @@ class Map004 : public Mapper {
 
   result_t load_state(void *file_handle) override {
     uint8_t buffer[STATE_SIZE];
-    SHAPONES_TRY(shapones::fsys::read(file_handle, buffer, STATE_SIZE));
+    SHAPONES_RET_ERR(shapones::fsys::read(file_handle, buffer, STATE_SIZE));
     uint32_t offset = 0;
     reg_sel = buffer[offset++];
     for (int i = 0; i < 8; i++) {
@@ -3932,7 +3957,7 @@ result_t map_ines(const uint8_t *ines) {
       break;
   }
 
-  SHAPONES_TRY(instance->init());
+  SHAPONES_RET_ERR(instance->init());
 
   SHAPONES_PRINTF("Mapper No.%d (%s) initialized.\n", id, instance->name);
 
@@ -3984,9 +4009,9 @@ result_t init() {
   deinit();
   unmap_ines();
   prgram_size = 8192;
-  SHAPONES_TRY(shapones::ram_alloc(prgram_size, (void **)&prgram));
+  SHAPONES_RET_ERR(shapones::ram_alloc(prgram_size, (void **)&prgram));
   chrram_size = CHRROM_RANGE;
-  SHAPONES_TRY(shapones::ram_alloc(chrram_size, (void **)&chrram));
+  SHAPONES_RET_ERR(shapones::ram_alloc(chrram_size, (void **)&chrram));
   return result_t::SUCCESS;
 }
 
@@ -4012,7 +4037,7 @@ result_t map_ines(const uint8_t *ines) {
   // marker
   if (ines[0] != 0x4e && ines[1] != 0x45 && ines[2] != 0x53 &&
       ines[3] != 0x1a) {
-    return result_t::ERR_INES_INVALID_FORMAT;
+    SHAPONES_RET_ERR(result_t::ERR_INES_INVALID_FORMAT);
   }
 
   // Size of PRG ROM in 16 KB units
@@ -4093,7 +4118,7 @@ result_t map_ines(const uint8_t *ines) {
       prgram = nullptr;
     }
     if (new_prgram_size > 0) {
-      SHAPONES_TRY(shapones::ram_alloc(new_prgram_size, (void **)&prgram));
+      SHAPONES_RET_ERR(shapones::ram_alloc(new_prgram_size, (void **)&prgram));
     }
     prgram_size = new_prgram_size;
   }
@@ -4113,7 +4138,7 @@ result_t map_ines(const uint8_t *ines) {
       chrram = nullptr;
     }
     if (new_chrram_size > 0) {
-      SHAPONES_TRY(shapones::ram_alloc(new_chrram_size, (void **)&chrram));
+      SHAPONES_RET_ERR(shapones::ram_alloc(new_chrram_size, (void **)&chrram));
     }
     chrram_size = new_chrram_size;
   }
@@ -4124,7 +4149,7 @@ result_t map_ines(const uint8_t *ines) {
     chrrom = ines + start_of_chr_rom;
   }
 
-  SHAPONES_TRY(mapper::map_ines(ines));
+  SHAPONES_RET_ERR(mapper::map_ines(ines));
 
   return result_t::SUCCESS;
 }
@@ -4171,25 +4196,25 @@ uint32_t get_state_size() {
 }
 
 result_t save_state(void *file_handle) {
-  SHAPONES_TRY(fsys::write(file_handle, wram, WRAM_SIZE));
-  SHAPONES_TRY(fsys::write(file_handle, vram, VRAM_SIZE));
+  SHAPONES_RET_ERR(fsys::write(file_handle, wram, WRAM_SIZE));
+  SHAPONES_RET_ERR(fsys::write(file_handle, vram, VRAM_SIZE));
   if (prgram_size > 0) {
-    SHAPONES_TRY(fsys::write(file_handle, prgram, prgram_size));
+    SHAPONES_RET_ERR(fsys::write(file_handle, prgram, prgram_size));
   }
   if (chrram_size > 0) {
-    SHAPONES_TRY(fsys::write(file_handle, chrram, chrram_size));
+    SHAPONES_RET_ERR(fsys::write(file_handle, chrram, chrram_size));
   }
   return result_t::SUCCESS;
 }
 
 result_t load_state(void *file_handle) {
-  SHAPONES_TRY(fsys::read(file_handle, wram, WRAM_SIZE));
-  SHAPONES_TRY(fsys::read(file_handle, vram, VRAM_SIZE));
+  SHAPONES_RET_ERR(fsys::read(file_handle, wram, WRAM_SIZE));
+  SHAPONES_RET_ERR(fsys::read(file_handle, vram, VRAM_SIZE));
   if (prgram_size > 0) {
-    SHAPONES_TRY(fsys::read(file_handle, prgram, prgram_size));
+    SHAPONES_RET_ERR(fsys::read(file_handle, prgram, prgram_size));
   }
   if (chrram_size > 0) {
-    SHAPONES_TRY(fsys::read(file_handle, chrram, chrram_size));
+    SHAPONES_RET_ERR(fsys::read(file_handle, chrram, chrram_size));
   }
   return result_t::SUCCESS;
 }
@@ -5205,6 +5230,8 @@ void hide() {
 }
 
 static result_t load_tab(tab_t t, bool force) {
+  result_t res = result_t::SUCCESS;
+
   if (tab == t && !force) return result_t::SUCCESS;
 
   menu.set_bounds(CLIENT_X, CLIENT_Y, CLIENT_WIDTH, CLIENT_HEIGHT);
@@ -5214,8 +5241,12 @@ static result_t load_tab(tab_t t, bool force) {
   tab = t;
 
   switch (tab) {
-    case tab_t::NES_LIST: SHAPONES_TRY(load_file_list_tab()); break;
-    case tab_t::SAVE_LIST: SHAPONES_TRY(load_state_list_tab()); break;
+    case tab_t::NES_LIST: res = load_file_list_tab(); break;
+    case tab_t::SAVE_LIST: res = load_state_list_tab(); break;
+  }
+
+  if (res != result_t::SUCCESS) {
+    show_message(icon_t::ERROR, result_to_string(res));
   }
 
   int i = last_menu_index[static_cast<int>(tab)];
@@ -5226,24 +5257,28 @@ static result_t load_tab(tab_t t, bool force) {
 
   request_redraw();
 
-  return result_t::SUCCESS;
+  return res;
 }
 
 static result_t load_file_list_tab() {
+  result_t res = result_t::SUCCESS;
+
   menu.clear();
   menu.set_bounds(CLIENT_X, CLIENT_Y + 1, CLIENT_WIDTH, CLIENT_HEIGHT - 1);
 
   if (!disk_mounted) {
-    if (fsys::mount() == result_t::SUCCESS) {
+    res = fsys::mount();
+    if (res == result_t::SUCCESS) {
+      SHAPONES_PRINTF("Filesystem mounted.\n");
       disk_mounted = true;
     } else {
-      return result_t::SUCCESS;
+      return res;
     }
   }
 
   if (current_dir[0] == '\0') {
     fsys::get_ines_dir(current_dir);
-    SHAPONES_TRY(fsys::append_separator(current_dir));
+    SHAPONES_RET_ERR(fsys::append_separator(current_dir));
   }
 
   if (!fsys::is_root_dir(current_dir)) {
@@ -5251,25 +5286,25 @@ static result_t load_file_list_tab() {
     menu.add_item(icon_t::PARENT, action_t::OPEN_DIR, "../");
   }
 
-  result_t res =
-      fsys::enum_files(current_dir, [](const fsys::file_info_t &info) {
-        char *name = (char *)info.name;
-        if (info.is_dir) {
-          // append '/' to directory names
-          size_t len = strnlen(name, shapones::MAX_FILENAME_LENGTH + 1);
-          char name[shapones::MAX_FILENAME_LENGTH + 2];
-          strncpy(name, info.name, shapones::MAX_FILENAME_LENGTH);
-          name[len++] = '/';
-          name[len] = '\0';
-        }
-        icon_t icon = info.is_dir ? icon_t::FOLDER : icon_t::FILE;
-        action_t action = info.is_dir ? action_t::OPEN_DIR : action_t::LOAD_ROM;
-        menu.add_item(icon, action, name);
-        return (menu.num_items < menu.capacity);
-      });
+  fsys::enum_files_cb_t cb = [](const fsys::file_info_t &info) {
+    char *name = (char *)info.name;
+    if (info.is_dir) {
+      // append '/' to directory names
+      size_t len = strnlen(name, shapones::MAX_FILENAME_LENGTH + 1);
+      char name[shapones::MAX_FILENAME_LENGTH + 2];
+      strncpy(name, info.name, shapones::MAX_FILENAME_LENGTH);
+      name[len++] = '/';
+      name[len] = '\0';
+    }
+    icon_t icon = info.is_dir ? icon_t::FOLDER : icon_t::FILE;
+    action_t action = info.is_dir ? action_t::OPEN_DIR : action_t::LOAD_ROM;
+    menu.add_item(icon, action, name);
+    return (menu.num_items < menu.capacity);
+  };
+  res = fsys::enum_files(current_dir, cb);
   if (res != result_t::SUCCESS) {
     menu.clear();
-    return res;
+    SHAPONES_RET_ERR(res);
   }
 
   // sort by name
@@ -5302,36 +5337,30 @@ static result_t load_state_list_tab() {
 
   char state_path[shapones::MAX_PATH_LENGTH + 1];
   strncpy(state_path, get_ines_path(), shapones::MAX_PATH_LENGTH);
-  SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
+  SHAPONES_RET_ERR(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   do {
     if (shapones::fsys::exists(state_path)) {
-      res = state::enum_slots(
-          state_path, [](const state::state_slot_entry_t &entry) {
-            if (!entry.is_used()) {
-              // In PicoLibSDK, true/false are defined as int,
-              // so a cast to bool is required.
-              return (bool)true;
-            }
+      state::enum_slot_cb_t cb = [](const state::state_slot_entry_t &entry) {
+        if (!entry.is_used()) {
+          // In PicoLibSDK, true/false are defined as int,
+          // so a cast to bool is required.
+          return (bool)true;
+        }
 
-            char label[shapones::MAX_FILENAME_LENGTH + 1];
-            float t = (float)entry.frame_count / 60;
-            if (t < 60) {
-              snprintf(label, sizeof(label), "#%02d %.2fs", entry.index, t);
-            } else if (t < 3600) {
-              snprintf(label, sizeof(label), "#%02d %.2fm", entry.index,
-                       t / 60);
-            } else {
-              snprintf(label, sizeof(label), "#%02d %.2fh", entry.index,
-                       t / 3600);
-            }
-            menu.add_item(icon_t::FILE, action_t::STATE_SELECT, label,
-                          entry.index);
-            return (menu.num_items < menu.capacity);
-          });
-      if (res != result_t::SUCCESS) {
-        break;
-      }
+        char label[shapones::MAX_FILENAME_LENGTH + 1];
+        float t = (float)entry.frame_count / 60;
+        if (t < 60) {
+          snprintf(label, sizeof(label), "#%02d %.2fs", entry.index, t);
+        } else if (t < 3600) {
+          snprintf(label, sizeof(label), "#%02d %.2fm", entry.index, t / 60);
+        } else {
+          snprintf(label, sizeof(label), "#%02d %.2fh", entry.index, t / 3600);
+        }
+        menu.add_item(icon_t::FILE, action_t::STATE_SELECT, label, entry.index);
+        return (menu.num_items < menu.capacity);
+      };
+      SHAPONES_BRK_ERR(res, state::enum_slots(state_path, cb));
     }
 
     if (menu.num_items < state::MAX_SLOTS) {
@@ -5358,7 +5387,7 @@ static result_t load_state_list_tab() {
 static result_t load_state_screenshot() {
   char state_path[shapones::MAX_PATH_LENGTH + 1];
   strncpy(state_path, get_ines_path(), shapones::MAX_PATH_LENGTH);
-  SHAPONES_TRY(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
+  SHAPONES_RET_ERR(fsys::replace_ext(state_path, state::STATE_FILE_EXT));
 
   ss_enable = false;
   auto *mi = menu.get_selected_item();
@@ -5478,9 +5507,9 @@ static result_t on_open_dir(ListItem *mi) {
     }
   } else {
     // sub directory
-    SHAPONES_TRY(fsys::append_path(current_dir, mi->label));
+    SHAPONES_RET_ERR(fsys::append_path(current_dir, mi->label));
   }
-  SHAPONES_TRY(fsys::append_separator(current_dir));
+  SHAPONES_RET_ERR(fsys::append_separator(current_dir));
   load_file_list_tab();
   return result_t::SUCCESS;
 }
@@ -5488,21 +5517,21 @@ static result_t on_open_dir(ListItem *mi) {
 static result_t on_load_rom(ListItem *mi) {
   char path[shapones::MAX_PATH_LENGTH + 1];
   strncpy(path, current_dir, shapones::MAX_PATH_LENGTH);
-  SHAPONES_TRY(fsys::append_path(path, mi->label));
+  SHAPONES_RET_ERR(fsys::append_path(path, mi->label));
   unmap_ines();
   const uint8_t *ines = nullptr;
   size_t ines_size = 0;
-  SHAPONES_TRY(load_ines(path, &ines, &ines_size));
-  SHAPONES_TRY(map_ines(ines, path));
+  SHAPONES_RET_ERR(load_ines(path, &ines, &ines_size));
+  SHAPONES_RET_ERR(map_ines(ines, path));
   hide();
   return result_t::SUCCESS;
 }
 
 static result_t on_add_state_slot() {
   char path[shapones::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_RET_ERR(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
   int slot = find_empty_slot();
-  if (slot < 0) return result_t::ERR_STATE_SLOT_FULL;
+  if (slot < 0) SHAPONES_RET_ERR(result_t::ERR_STATE_SLOT_FULL);
   state::save(path, slot);
   load_state_list_tab();
   return result_t::SUCCESS;
@@ -5520,8 +5549,8 @@ static result_t on_state_select(ListItem *mi) {
 
 static result_t on_save_state(ListItem *mi) {
   char path[shapones::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
-  SHAPONES_TRY(state::save(path, mi->tag));
+  SHAPONES_RET_ERR(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_RET_ERR(state::save(path, mi->tag));
   popup_close();
   load_state_list_tab();
   return result_t::SUCCESS;
@@ -5529,8 +5558,8 @@ static result_t on_save_state(ListItem *mi) {
 
 static result_t on_load_state(ListItem *mi) {
   char path[shapones::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
-  SHAPONES_TRY(state::load(path, mi->tag));
+  SHAPONES_RET_ERR(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_RET_ERR(state::load(path, mi->tag));
   popup_close();
   hide();
   return result_t::SUCCESS;
@@ -5538,8 +5567,8 @@ static result_t on_load_state(ListItem *mi) {
 
 static result_t on_delete_state() {
   char path[shapones::MAX_PATH_LENGTH + 1];
-  SHAPONES_TRY(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
-  SHAPONES_TRY(shapones::fsys::remove(path));
+  SHAPONES_RET_ERR(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+  SHAPONES_RET_ERR(shapones::fsys::remove(path));
   popup_close();
   load_state_list_tab();
   return result_t::SUCCESS;
@@ -5979,6 +6008,8 @@ void reg_write(addr_t addr, uint8_t data) {
     write_queue.push_blocking(req);
   }
 }
+
+float get_fps() { return perf_fps; }
 
 static void flush_write_queue() {
   reg_write_t req;
@@ -6506,9 +6537,10 @@ result_t save_state(void *file_handle) {
   writer.u8(bus_read_data_delayed);
   writer.b(scroll_ppuaddr_high_stored);
   writer.b(nmi_level);
-  SHAPONES_TRY(fsys::write(file_handle, buff, sizeof(buff)));
+  SHAPONES_RET_ERR(fsys::write(file_handle, buff, sizeof(buff)));
 
-  SHAPONES_TRY(fsys::write(file_handle, palette_file, sizeof(palette_file)));
+  SHAPONES_RET_ERR(
+      fsys::write(file_handle, palette_file, sizeof(palette_file)));
 
   uint8_t oam_buff[sizeof(oam)];
   for (size_t i = 0; i < sizeof(oam); i += 4) {
@@ -6518,7 +6550,7 @@ result_t save_state(void *file_handle) {
     oam_buff[i + 2] = (word >> 16) & 0xff;
     oam_buff[i + 3] = (word >> 24) & 0xff;
   }
-  SHAPONES_TRY(fsys::write(file_handle, oam_buff, sizeof(oam)));
+  SHAPONES_RET_ERR(fsys::write(file_handle, oam_buff, sizeof(oam)));
 
   return result_t::SUCCESS;
 }
@@ -6527,7 +6559,7 @@ result_t load_state(void *file_handle) {
   write_queue.clear();
 
   uint8_t buff[STATE_HEADER_SIZE];
-  SHAPONES_TRY(fsys::read(file_handle, buff, sizeof(buff)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, buff, sizeof(buff)));
   const uint8_t *p = buff;
   reg.load(p);
   p += registers_t::STATE_SIZE;
@@ -6541,10 +6573,10 @@ result_t load_state(void *file_handle) {
   bus_read_data_delayed = reader.u8();
   scroll_ppuaddr_high_stored = reader.b();
   nmi_level = reader.b();
-  SHAPONES_TRY(fsys::read(file_handle, palette_file, sizeof(palette_file)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, palette_file, sizeof(palette_file)));
 
   uint8_t oam_buff[sizeof(oam)];
-  SHAPONES_TRY(fsys::read(file_handle, oam_buff, sizeof(oam)));
+  SHAPONES_RET_ERR(fsys::read(file_handle, oam_buff, sizeof(oam)));
   for (size_t i = 0; i < sizeof(oam); i += 4) {
     uint32_t word = 0;
     word |= ((uint32_t)oam_buff[i + 0]) << 0;
@@ -6652,10 +6684,10 @@ void hsync(int focus_y, const uint8_t *line_buff, bool skip_render) {
 result_t get_state_path(char *out_path, size_t max_len) {
   const char *ines_path = get_ines_path();
   if (ines_path[0] == '\0') {
-    return result_t::ERR_INES_NOT_LOADED;
+    SHAPONES_RET_ERR(result_t::ERR_INES_NOT_LOADED);
   }
   strncpy(out_path, ines_path, max_len);
-  SHAPONES_TRY(fsys::replace_ext(out_path, STATE_FILE_EXT));
+  SHAPONES_RET_ERR(fsys::replace_ext(out_path, STATE_FILE_EXT));
   return result_t::SUCCESS;
 }
 
@@ -6678,10 +6710,10 @@ result_t save(const char *path, int slot) {
   uint32_t slot_size = get_slot_size();
 
   void *f;
-  SHAPONES_TRY(fsys::open(path, true, &f));
+  SHAPONES_RET_ERR(fsys::open(path, true, &f));
 
   size_t file_size = 0;
-  SHAPONES_TRY(fsys::size(f, &file_size));
+  SHAPONES_RET_ERR(fsys::size(f, &file_size));
   bool create = file_size < sizeof(state_file_header_t) +
                                 sizeof(state_slot_entry_t) * MAX_SLOTS;
 
@@ -6697,33 +6729,25 @@ result_t save(const char *path, int slot) {
         fh.slot_size = slot_size;
         fh.store(buff);
 
-        res = fsys::seek(f, 0);
-        if (res != result_t::SUCCESS) break;
-
-        res = fsys::write(f, buff, sizeof(buff));
-        if (res != result_t::SUCCESS) break;
+        SHAPONES_BRK_ERR(res, fsys::seek(f, 0));
+        SHAPONES_BRK_ERR(res, fsys::write(f, buff, sizeof(buff)));
       }
 
       // initialize index
       for (int i = 0; i < MAX_SLOTS; i++) {
         uint8_t buff[state_slot_entry_t::SIZE];
         memset(buff, 0, sizeof(buff));
-        res = fsys::write(f, buff, sizeof(buff));
-        if (res != result_t::SUCCESS) break;
+        SHAPONES_BRK_ERR(res, fsys::write(f, buff, sizeof(buff)));
       }
+      SHAPONES_BRK_ERR(res, res);
     }
 
     // write slot data
     {
       uint32_t offset = get_slot_offset(slot, slot_size);
-      res = fsys::seek(f, offset);
-      if (res != result_t::SUCCESS) break;
-
-      res = write_screenshot(f);
-      if (res != result_t::SUCCESS) break;
-
-      res = write_slot_data(f);
-      if (res != result_t::SUCCESS) break;
+      SHAPONES_BRK_ERR(res, fsys::seek(f, offset));
+      SHAPONES_BRK_ERR(res, write_screenshot(f));
+      SHAPONES_BRK_ERR(res, write_slot_data(f));
     }
 
     // update index
@@ -6738,11 +6762,8 @@ result_t save(const char *path, int slot) {
 
       int offset = state_file_header_t::SIZE + state_slot_entry_t::SIZE * slot;
 
-      res = fsys::seek(f, offset);
-      if (res != result_t::SUCCESS) break;
-
-      res = fsys::write(f, buff, sizeof(buff));
-      if (res != result_t::SUCCESS) break;
+      SHAPONES_BRK_ERR(res, fsys::seek(f, offset));
+      SHAPONES_BRK_ERR(res, fsys::write(f, buff, sizeof(buff)));
     }
 
     // seek to end
@@ -6760,37 +6781,34 @@ result_t load(const char *path, int slot) {
   uint32_t slot_size = get_slot_size();
 
   void *f;
-  SHAPONES_TRY(fsys::open(path, false, &f));
+  SHAPONES_RET_ERR(fsys::open(path, false, &f));
 
   do {
     // header check
     {
       uint8_t buff[state_file_header_t::SIZE];
-      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
+      SHAPONES_RET_ERR(fsys::read(f, buff, sizeof(buff)));
       state_file_header_t fh;
       fh.load(buff);
       if (fh.marker != MARKER) {
-        res = result_t::ERR_STATE_INVALID_FORMAT;
-        break;
+        SHAPONES_BRK_ERR(res, result_t::ERR_STATE_INVALID_FORMAT);
       }
       if (fh.slot_size != slot_size) {
-        res = result_t::ERR_STATE_SIZE_MISMATCH;
-        break;
+        SHAPONES_BRK_ERR(res, result_t::ERR_STATE_SIZE_MISMATCH);
       }
     }
 
     // read slot entry
     {
-      SHAPONES_TRY(fsys::seek(
-          f, state_file_header_t::SIZE + state_slot_entry_t::SIZE * slot));
+      SHAPONES_BRK_ERR(res, fsys::seek(f, state_file_header_t::SIZE +
+                                              state_slot_entry_t::SIZE * slot));
       uint8_t buff[state_slot_entry_t::SIZE];
-      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
+      SHAPONES_BRK_ERR(res, fsys::read(f, buff, sizeof(buff)));
       state_slot_entry_t slot_entry;
       slot_entry.index = slot;
       slot_entry.load(buff);
       if (!slot_entry.is_used()) {
-        res = result_t::ERR_STATE_NO_SLOT_DATA;
-        break;
+        SHAPONES_BRK_ERR(res, result_t::ERR_STATE_NO_SLOT_DATA);
       }
       frame_count = slot_entry.frame_count;
     }
@@ -6798,17 +6816,12 @@ result_t load(const char *path, int slot) {
     // read slot data
     {
       uint32_t offset = get_slot_offset(slot, slot_size);
-      res = fsys::seek(f, offset);
-      if (res != result_t::SUCCESS) break;
-
-      res = fsys::read(f, ss_buff, SS_SIZE_BYTES);
-      if (res != result_t::SUCCESS) break;
+      SHAPONES_BRK_ERR(res, fsys::seek(f, offset));
+      SHAPONES_BRK_ERR(res, fsys::read(f, ss_buff, SS_SIZE_BYTES));
       ss_wr_index = 1;
       ss_num_stored = 1;
       ss_capture_counter = 0;
-
-      res = read_slot_data(f);
-      if (res != result_t::SUCCESS) break;
+      SHAPONES_BRK_ERR(res, read_slot_data(f));
     }
   } while (0);
 
@@ -6823,15 +6836,12 @@ result_t read_screenshot(const char *path, int slot, uint8_t *out_buff) {
   uint32_t slot_size = get_slot_size();
 
   void *f;
-  SHAPONES_TRY(fsys::open(path, false, &f));
+  SHAPONES_RET_ERR(fsys::open(path, false, &f));
 
   do {
     uint32_t offset = get_slot_offset(slot, slot_size);
-    res = fsys::seek(f, offset);
-    if (res != result_t::SUCCESS) break;
-
-    res = fsys::read(f, out_buff, SS_SIZE_BYTES);
-    if (res != result_t::SUCCESS) break;
+    SHAPONES_BRK_ERR(res, fsys::seek(f, offset));
+    SHAPONES_BRK_ERR(res, fsys::read(f, out_buff, SS_SIZE_BYTES));
   } while (0);
 
   fsys::close(f);
@@ -6850,26 +6860,26 @@ static result_t write_screenshot(void *f) {
 static result_t write_slot_data(void *f) {
   SemaphoreBlock ppu_block(SEMAPHORE_PPU);
   SemaphoreBlock apu_block(SEMAPHORE_APU);
-  SHAPONES_TRY(cpu::save_state(f));
-  SHAPONES_TRY(ppu::save_state(f));
-  SHAPONES_TRY(apu::save_state(f));
-  SHAPONES_TRY(input::save_state(f));
-  SHAPONES_TRY(interrupt::save_state(f));
-  SHAPONES_TRY(memory::save_state(f));
-  SHAPONES_TRY(mapper::instance->save_state(f));
+  SHAPONES_RET_ERR(cpu::save_state(f));
+  SHAPONES_RET_ERR(ppu::save_state(f));
+  SHAPONES_RET_ERR(apu::save_state(f));
+  SHAPONES_RET_ERR(input::save_state(f));
+  SHAPONES_RET_ERR(interrupt::save_state(f));
+  SHAPONES_RET_ERR(memory::save_state(f));
+  SHAPONES_RET_ERR(mapper::instance->save_state(f));
   return result_t::SUCCESS;
 }
 
 static result_t read_slot_data(void *f) {
   SemaphoreBlock ppu_block(SEMAPHORE_PPU);
   SemaphoreBlock apu_block(SEMAPHORE_APU);
-  SHAPONES_TRY(cpu::load_state(f));
-  SHAPONES_TRY(ppu::load_state(f));
-  SHAPONES_TRY(apu::load_state(f));
-  SHAPONES_TRY(input::load_state(f));
-  SHAPONES_TRY(interrupt::load_state(f));
-  SHAPONES_TRY(memory::load_state(f));
-  SHAPONES_TRY(mapper::instance->load_state(f));
+  SHAPONES_RET_ERR(cpu::load_state(f));
+  SHAPONES_RET_ERR(ppu::load_state(f));
+  SHAPONES_RET_ERR(apu::load_state(f));
+  SHAPONES_RET_ERR(input::load_state(f));
+  SHAPONES_RET_ERR(interrupt::load_state(f));
+  SHAPONES_RET_ERR(memory::load_state(f));
+  SHAPONES_RET_ERR(mapper::instance->load_state(f));
   return result_t::SUCCESS;
 }
 
@@ -6877,25 +6887,24 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
   result_t res = result_t::SUCCESS;
 
   void *f;
-  SHAPONES_TRY(fsys::open(path, false, &f));
+  SHAPONES_RET_ERR(fsys::open(path, false, &f));
 
   do {
     // header check
     {
       uint8_t buff[state_file_header_t::SIZE];
-      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
+      SHAPONES_BRK_ERR(res, fsys::read(f, buff, sizeof(buff)));
       state_file_header_t fh;
       fh.load(buff);
       if (fh.marker != MARKER) {
-        res = result_t::ERR_STATE_INVALID_FORMAT;
-        break;
+        SHAPONES_BRK_ERR(res, result_t::ERR_STATE_INVALID_FORMAT);
       }
     }
 
     // read slot entries
     for (int i = 0; i < MAX_SLOTS; i++) {
       uint8_t buff[state_slot_entry_t::SIZE];
-      SHAPONES_TRY(fsys::read(f, buff, sizeof(buff)));
+      SHAPONES_BRK_ERR(res, fsys::read(f, buff, sizeof(buff)));
       state_slot_entry_t slot_entry;
       slot_entry.index = i;
       slot_entry.load(buff);
@@ -6903,6 +6912,7 @@ result_t enum_slots(const char *path, enum_slot_cb_t callback) {
         break;
       }
     }
+    SHAPONES_BRK_ERR(res, res);
   } while (0);
   fsys::close(f);
   return res;
@@ -6933,21 +6943,20 @@ result_t init(const config_t &cfg) {
   build_blend_table();
 
   for (int i = 0; i < NUM_SPINLOCKS; i++) {
-    SHAPONES_TRY(shapones::spinlock_init(i));
+    SHAPONES_RET_ERR(shapones::spinlock_init(i));
   }
   for (int i = 0; i < NUM_SEMAPHORES; i++) {
-    SHAPONES_TRY(shapones::semaphore_init(i));
+    SHAPONES_RET_ERR(shapones::semaphore_init(i));
   }
-  SHAPONES_TRY(interrupt::init());
-  SHAPONES_TRY(memory::init());
-  SHAPONES_TRY(mapper::init());
-  SHAPONES_TRY(cpu::init());
-  SHAPONES_TRY(ppu::init());
-  SHAPONES_TRY(apu::init());
-  SHAPONES_TRY(menu::init());
-  SHAPONES_TRY(input::init());
+  SHAPONES_RET_ERR(interrupt::init());
+  SHAPONES_RET_ERR(memory::init());
+  SHAPONES_RET_ERR(mapper::init());
+  SHAPONES_RET_ERR(cpu::init());
+  SHAPONES_RET_ERR(ppu::init());
+  SHAPONES_RET_ERR(apu::init());
+  SHAPONES_RET_ERR(menu::init());
+  SHAPONES_RET_ERR(input::init());
   apu::set_sampling_rate(cfg.apu_sampling_rate);
-  cpu::stop();
   return result_t::SUCCESS;
 }
 
@@ -6978,12 +6987,10 @@ result_t map_ines(const uint8_t *ines, const char *path) {
     SemaphoreBlock apu_block(SEMAPHORE_APU);
 
     if (path && strnlen(path, MAX_PATH_LENGTH + 1) == 0) {
-      res = result_t::ERR_FS_PATH_TOO_LONG;
-      break;
+      SHAPONES_BRK_ERR(res, result_t::ERR_FS_PATH_TOO_LONG);
     }
 
-    res = memory::map_ines(ines);
-    if (res != result_t::SUCCESS) break;
+    SHAPONES_BRK_ERR(res, memory::map_ines(ines));
 
     if (path) {
       strncpy(ines_path, path, MAX_PATH_LENGTH);
@@ -7024,12 +7031,12 @@ void unmap_ines() {
 
 result_t reset() {
   shapones::state::reset();
-  SHAPONES_TRY(mapper::instance->reset());
-  SHAPONES_TRY(ppu::reset());
-  SHAPONES_TRY(apu::reset());
-  SHAPONES_TRY(input::reset());
-  SHAPONES_TRY(interrupt::reset());
-  SHAPONES_TRY(cpu::reset());
+  SHAPONES_RET_ERR(mapper::instance->reset());
+  SHAPONES_RET_ERR(ppu::reset());
+  SHAPONES_RET_ERR(apu::reset());
+  SHAPONES_RET_ERR(input::reset());
+  SHAPONES_RET_ERR(interrupt::reset());
+  SHAPONES_RET_ERR(cpu::reset());
   return result_t::SUCCESS;
 }
 
@@ -7040,8 +7047,8 @@ result_t render_next_line(uint8_t *line_buff, bool skip_render,
   ppu::status_t s;
   if (!status) status = &s;
   do {
-    SHAPONES_TRY(cpu::service());
-    SHAPONES_TRY(ppu::service(line_buff, skip_render, status));
+    SHAPONES_RET_ERR(cpu::service());
+    SHAPONES_RET_ERR(ppu::service(line_buff, skip_render, status));
   } while (!(status->timing & ppu::timing_t::END_OF_VISIBLE_LINE));
   return result_t::SUCCESS;
 }
@@ -7049,8 +7056,8 @@ result_t render_next_line(uint8_t *line_buff, bool skip_render,
 result_t vsync(uint8_t *line_buff, bool skip_render) {
   ppu::status_t status;
   do {
-    SHAPONES_TRY(cpu::service());
-    SHAPONES_TRY(ppu::service(line_buff, skip_render, &status));
+    SHAPONES_RET_ERR(cpu::service());
+    SHAPONES_RET_ERR(ppu::service(line_buff, skip_render, &status));
   } while (!(status.timing & ppu::timing_t::END_OF_FRAME));
   return result_t::SUCCESS;
 }

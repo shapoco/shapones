@@ -9,8 +9,6 @@
 #include "shapones/menu.hpp"
 #include "shapones/state.hpp"
 
-#include <pico/stdlib.h>
-
 namespace shapones::ppu {
 
 static constexpr uint32_t STATE_HEADER_SIZE = registers_t::STATE_SIZE + 32;
