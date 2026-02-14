@@ -1,6 +1,5 @@
 #include <stdint.h>
 
-#include <hardware/adc.h>
 #include <hardware/clocks.h>
 #include <hardware/spi.h>
 #include <hardware/vreg.h>
@@ -15,7 +14,8 @@
 
 #include "display.hpp"
 #include "keypad.hpp"
-#include "parallel_switch.hpp"
+#include "mcp23017.hpp"
+#include "power.hpp"
 #include "pwm_audio.hpp"
 #include "spibus.h"
 
@@ -25,14 +25,12 @@
 
 SEG7_FUNC_MOD void seg7::fillRect(seg7::pos_t x, seg7::pos_t y, uint8_t w,
                                   uint8_t h) {
-  shapones::xiao::rp2350::display::fill_rect(x, y, w, h, 0xFFF);
+  shapones::xiao::rp::display::fill_rect(x, y, w, h, 0xFFF);
 }
 
-namespace shapones::xiao::rp2350 {
+namespace shapones::xiao::rp {
 
 static constexpr uint32_t SYS_CLK_FREQ = 250'000'000;
-
-static constexpr int MONITOR_PIN = 7;
 
 // NES color table
 static const uint16_t COLOR_TABLE_0[] = {
@@ -59,8 +57,12 @@ static const uint16_t COLOR_TABLE_1[] = {
 static uint8_t ppu_line_buff[SCREEN_WIDTH];
 static uint8_t apu_buff[pwm_audio::LATENCY];
 
-uint64_t next_vsync_us;
+uint64_t next_vsync_us = 0;
 static volatile bool display_refresh_req = false;
+
+uint64_t next_input_us = 0;
+
+mcp23017::Driver ioex(i2c1, 0x20);
 
 void core0_main();
 void core1_main();
@@ -77,14 +79,13 @@ void core0_main() {
   clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
                   SYS_CLK_FREQ, SYS_CLK_FREQ);
 
-  if (SHAPONES_ENABLE_LOG) {
-    setup_default_uart();
+  power::init(&ioex);
+  keypad::init(&ioex);
+  keypad::update();
+  
+  if (SHAPONES_ENABLE_LOG && keypad::is_pressed(input::BTN_SELECT)) {
     stdio_init_all();
   }
-
-  gpio_init(MONITOR_PIN);
-  gpio_set_dir(MONITOR_PIN, GPIO_OUT);
-  gpio_put(MONITOR_PIN, 0);
 
   sleep_ms(500);
 
@@ -96,7 +97,6 @@ void core0_main() {
 
   display::init();
   pwm_audio::init(SYS_CLK_FREQ, apu_dma_handler);
-  keypad::init();
 
   shapones::config_t cfg = shapones::get_default_config();
   cfg.apu_sampling_rate = 22050;
@@ -111,7 +111,12 @@ void core0_main() {
   multicore_launch_core1(core1_main);
 
   while (true) {
-    if (keypad::update()) {
+    power::service();
+
+    uint64_t now_us = get_time_us();
+    if (now_us >= next_input_us) {
+      next_input_us = now_us + 1'000'000 / 120;
+      keypad::update();
       input::status_t input_status;
       input_status.raw = 0;
       for (int i = 0; i < 8; i++) {
@@ -219,9 +224,9 @@ static void apu_fill_buffer(pwm_audio::sample_t *buff) {
   }
 }
 
-}  // namespace shapones::xiao::rp2350
+}  // namespace shapones::xiao::rp
 
 int main() {
-  shapones::xiao::rp2350::core0_main();
+  shapones::xiao::rp::core0_main();
   return 0;
 }

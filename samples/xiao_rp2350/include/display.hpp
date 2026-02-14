@@ -5,7 +5,7 @@
 
 #include "spibus.h"
 
-namespace shapones::xiao::rp2350::display {
+namespace shapones::xiao::rp::display {
 
 static constexpr int WIDTH = 240;
 static constexpr int HEIGHT = 240;

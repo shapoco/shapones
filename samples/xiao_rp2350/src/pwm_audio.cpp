@@ -7,14 +7,13 @@
 
 #include "pwm_audio.hpp"
 
-namespace shapones::xiao::rp2350::pwm_audio {
+namespace shapones::xiao::rp::pwm_audio {
 
 static const dma_channel_transfer_size DMA_WIDTH =
     sizeof(sample_t) == 1   ? DMA_SIZE_8
     : sizeof(sample_t) == 2 ? DMA_SIZE_16
                             : DMA_SIZE_32;
 
-static constexpr int PWM_OUT_PIN = 1;
 static constexpr int SAMPLE_BITS = 8;
 static constexpr uint32_t SAMPLE_FREQ = 22050;
 
@@ -45,6 +44,15 @@ void init(uint32_t sys_clk_freq, fill_buffer_cb_t cb) {
   pwm_init(pwm_slice, &pwm_cfg, true);
 
   pwm_set_gpio_level(PWM_OUT_PIN, 0);
+}
+
+void deinit() {
+  // drain charge from pin
+  gpio_init(PWM_OUT_PIN);
+  gpio_set_dir(PWM_OUT_PIN, GPIO_OUT);
+  gpio_put(PWM_OUT_PIN, 0);
+  // disable pin
+  gpio_deinit(PWM_OUT_PIN);
 }
 
 void play() {
@@ -90,4 +98,4 @@ static void start_dma() {
   );
 }
 
-}  // namespace shapones::xiao::rp2350::pwm_audio
+}  // namespace shapones::xiao::rp::pwm_audio

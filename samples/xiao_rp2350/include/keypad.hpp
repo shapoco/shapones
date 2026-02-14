@@ -1,15 +1,12 @@
 #ifndef SHAPONES_XIAO_RP2350_KEYPAD_HPP
 #define SHAPONES_XIAO_RP2350_KEYPAD_HPP
 
-#include "parallel_switch.hpp"
+#include "mcp23017.hpp"
 
-namespace shapones::xiao::rp2350::keypad {
+namespace shapones::xiao::rp::keypad {
 
-static constexpr int NUM_ADC_PINS = 3;
-static constexpr int ADC_CHANNELS[NUM_ADC_PINS] = {0, 1, 2};
-
-void init();
-bool update();
+void init(mcp23017::Driver *ie);
+void update();
 bool is_pressed(int key);
 
 }  // namespace shapones::xiao::rp2350::keypad

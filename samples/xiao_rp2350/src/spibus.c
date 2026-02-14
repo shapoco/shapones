@@ -38,6 +38,28 @@ void spibus_init() {
   channel_config_set_dreq(&dma_cfg, spi_get_dreq(spibus_inst, true));
 }
 
+void spibus_deinit() {
+  spibus_dma_complete();
+  dma_channel_unclaim(dma_tx);
+  spi_deinit(spibus_inst);
+
+  const int pins[] = {
+      SPIBUS_DISPLAY_CS_PIN, SPIBUS_DISPLAY_DC_PIN, SPIBUS_TFCARD_CS_PIN,
+      SPIBUS_MISO_PIN,       SPIBUS_MOSI_PIN,       SPIBUS_SCK_PIN,
+  };
+  const int num_pins = sizeof(pins) / sizeof(pins[0]);
+  // drain charge from pins
+  for (int i = 0; i < num_pins; i++) {
+    gpio_init(pins[i]);
+    gpio_set_dir(pins[i], GPIO_OUT);
+    gpio_put(pins[i], 0);
+  }
+  // disable pins
+  for (int i = 0; i < num_pins; i++) {
+    gpio_deinit(pins[i]);
+  }
+}
+
 void spibus_dma_write_start(const uint8_t *data, uint32_t size) {
   dma_channel_configure(dma_tx, &dma_cfg, &spi_get_hw(spibus_inst)->dr, data,
                         size, true);

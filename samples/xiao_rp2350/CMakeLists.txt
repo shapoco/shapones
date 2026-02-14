@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.12)
 
 # Pull in PICO SDK (must be before project)
 set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})
+set(PICO_EXTRAS_PATH $ENV{PICO_EXTRAS_PATH})
 include(${PICO_SDK_PATH}/pico_sdk_init.cmake)
+include(${PICO_EXTRAS_PATH}/external/pico_extras_import.cmake)
 
 set(APP_NAME shapones_xiao_rp2350)
 
@@ -14,8 +16,8 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 add_executable(${APP_NAME})
-add_compile_options(-O2 -fjump-tables)
-#add_compile_definitions(SHAPONES_ENABLE_LOG=1)
+add_compile_options(-O2)
+add_compile_definitions(SHAPONES_ENABLE_LOG=1)
 
 set(SHAPONES_PATH ../../core)
 set(FATFS_PATH ../fatfs/source)
@@ -43,15 +45,18 @@ target_include_directories(
 
 target_link_libraries(
     ${APP_NAME} PRIVATE
-    pico_stdlib
     hardware_pio
+    hardware_i2c
     hardware_spi
-    hardware_adc
     hardware_pwm
     hardware_dma
     hardware_irq
     hardware_flash
     hardware_sync
+    hardware_sleep
+    hardware_watchdog
+    hardware_powman
+    pico_stdlib
     pico_multicore
 )
 

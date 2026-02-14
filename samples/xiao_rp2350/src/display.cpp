@@ -3,7 +3,7 @@
 
 #include "display.hpp"
 
-namespace shapones::xiao::rp2350::display {
+namespace shapones::xiao::rp::display {
 
 enum class command_t : uint8_t {
   NOP = 0x00,

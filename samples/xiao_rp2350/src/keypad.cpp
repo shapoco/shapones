@@ -1,54 +1,28 @@
-#include <hardware/adc.h>
 #include <pico/stdlib.h>
 
 #include "keypad.hpp"
+#include "mcp23017.hpp"
 
-namespace shapones::xiao::rp2350::keypad {
+namespace shapones::xiao::rp::keypad {
 
-static void adc_start();
-static bool adc_get_result(uint16_t *out_value);
+static const int IOEX_PINS[] = {0, 1, 2, 3, 4, 5, 8, 9, 6};
 
-static uint16_t last_adc_values[NUM_ADC_PINS];
-static ParallelSwitch switch_pins[NUM_ADC_PINS];
-static int pin_index = 0;
+mcp23017::Driver *ioex;
+uint8_t ioex_values[2] = {0, 0};
 
-void init() {
-  adc_init();
-  for (int i = 0; i < NUM_ADC_PINS; i++) {
-    adc_gpio_init(26 + ADC_CHANNELS[i]);
+void init(mcp23017::Driver *ie) { ioex = ie; }
+
+void update() {
+  for (int i = 0; i < 2; i++) {
+    ioex_values[i] = ioex->read_port(i);
   }
-  adc_set_clkdiv(0);
-  adc_select_input(ADC_CHANNELS[pin_index]);
-  adc_start();
-}
-
-bool update() {
-  uint16_t value;
-  bool updated = adc_get_result(&value);
-  if (updated) {
-    last_adc_values[pin_index] = value;
-    switch_pins[pin_index].update_value(value);
-    pin_index = (pin_index + 1) % NUM_ADC_PINS;
-    adc_select_input(ADC_CHANNELS[pin_index]);
-    adc_start();
-  }
-  return updated;
 }
 
 bool is_pressed(int key) {
-  int i = key / 3;
-  int j = key % 3;
-  return !!((switch_pins[i].read_current() >> j) & 0x1);
-}
-
-static void adc_start() { hw_set_bits(&adc_hw->cs, ADC_CS_START_ONCE_BITS); }
-
-static bool adc_get_result(uint16_t *out_value) {
-  bool ready = !!(adc_hw->cs & ADC_CS_READY_BITS);
-  if (ready) {
-    *out_value = (uint16_t)adc_hw->result;
-  }
-  return ready;
+  if (key < 0 || key >= 8) return false;
+  int port = IOEX_PINS[key] / 8;
+  int bit = IOEX_PINS[key] % 8;
+  return (ioex_values[port] & (1 << bit)) == 0;
 }
 
 }  // namespace shapones::xiao::rp2350::keypad
