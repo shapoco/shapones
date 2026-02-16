@@ -7,3 +7,4 @@ const int XIAO_DISPLAY_CS_PIN = 4;
 const int XIAO_DISPLAY_DC_PIN = 3;
 const int XIAO_TFCARD_CS_PIN = 43;
 const int XIAO_AUDIO_OUT_PIN = 44;
+const int XIAO_POWER_BUTTON_PIN = 2;

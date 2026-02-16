@@ -2,10 +2,12 @@
 #include "shapones/shapones.hpp"
 #include "shapones/xiao/audio.hpp"
 #include "shapones/xiao/display.hpp"
+#include "shapones/xiao/gpio.h"
+#include "shapones/xiao/i2c.h"
 #include "shapones/xiao/ioex.hpp"
 #include "shapones/xiao/pins.h"
+#include "shapones/xiao/power.hpp"
 #include "shapones/xiao/spi.h"
-#include "shapones/xiao/i2c.h"
 #include "shapones/xiao/timer.h"
 
 namespace shapones::xiao {
@@ -39,11 +41,16 @@ static uint64_t next_vsync_us = 0;
 static bool ppu_frame_skip = false;
 static volatile bool display_refresh_req = false;
 
+static bool power_button_pressed = false;
+static bool menu_button_pressed = false;
+
 static void update_input();
 static void convert_color(int y);
 static bool wait_vsync();
 
 void app_init() {
+  xiao_gpio_init(XIAO_POWER_BUTTON_PIN, false);
+
   xiao_i2c_init();
 
   xiao_ioex_init();
@@ -102,7 +109,23 @@ static void update_input() {
   if (now_us >= input_next_read_us) {
     input_next_read_us = now_us + 1'000'000 / 120;
 
+    bool power_pressed = xiao_gpio_get(XIAO_POWER_BUTTON_PIN) == 1;
+    if (!power_pressed && power_button_pressed) {
+      power::shutdown();
+    }
+    power_button_pressed = power_pressed;
+
     uint16_t ioex_input = xiao_ioex_read_double();
+
+    bool menu_pressed = (ioex_input & (1 << XIAO_IOEX_BTN_MENU_PIN)) == 0;
+    if (!menu_pressed && menu_button_pressed) {
+      if (shapones::menu::is_shown()) {
+        shapones::menu::hide();
+      } else {
+        shapones::menu::show();
+      }
+    }
+    menu_button_pressed = menu_pressed;
 
     input::status_t input_status;
     input_status.raw = 0;

@@ -9,7 +9,7 @@
 
 namespace shapones {
 
-static constexpr uint32_t MAX_INES_SIZE = (128 + 1) * 1024;
+static constexpr uint32_t MAX_INES_SIZE = (64 + 1) * 1024;
 
 static uint8_t ines_sram[MAX_INES_SIZE] = {0xEA};
 
