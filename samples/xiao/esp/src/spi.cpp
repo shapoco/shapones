@@ -75,23 +75,15 @@ void xiao_spi_dma_write_start(int cs, const uint8_t *data, uint32_t size) {
   while (size > 0) {
     size_t chunk_size = size < TRANSFER_SIZE ? size : TRANSFER_SIZE;
     spi_dma.queue(data, nullptr, chunk_size);
-    // spi_dma.wait();
-    //  spi_dma.queue(0, 0, 0, 0, 0, 0, data, nullptr, chunk_size);
     data += chunk_size;
     size -= chunk_size;
   }
   spi_dma.trigger();
-  // spi_dma.wait();
-  //   while (spi_dma.numTransactionsInFlight()) {
-  //     vTaskDelay(1);
-  //   }
-  //    spi_dma.numBytesReceivedAll();
 }
 
 void xiao_spi_dma_complete() {
   if (!dma_inited) return;
   while (spi_dma.numTransactionsInFlight() > 0) {
-    // vTaskDelay(1);
   }
   if (cs_pin >= 0) {
     xiao_gpio_put(cs_pin, 1);
@@ -109,7 +101,6 @@ static void init_dma() {
   spi_dma.setFrequency(baudrate);
   spi_dma.setMaxTransferSize(TRANSFER_SIZE);
   spi_dma.setQueueSize(QUEUE_SIZE);
-  // spi_dma.enableContinuousTransactions();
   spi_dma.begin(FSPI, XIAO_SPI_SCK_PIN, XIAO_SPI_MISO_PIN, XIAO_SPI_MOSI_PIN,
                 -1);
   dma_inited = true;

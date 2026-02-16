@@ -1,0 +1,26 @@
+{
+	"name": "shapones_core",
+	"build": {
+		"includeDir": "include",
+		"srcDir": "src",
+		"srcFilter": [
+			"+<*>"
+		],
+        "unflags": [
+            "-Os",
+            "-fno-jump-tables",
+            "-fno-tree-switch-conversion"
+        ],
+		"flags": [
+			"-std=gnu++17",
+			"-O2",
+            "-fjump-tables",
+            "-ftree-switch-conversion",
+			"-Iinclude"
+		]
+	},
+	"export": {
+		"include": "include"
+	},
+	"platforms": "*"
+}

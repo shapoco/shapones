@@ -1,9 +1,11 @@
 #include "shapones/xiao/app.hpp"
 #include "shapones/shapones.hpp"
+#include "shapones/xiao/audio.hpp"
 #include "shapones/xiao/display.hpp"
 #include "shapones/xiao/ioex.hpp"
 #include "shapones/xiao/pins.h"
 #include "shapones/xiao/spi.h"
+#include "shapones/xiao/i2c.h"
 #include "shapones/xiao/timer.h"
 
 namespace shapones::xiao {
@@ -42,6 +44,8 @@ static void convert_color(int y);
 static bool wait_vsync();
 
 void app_init() {
+  xiao_i2c_init();
+
   xiao_ioex_init();
   xiao_ioex_set_dir(0, 0xFF, 0xFE);
   xiao_ioex_set_dir(1, 0xFF, 0xFF);
@@ -54,9 +58,10 @@ void app_init() {
   xiao_spi_init();
 
   display::init();
+  audio::init();
 
   auto cfg = shapones::get_default_config();
-  cfg.apu_sampling_rate = 22050;
+  cfg.apu_sampling_rate = audio::get_sampling_rate_hz();
   shapones::init(cfg);
   shapones::menu::show();
 }
@@ -72,6 +77,8 @@ void cpu_service() {
     display_refresh_req = false;
     display::refresh();
   }
+
+  audio::stream();
 }
 
 void ppu_service() {

@@ -26,9 +26,12 @@ void xiao_ioex_init();
 void xiao_ioex_deinit();
 void xiao_ioex_set_dir(int port, uint8_t mask, uint8_t value);
 uint8_t xiao_ioex_read(int port);
-uint16_t xiao_ioex_read_double();
 void xiao_ioex_write(int port, uint8_t mask, uint8_t value);
 void xiao_ioex_put(int pin, bool value);
+
+static inline uint16_t xiao_ioex_read_double() {
+  return xiao_ioex_read(0) | ((uint16_t)xiao_ioex_read(1) << 8);
+}
 
 }  // namespace shapones::xiao
 

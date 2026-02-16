@@ -5,6 +5,7 @@
 // - short transaction support
 // - changed RECV_TRANS_QUEUE_TIMEOUT_TICKS from 5000 to 100
 //   to allow for quick reinitialization on frequency changes.
+// - ESP-IDF 5.5.x support
 
 #pragma once
 #ifndef ESP32DMASPI_MASTER_H
@@ -867,6 +868,9 @@ private:
         trans.command_bits = command_bits;
         trans.address_bits = address_bits;
         trans.dummy_bits = dummy_bits;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+        trans.base.override_freq_hz = 0;
+#endif
 
         return trans;
     }
