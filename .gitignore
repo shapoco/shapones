@@ -6,6 +6,8 @@ nes_rom.cpp
 settings.json
 tmp.*
 tmp.*/
+*.d
+*.o
 
 # for KiCad
 *-backups/

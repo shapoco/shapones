@@ -1,7 +1,10 @@
 // original version:
 // https://github.com/hideakitai/ESP32DMASPI/blob/ab1587f92fdb1629f8a5fbc97fa6ad55a8bd6847/ESP32DMASPIMaster.h
 
-// modified by Shapoco to support short transactions.
+// modified by Shapoco:
+// - short transaction support
+// - changed RECV_TRANS_QUEUE_TIMEOUT_TICKS from 5000 to 100
+//   to allow for quick reinitialization on frequency changes.
 
 #pragma once
 #ifndef ESP32DMASPI_MASTER_H
@@ -39,7 +42,7 @@ static constexpr int SPI_MASTER_TASK_PRIORITY = 5;
 
 static QueueHandle_t s_trans_queue_handle {NULL};
 static constexpr int SEND_TRANS_QUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(5000);
-static constexpr int RECV_TRANS_QUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(5000);
+static constexpr int RECV_TRANS_QUEUE_TIMEOUT_TICKS = pdMS_TO_TICKS(100);
 static QueueHandle_t s_trans_result_handle {NULL};
 static constexpr int SEND_TRANS_RESULT_TIMEOUT_TICKS = pdMS_TO_TICKS(5000);
 static constexpr int RECV_TRANS_RESULT_TIMEOUT_TICKS = 0;
