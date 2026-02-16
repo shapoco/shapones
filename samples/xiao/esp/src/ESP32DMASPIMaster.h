@@ -1,3 +1,8 @@
+// original version:
+// https://github.com/hideakitai/ESP32DMASPI/blob/ab1587f92fdb1629f8a5fbc97fa6ad55a8bd6847/ESP32DMASPIMaster.h
+
+// modified by Shapoco to support short transactions.
+
 #pragma once
 #ifndef ESP32DMASPI_MASTER_H
 #define ESP32DMASPI_MASTER_H
@@ -101,6 +106,7 @@ struct spi_master_context_t
 struct spi_transaction_context_t
 {
     spi_transaction_ext_t *trans_ext;
+    void **rx_buf;
     size_t size;
     bool is_continuous_transactions;
     TickType_t timeout_ticks;
@@ -182,6 +188,10 @@ void spi_master_task(void *arg)
                     trans_ctx.trans_ext[i].base.flags |= SPI_TRANS_CS_KEEP_ACTIVE;
                 }
                 spi_transaction_t *trans = (spi_transaction_t*)(&trans_ctx.trans_ext[i]);
+                if (trans->length < 4 * 8) {
+                    trans->flags |= SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
+                    memcpy(trans->tx_data, trans->tx_buffer, trans->length / 8);
+                }
                 esp_err_t err = spi_device_queue_trans(device_handle, trans, trans_ctx.timeout_ticks);
                 if (err != ESP_OK) {
                     ESP_LOGE(TAG, "failed to execute spi_device_queue_trans(): 0x%X", err);
@@ -202,6 +212,9 @@ void spi_master_task(void *arg)
                     if (err != ESP_OK) {
                         ESP_LOGE(TAG, "failed to execute spi_device_get_trans_result(): 0x%X", err);
                     } else {
+                        if (rtrans->rxlength < 4 * 8 && trans_ctx.rx_buf[i] != nullptr) {
+                            memcpy(trans_ctx.rx_buf[i], rtrans->rx_data, rtrans->rxlength / 8);
+                        }
                         num_received_bytes = rtrans->rxlength / 8; // bit -> byte
                         ESP_LOGD(TAG, "transaction complete: %d bits (%d bytes) received", rtrans->rxlength, num_received_bytes);
                     }
@@ -230,6 +243,7 @@ void spi_master_task(void *arg)
 
             // should be deleted because the ownership is moved from main task
             delete[] trans_ctx.trans_ext;
+            delete[] trans_ctx.rx_buf;
 
             ESP_LOGD(TAG, "all requested transactions completed");
         }
@@ -456,10 +470,6 @@ public:
         uint8_t* rx_buf,
         size_t size
     ) {
-        if (size % 4 != 0) {
-            ESP_LOGW(TAG, "failed to queue transaction: buffer size must be multiples of 4 bytes");
-            return false;
-        }
         if (this->transactions.size() >= this->ctx.if_cfg.queue_size) {
             ESP_LOGW(TAG, "failed to queue transaction: queue is full - only %u transactions can be queued at once", this->ctx.if_cfg.queue_size);
             return false;
@@ -499,11 +509,13 @@ public:
 
         spi_transaction_context_t trans_ctx {
             .trans_ext = new spi_transaction_ext_t[this->transactions.size()],
+            .rx_buf = new void*[this->transactions.size()],
             .size = this->transactions.size(),
             .is_continuous_transactions = this->is_continuous_transactions,
             .timeout_ticks = timeout_ms == 0 ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms),
         };
         for (size_t i = 0; i < this->transactions.size(); i++) {
+            trans_ctx.rx_buf[i] = this->transactions[i].base.rx_buffer;
             trans_ctx.trans_ext[i] = std::move(this->transactions[i]);
         }
         // NOTE: spi_transaction_ext_t should be delete inside of spi task after use
@@ -867,8 +879,18 @@ private:
         const uint8_t* tx_buf,
         uint8_t* rx_buf
     ) {
-        spi_transaction_ext_t trans_ext = generateTransaction(command_bits, address_bits, dummy_bits, flags, cmd, addr, size, tx_buf, rx_buf);
-        this->transactions.push_back(std::move(trans_ext));
+        size_t short_size = size % 4;
+        size_t aligned_size = size - short_size;
+        if (aligned_size > 0) {
+            spi_transaction_ext_t trans_ext = generateTransaction(command_bits, address_bits, dummy_bits, flags, cmd, addr, aligned_size, tx_buf, rx_buf);
+            this->transactions.push_back(std::move(trans_ext));
+        }
+        if (short_size > 0) {
+            const uint8_t* short_tx_buf = tx_buf + aligned_size;
+            uint8_t* short_rx_buf = rx_buf + aligned_size;
+            spi_transaction_ext_t short_ext = generateTransaction(command_bits, address_bits, dummy_bits, flags, cmd, addr, short_size, short_tx_buf, short_rx_buf);
+            this->transactions.push_back(std::move(short_ext));
+        }
     }
 
     std::vector<size_t> waitTransaction(size_t num_will_be_queued)
