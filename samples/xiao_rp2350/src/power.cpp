@@ -20,14 +20,14 @@ static constexpr int XIAO_BAT_ADC_EN_PIN = 19;
 static constexpr int XIAO_NEO_PWR_PIN = 23;
 static constexpr int XIAO_LED_Y_PIN = 25;
 
-static constexpr int IOEX_PERI_EN_PIN = 7;
+static constexpr int IOEX_PERI_EN_PIN = 0;
 
-mcp23017::Driver *ioex;
+pca9555::Driver *ioex;
 
 static uint64_t next_sample_time_us = 0;
 static bool power_sw_pressed = false;
 
-void init(mcp23017::Driver *ie) {
+void init(pca9555::Driver *ie) {
   ioex = ie;
   gpio_init(POWER_SW_PIN);
   gpio_set_dir(POWER_SW_PIN, GPIO_IN);
@@ -37,10 +37,8 @@ void init(mcp23017::Driver *ie) {
   gpio_set_function(I2C_SCL_PIN, GPIO_FUNC_I2C);
   gpio_pull_up(I2C_SDA_PIN);
   gpio_pull_up(I2C_SCL_PIN);
-  ioex->set_dir(0, 0xFF, 0x7F);
-  ioex->set_dir(1, 0x03, 0x03);
-  ioex->set_pullup(0, 0x7F, 0x7F);
-  ioex->set_pullup(1, 0x03, 0x03);
+  ioex->set_dir(0, 0xFF, 0xFE);
+  ioex->set_dir(1, 0xFF, 0xFF);
 
   // power-on peripherals
   ioex->write_port(0, 1 << IOEX_PERI_EN_PIN, 0);

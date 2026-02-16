@@ -1,11 +1,11 @@
 #ifndef SHAPONES_XIAO_RP2350_KEYPAD_HPP
 #define SHAPONES_XIAO_RP2350_KEYPAD_HPP
 
-#include "mcp23017.hpp"
+#include "pca9555.hpp"
 
 namespace shapones::xiao::rp::keypad {
 
-void init(mcp23017::Driver *ie);
+void init(pca9555::Driver *ie);
 void update();
 bool is_pressed(int key);
 

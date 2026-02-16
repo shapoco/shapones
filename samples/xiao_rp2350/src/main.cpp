@@ -14,7 +14,7 @@
 
 #include "display.hpp"
 #include "keypad.hpp"
-#include "mcp23017.hpp"
+#include "pca9555.hpp"
 #include "power.hpp"
 #include "pwm_audio.hpp"
 #include "spibus.h"
@@ -62,7 +62,7 @@ static volatile bool display_refresh_req = false;
 
 uint64_t next_input_us = 0;
 
-mcp23017::Driver ioex(i2c1, 0x20);
+pca9555::Driver ioex(i2c1, 0x20);
 
 void core0_main();
 void core1_main();
