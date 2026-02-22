@@ -2631,6 +2631,86 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Mechanical:Fiducial"
+			(exclude_from_sim no)
+			(in_bom no)
+			(on_board yes)
+			(property "Reference" "FID"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Fiducial"
+				(at 0 3.175 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Fiducial Marker"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "fiducial marker"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "Fiducial*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "Fiducial_0_1"
+				(circle
+					(center 0 0)
+					(radius 1.27)
+					(stroke
+						(width 0.508)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "Simulation_SPICE:NMOS"
 			(pin_numbers
 				(hide yes)
@@ -10250,6 +10330,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C60489"
+			(at 211.328 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60489.html"
+			(at 211.328 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "a4ceb5c7-140c-4a74-9825-360ecbcc4b96")
 		)
@@ -10416,6 +10514,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 160.02 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60491"
+			(at 161.29 64.77 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60491.html"
+			(at 161.29 64.77 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10847,6 +10963,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 50.8 243.84 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C106231"
+			(at 53.34 242.5699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
+			(at 53.34 242.5699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11525,7 +11659,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
 			(at 289.56 45.72 0)
 			(effects
 				(font
@@ -11545,6 +11679,24 @@
 		)
 		(property "Description" "Unpolarized capacitor, small symbol"
 			(at 289.56 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C1705"
+			(at 292.354 44.704 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C1705.html"
+			(at 292.354 44.704 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11613,6 +11765,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 83.82 119.38 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C82868"
+			(at 83.82 114.3 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C82868.html"
+			(at 83.82 114.3 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11755,6 +11925,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C60490"
+			(at 216.408 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 216.408 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "4f076d17-85db-4fee-908d-0f3b638b1291")
 		)
@@ -11815,6 +12003,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 120.65 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60491"
+			(at 120.65 137.16 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60491.html"
+			(at 120.65 137.16 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11899,6 +12105,70 @@
 			(project "shapones_xiao_rp2350"
 				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
 					(reference "#PWR032")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Mechanical:Fiducial")
+		(at 246.38 254 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "3880a7e7-44a4-4b2d-83d0-2a5b1aae18f3")
+		(property "Reference" "FID3"
+			(at 248.92 252.7299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "Fiducial"
+			(at 248.92 255.2699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
+			(at 246.38 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 246.38 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Fiducial Marker"
+			(at 246.38 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(instances
+			(project "shapones_xiao_rp2350"
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "FID3")
 					(unit 1)
 				)
 			)
@@ -12048,6 +12318,70 @@
 		)
 	)
 	(symbol
+		(lib_id "Mechanical:Fiducial")
+		(at 261.62 254 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "3dce0ab6-0c34-4106-94ec-e5eb742606b6")
+		(property "Reference" "FID4"
+			(at 264.16 252.7299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "Fiducial"
+			(at 264.16 255.2699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
+			(at 261.62 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 261.62 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Fiducial Marker"
+			(at 261.62 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(instances
+			(project "shapones_xiao_rp2350"
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "FID4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R_Small")
 		(at 195.58 109.22 0)
 		(unit 1)
@@ -12094,6 +12428,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 195.58 109.22 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60490"
+			(at 196.088 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 196.088 112.268 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12306,6 +12658,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C60490"
+			(at 191.008 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 191.008 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "874fdebd-ec6e-4d95-9026-8b1ba4034c07")
 		)
@@ -12481,6 +12851,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C60490"
+			(at 104.14 149.86 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 104.14 149.86 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "45a5f8a4-9a1c-43df-915e-f8e473c51d3d")
 		)
@@ -12617,6 +13005,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C60491"
+			(at 153.67 34.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60491.html"
+			(at 153.67 34.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "b05b9855-94d1-4fdb-8f84-21cd894b6d2d")
 		)
@@ -12677,6 +13083,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 195.58 121.92 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C106231"
+			(at 195.58 124.206 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
+			(at 195.58 124.206 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13254,6 +13678,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C106231"
+			(at 53.34 227.3299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
+			(at 53.34 227.3299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "b6db1cc9-7741-4974-b00c-61d1186e8898")
 		)
@@ -13383,6 +13825,24 @@
 		)
 		(property "Description" "Unpolarized capacitor, small symbol"
 			(at 120.65 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C1691"
+			(at 120.6436 105.41 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C1691.html"
+			(at 120.6436 105.41 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13538,6 +13998,70 @@
 		)
 	)
 	(symbol
+		(lib_id "Mechanical:Fiducial")
+		(at 231.14 254 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "7046e362-b5de-4f4a-b157-9c1eb1cea0bb")
+		(property "Reference" "FID2"
+			(at 233.68 252.7299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "Fiducial"
+			(at 233.68 255.2699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
+			(at 231.14 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 231.14 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Fiducial Marker"
+			(at 231.14 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(instances
+			(project "shapones_xiao_rp2350"
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "FID2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:LED_Small")
 		(at 190.5 149.86 90)
 		(unit 1)
@@ -13678,6 +14202,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C114762"
+			(at 71.12 106.68 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C114762.html"
+			(at 71.12 106.68 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "85327404-553d-4634-ae86-04a8f474fb12")
 		)
@@ -13740,6 +14282,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 220.98 109.22 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60490"
+			(at 221.488 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 221.488 112.268 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13877,6 +14437,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 35.56 228.6 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C106231"
+			(at 38.1 227.3299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
+			(at 38.1 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14219,6 +14797,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C60490"
+			(at 201.168 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 201.168 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "93616352-cff4-4055-ad5e-e70416b8af2b")
 		)
@@ -14281,6 +14877,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 205.74 109.22 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60490"
+			(at 206.248 112.268 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 206.248 112.268 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14665,6 +15279,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C106231"
+			(at 38.1 242.5699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
+			(at 38.1 242.5699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "90b07739-a8f3-4236-b3b1-20b781f87f26")
 		)
@@ -14835,6 +15467,24 @@
 		)
 		(property "Description" "Unpolarized capacitor, small symbol"
 			(at 76.2 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C1705"
+			(at 78.74 74.9362 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C1705.html"
+			(at 78.74 74.9362 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15019,6 +15669,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C14445"
+			(at 175.006 38.354 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C14445.html"
+			(at 175.006 38.354 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "d82e8364-d87a-4e42-812c-0725bf0aadc9")
 		)
@@ -15082,6 +15750,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 43.18 228.6 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C106231"
+			(at 45.72 227.3299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
+			(at 45.72 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15673,6 +16359,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C106231"
+			(at 45.72 242.5699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
+			(at 45.72 242.5699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "02d2a4fd-2311-498b-a52e-ec9b904d1291")
 		)
@@ -15837,6 +16541,70 @@
 		)
 	)
 	(symbol
+		(lib_id "Mechanical:Fiducial")
+		(at 215.9 254 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "9cc37f53-4501-4b97-a184-c7c25a1fe1bd")
+		(property "Reference" "FID1"
+			(at 218.44 252.7299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "Fiducial"
+			(at 218.44 255.2699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
+			(at 215.9 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 215.9 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Fiducial Marker"
+			(at 215.9 254 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(instances
+			(project ""
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "FID1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:PWR_FLAG")
 		(at 101.6 68.58 0)
 		(mirror x)
@@ -15950,6 +16718,24 @@
 		)
 		(property "Description" "Unpolarized capacitor, small symbol"
 			(at 160.02 35.56 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C1705"
+			(at 162.56 34.2962 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C1705.html"
+			(at 162.56 34.2962 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16334,6 +17120,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C137976"
+			(at 48.26 78.74 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C137976.html"
+			(at 48.26 78.74 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "c3335448-6f13-461a-96fb-6aececb24c39")
 		)
@@ -16537,6 +17341,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C60490"
+			(at 194.31 34.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 194.31 34.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "a38d39df-5d6b-484d-b97c-0db878d45676")
 		)
@@ -16600,6 +17422,24 @@
 		)
 		(property "Description" "Unpolarized capacitor, small symbol"
 			(at 256.54 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C14445"
+			(at 259.334 44.704 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C14445.html"
+			(at 259.334 44.704 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16942,6 +17782,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 66.04 58.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C106235"
+			(at 66.04 53.34 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C106235.html"
+			(at 66.04 53.34 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17483,6 +18341,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C1545"
+			(at 43.18 53.34 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C1545.html"
+			(at 43.18 53.34 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "2129ef0c-8ed2-433c-bb23-c78d6d2c4b63")
 		)
@@ -17546,6 +18422,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 38.1 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60490"
+			(at 36.83 74.93 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 36.83 74.93 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17968,6 +18862,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C1525"
+			(at 43.1863 105.41 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C1525.html"
+			(at 43.1863 105.41 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "fc6a0de3-c890-4732-94d3-57673e63f341")
 		)
@@ -18169,6 +19081,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C14445"
+			(at 243.586 44.704 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C14445.html"
+			(at 243.586 44.704 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "4d0082cc-dd55-4a74-b493-eb80c1762e2d")
 		)
@@ -18238,6 +19168,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C15195"
+			(at 73.66 134.6262 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C15195.html"
+			(at 73.66 134.6262 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "c1a07afe-88b7-4296-a81f-056a16c944c5")
 		)
@@ -18299,6 +19247,24 @@
 		)
 		(property "Description" "Unpolarized capacitor, small symbol"
 			(at 107.95 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C140782"
+			(at 107.9563 105.41 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C140782.html"
+			(at 107.9563 105.41 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -18695,6 +19661,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 152.4 60.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60490"
+			(at 152.4 66.04 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
+			(at 152.4 66.04 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19443,6 +20427,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C1545"
+			(at 224.79 44.45 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C1545.html"
+			(at 224.79 44.45 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "1a3675c0-5ea6-4a8b-b73c-82b33f6d4683")
 		)
@@ -19576,6 +20578,24 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC" "C1525"
+			(at 66.0463 179.07 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C1525.html"
+			(at 66.0463 179.07 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "1e949208-1ac0-44c9-83cb-1d64c7d721be")
 		)
@@ -19637,6 +20657,24 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 71.12 129.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C114762"
+			(at 71.12 124.46 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C114762.html"
+			(at 71.12 124.46 90)
 			(effects
 				(font
 					(size 1.27 1.27)
