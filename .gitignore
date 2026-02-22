@@ -14,3 +14,4 @@ tmp.*/
 *.lck
 **/#auto_saved_files#
 _autosave-*.kicad_*
+fp-info-cache
