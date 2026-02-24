@@ -1,0 +1,14 @@
+set PROJ_NAME=shapones_xiao_rp2350
+
+copy \\wsl.localhost\Ubuntu-24.04\home\shapoco\repo\shapones\samples\xiao\kicad\shapones_xiao_rp2350.kicad_pcb .
+
+kikit panelize ^
+	--layout "grid; rows: 2; cols: 1; space: 2mm" ^
+	--tabs "fixed; width: 5mm; hcount: 3; vcount: 0;" ^
+	--cuts "mousebites; drill: 0.5mm; spacing: 1.0mm; offset: 0mm" ^
+	--framing "railslr; width: 5mm; space: 2mm;" ^
+	--post "millradius: 1mm" ^
+	--tooling "4hole; size: 2mm; hoffset: 2.5mm; voffset: 12.5mm;" ^
+	--fiducials "4fid; coppersize: 1mm; opening: 2mm; hoffset: 3.85mm; voffset: 20mm;" ^
+	%PROJ_NAME%.kicad_pcb ^
+	%PROJ_NAME%_panelized.kicad_pcb

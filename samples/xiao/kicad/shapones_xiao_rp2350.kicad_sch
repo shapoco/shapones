@@ -388,7 +388,7 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Connector_Generic:Conn_01x01"
+		(symbol "Connector_Generic:Conn_01x02"
 			(pin_names
 				(offset 1.016)
 				(hide yes)
@@ -404,8 +404,8 @@
 					)
 				)
 			)
-			(property "Value" "Conn_01x01"
-				(at 0 -2.54 0)
+			(property "Value" "Conn_01x02"
+				(at 0 -5.08 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -430,7 +430,7 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)"
+			(property "Description" "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
 				(at 0 0 0)
 				(effects
 					(font
@@ -457,10 +457,10 @@
 					(hide yes)
 				)
 			)
-			(symbol "Conn_01x01_1_1"
+			(symbol "Conn_01x02_1_1"
 				(rectangle
 					(start -1.27 1.27)
-					(end 1.27 -1.27)
+					(end 1.27 -3.81)
 					(stroke
 						(width 0.254)
 						(type default)
@@ -480,6 +480,17 @@
 						(type none)
 					)
 				)
+				(rectangle
+					(start -1.27 -2.413)
+					(end 0 -2.667)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
 				(pin passive line
 					(at -5.08 0 0)
 					(length 3.81)
@@ -491,6 +502,24 @@
 						)
 					)
 					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -5.08 -2.54 0)
+					(length 3.81)
+					(name "Pin_2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -2626,86 +2655,6 @@
 								(size 1.27 1.27)
 							)
 						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
-		(symbol "Mechanical:Fiducial"
-			(exclude_from_sim no)
-			(in_bom no)
-			(on_board yes)
-			(property "Reference" "FID"
-				(at 0 5.08 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Value" "Fiducial"
-				(at 0 3.175 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Footprint" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" "~"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Description" "Fiducial Marker"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_keywords" "fiducial marker"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_fp_filters" "Fiducial*"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "Fiducial_0_1"
-				(circle
-					(center 0 0)
-					(radius 1.27)
-					(stroke
-						(width 0.508)
-						(type default)
-					)
-					(fill
-						(type background)
 					)
 				)
 			)
@@ -5681,7 +5630,7 @@
 	)
 	(text "SPEAKER"
 		(exclude_from_sim no)
-		(at 140.97 136.652 0)
+		(at 141.478 134.366 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5740,13 +5689,13 @@
 		(uuid "fbfbd555-6e2e-404a-91fd-a8a3e7c1fc04")
 	)
 	(junction
-		(at 43.18 236.22)
+		(at 33.02 236.22)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "05baca03-53e4-4e04-ae0a-97dac94a70bb")
 	)
 	(junction
-		(at 50.8 238.76)
+		(at 40.64 238.76)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "09dc9bd2-80e8-48aa-955b-57973cce0ce8")
@@ -5830,7 +5779,7 @@
 		(uuid "42ea2254-df87-404f-b3ff-dff3240b0acc")
 	)
 	(junction
-		(at 35.56 223.52)
+		(at 25.4 223.52)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "512d87b7-fd72-4caf-98d3-0e96efaee0fb")
@@ -5926,13 +5875,13 @@
 		(uuid "82ad501f-ba8d-4d1a-97d9-1c124e140707")
 	)
 	(junction
-		(at 43.18 223.52)
+		(at 33.02 223.52)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "835e5a03-9280-4a98-89bb-580090ecefa6")
 	)
 	(junction
-		(at 35.56 233.68)
+		(at 25.4 233.68)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "850b060b-104c-44a0-96e6-58523c8889e1")
@@ -6004,7 +5953,7 @@
 		(uuid "ba767467-d7d4-4310-a6ee-d7df07b95ded")
 	)
 	(junction
-		(at 43.18 248.92)
+		(at 33.02 248.92)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "bb5b638b-7efa-4c61-af35-93279d6ca6be")
@@ -6070,7 +6019,7 @@
 		(uuid "e96a36fe-87b6-4b39-9d3c-37a7fc391f50")
 	)
 	(junction
-		(at 50.8 248.92)
+		(at 40.64 248.92)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "eb6bd203-76dd-48f6-a49a-7b2eee05a803")
@@ -6221,6 +6170,16 @@
 	)
 	(wire
 		(pts
+			(xy 129.54 132.08) (xy 129.54 130.81)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "064114c8-e11e-4dee-99a6-b2888510f1b1")
+	)
+	(wire
+		(pts
 			(xy 50.8 48.26) (xy 45.72 48.26)
 		)
 		(stroke
@@ -6231,7 +6190,7 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 231.14) (xy 50.8 238.76)
+			(xy 40.64 231.14) (xy 40.64 238.76)
 		)
 		(stroke
 			(width 0)
@@ -6281,7 +6240,7 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 238.76) (xy 58.42 238.76)
+			(xy 40.64 238.76) (xy 58.42 238.76)
 		)
 		(stroke
 			(width 0)
@@ -6301,7 +6260,7 @@
 	)
 	(wire
 		(pts
-			(xy 43.18 226.06) (xy 43.18 223.52)
+			(xy 33.02 226.06) (xy 33.02 223.52)
 		)
 		(stroke
 			(width 0)
@@ -6381,7 +6340,7 @@
 	)
 	(wire
 		(pts
-			(xy 35.56 220.98) (xy 35.56 223.52)
+			(xy 25.4 220.98) (xy 25.4 223.52)
 		)
 		(stroke
 			(width 0)
@@ -6441,7 +6400,7 @@
 	)
 	(wire
 		(pts
-			(xy 43.18 236.22) (xy 43.18 241.3)
+			(xy 33.02 236.22) (xy 33.02 241.3)
 		)
 		(stroke
 			(width 0)
@@ -6451,7 +6410,7 @@
 	)
 	(wire
 		(pts
-			(xy 43.18 223.52) (xy 35.56 223.52)
+			(xy 33.02 223.52) (xy 25.4 223.52)
 		)
 		(stroke
 			(width 0)
@@ -6551,7 +6510,7 @@
 	)
 	(wire
 		(pts
-			(xy 35.56 223.52) (xy 35.56 226.06)
+			(xy 25.4 223.52) (xy 25.4 226.06)
 		)
 		(stroke
 			(width 0)
@@ -6571,7 +6530,7 @@
 	)
 	(wire
 		(pts
-			(xy 43.18 248.92) (xy 50.8 248.92)
+			(xy 33.02 248.92) (xy 40.64 248.92)
 		)
 		(stroke
 			(width 0)
@@ -6751,7 +6710,7 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 248.92) (xy 50.8 256.54)
+			(xy 40.64 248.92) (xy 40.64 256.54)
 		)
 		(stroke
 			(width 0)
@@ -6941,7 +6900,7 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 223.52) (xy 50.8 226.06)
+			(xy 40.64 223.52) (xy 40.64 226.06)
 		)
 		(stroke
 			(width 0)
@@ -7191,7 +7150,7 @@
 	)
 	(wire
 		(pts
-			(xy 43.18 223.52) (xy 50.8 223.52)
+			(xy 33.02 223.52) (xy 40.64 223.52)
 		)
 		(stroke
 			(width 0)
@@ -7441,7 +7400,7 @@
 	)
 	(wire
 		(pts
-			(xy 43.18 231.14) (xy 43.18 236.22)
+			(xy 33.02 231.14) (xy 33.02 236.22)
 		)
 		(stroke
 			(width 0)
@@ -7461,7 +7420,7 @@
 	)
 	(wire
 		(pts
-			(xy 35.56 233.68) (xy 58.42 233.68)
+			(xy 25.4 233.68) (xy 58.42 233.68)
 		)
 		(stroke
 			(width 0)
@@ -7571,13 +7530,23 @@
 	)
 	(wire
 		(pts
-			(xy 35.56 233.68) (xy 35.56 241.3)
+			(xy 25.4 233.68) (xy 25.4 241.3)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
 		(uuid "71f6839b-7b47-4f8f-98b2-fc811782a32c")
+	)
+	(wire
+		(pts
+			(xy 129.54 128.27) (xy 130.81 128.27)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "72085a63-e1bb-4f7b-a829-c669d3b08c3e")
 	)
 	(wire
 		(pts
@@ -7591,7 +7560,7 @@
 	)
 	(wire
 		(pts
-			(xy 43.18 236.22) (xy 58.42 236.22)
+			(xy 33.02 236.22) (xy 58.42 236.22)
 		)
 		(stroke
 			(width 0)
@@ -7771,7 +7740,7 @@
 	)
 	(wire
 		(pts
-			(xy 35.56 248.92) (xy 43.18 248.92)
+			(xy 25.4 248.92) (xy 33.02 248.92)
 		)
 		(stroke
 			(width 0)
@@ -8211,13 +8180,33 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 238.76) (xy 50.8 241.3)
+			(xy 40.64 238.76) (xy 40.64 241.3)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
 		(uuid "a5d37225-0190-4bb0-91e8-4977c27cac47")
+	)
+	(wire
+		(pts
+			(xy 129.54 130.81) (xy 130.81 130.81)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a65fe979-166f-49ad-a116-fa45901bdaf5")
+	)
+	(wire
+		(pts
+			(xy 129.54 127) (xy 129.54 128.27)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a7532ff1-0f68-4458-91ed-e3c1ac45f8a5")
 	)
 	(wire
 		(pts
@@ -8491,7 +8480,7 @@
 	)
 	(wire
 		(pts
-			(xy 35.56 231.14) (xy 35.56 233.68)
+			(xy 25.4 231.14) (xy 25.4 233.68)
 		)
 		(stroke
 			(width 0)
@@ -8641,7 +8630,7 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 246.38) (xy 50.8 248.92)
+			(xy 40.64 246.38) (xy 40.64 248.92)
 		)
 		(stroke
 			(width 0)
@@ -9051,7 +9040,7 @@
 	)
 	(wire
 		(pts
-			(xy 43.18 246.38) (xy 43.18 248.92)
+			(xy 33.02 246.38) (xy 33.02 248.92)
 		)
 		(stroke
 			(width 0)
@@ -9171,7 +9160,7 @@
 	)
 	(wire
 		(pts
-			(xy 35.56 246.38) (xy 35.56 248.92)
+			(xy 25.4 246.38) (xy 25.4 248.92)
 		)
 		(stroke
 			(width 0)
@@ -9459,6 +9448,16 @@
 		)
 		(uuid "3ca82778-6751-4e15-a0b8-8cb706624fe6")
 	)
+	(label "IOEX_A0"
+		(at 45.72 233.68 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "3e94c6b2-5538-496a-b6b5-444075769b91")
+	)
 	(label "LCD_CS"
 		(at 215.9 223.52 0)
 		(effects
@@ -9739,6 +9738,16 @@
 		)
 		(uuid "a1947671-e785-4c32-b4a0-8fb70dea53ab")
 	)
+	(label "IOEX_A2"
+		(at 45.72 238.76 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "a831f234-b0ba-4c23-9ec5-6141eebf6c35")
+	)
 	(label "SPI_MISO"
 		(at 172.72 168.91 0)
 		(effects
@@ -9809,7 +9818,7 @@
 		)
 		(uuid "b2d487c1-c0bf-4321-8ee7-626d3083b3c8")
 	)
-	(label "I2C_SDA"
+	(label "I2C_SCL"
 		(at 215.9 226.06 0)
 		(effects
 			(font
@@ -9919,6 +9928,16 @@
 		)
 		(uuid "e30c9f7c-2572-41ec-83c4-5ca6d47b9aa4")
 	)
+	(label "IOEX_A1"
+		(at 45.72 236.22 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "e649cef9-8fe3-49c3-9616-23571171d8d5")
+	)
 	(label "SW_RIGHT"
 		(at 86.36 238.76 0)
 		(effects
@@ -9979,7 +9998,7 @@
 		)
 		(uuid "f7914ae4-64ec-4b91-8537-3369ce68fb8e")
 	)
-	(label "I2C_SCL"
+	(label "I2C_SDA"
 		(at 259.08 223.52 180)
 		(effects
 			(font
@@ -10330,7 +10349,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C60489"
+		(property "LCSC" "C60490"
 			(at 211.328 112.268 0)
 			(effects
 				(font
@@ -10339,7 +10358,7 @@
 				(hide yes)
 			)
 		)
-		(property "URL" "https://www.lcsc.com/product-detail/C60489.html"
+		(property "URL" "https://www.lcsc.com/product-detail/C60490.html"
 			(at 211.328 112.268 0)
 			(effects
 				(font
@@ -10417,6 +10436,15 @@
 			)
 		)
 		(property "LCSC" "C114218"
+			(at 261.62 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C114218.html"
 			(at 261.62 163.83 0)
 			(effects
 				(font
@@ -10768,6 +10796,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60580.html"
+			(at 231.14 40.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "e3fefc46-093f-415f-88b9-2fb3171f038d")
 		)
@@ -10917,7 +10954,7 @@
 	)
 	(symbol
 		(lib_id "Device:R_Small")
-		(at 50.8 243.84 0)
+		(at 40.64 243.84 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -10926,7 +10963,7 @@
 		(fields_autoplaced yes)
 		(uuid "16e38c75-342e-411d-aa56-53b364e80456")
 		(property "Reference" "R28"
-			(at 53.34 242.5699 0)
+			(at 43.18 242.5699 0)
 			(effects
 				(font
 					(size 1.016 1.016)
@@ -10935,7 +10972,7 @@
 			)
 		)
 		(property "Value" "0"
-			(at 53.34 245.1099 0)
+			(at 43.18 245.1099 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10944,7 +10981,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 50.8 243.84 0)
+			(at 40.64 243.84 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10953,7 +10990,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 50.8 243.84 0)
+			(at 40.64 243.84 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10962,7 +10999,7 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
-			(at 50.8 243.84 0)
+			(at 40.64 243.84 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10971,7 +11008,7 @@
 			)
 		)
 		(property "LCSC" "C106231"
-			(at 53.34 242.5699 0)
+			(at 43.18 242.5699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10980,7 +11017,7 @@
 			)
 		)
 		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
-			(at 53.34 242.5699 0)
+			(at 43.18 242.5699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11151,6 +11188,15 @@
 			)
 		)
 		(property "LCSC" "C127272"
+			(at 170.18 33.02 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C127272.html"
 			(at 170.18 33.02 90)
 			(effects
 				(font
@@ -11401,6 +11447,15 @@
 		)
 		(property "LCSC" "C60580"
 			(at 66.04 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60580.html"
+			(at 66.04 76.2 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12111,70 +12166,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Mechanical:Fiducial")
-		(at 246.38 254 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom no)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "3880a7e7-44a4-4b2d-83d0-2a5b1aae18f3")
-		(property "Reference" "FID3"
-			(at 248.92 252.7299 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "Fiducial"
-			(at 248.92 255.2699 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
-			(at 246.38 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 246.38 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Fiducial Marker"
-			(at 246.38 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(instances
-			(project "shapones_xiao_rp2350"
-				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
-					(reference "FID3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "power:GND")
 		(at 87.63 81.28 0)
 		(unit 1)
@@ -12266,7 +12257,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Inductor_SMD:L_Walsin_WLFM201209x"
+		(property "Footprint" "Inductor_SMD:L_0805_2012Metric"
 			(at 251.46 42.418 90)
 			(effects
 				(font
@@ -12302,6 +12293,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C74764.html"
+			(at 251.46 40.64 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "4deae870-0aac-439f-af11-e68f9f3a0284")
 		)
@@ -12312,70 +12312,6 @@
 			(project "shapones_xiao_rp2350"
 				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
 					(reference "FB2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Mechanical:Fiducial")
-		(at 261.62 254 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom no)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "3dce0ab6-0c34-4106-94ec-e5eb742606b6")
-		(property "Reference" "FID4"
-			(at 264.16 252.7299 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "Fiducial"
-			(at 264.16 255.2699 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
-			(at 261.62 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 261.62 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Fiducial Marker"
-			(at 261.62 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(instances
-			(project "shapones_xiao_rp2350"
-				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
-					(reference "FID4")
 					(unit 1)
 				)
 			)
@@ -12773,6 +12709,15 @@
 			)
 		)
 		(property "LCSC" "C53550"
+			(at 167.64 60.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C53550.html"
 			(at 167.64 60.96 0)
 			(effects
 				(font
@@ -13191,7 +13136,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 50.8 256.54 0)
+		(at 40.64 256.54 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -13200,7 +13145,7 @@
 		(fields_autoplaced yes)
 		(uuid "544b729e-dbdb-4de2-9604-d5a39bef6ad3")
 		(property "Reference" "#PWR037"
-			(at 50.8 262.89 0)
+			(at 40.64 262.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13209,7 +13154,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 50.8 261.62 0)
+			(at 40.64 261.62 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13217,7 +13162,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 50.8 256.54 0)
+			(at 40.64 256.54 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13226,7 +13171,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 50.8 256.54 0)
+			(at 40.64 256.54 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13235,7 +13180,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 50.8 256.54 0)
+			(at 40.64 256.54 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13409,6 +13354,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60580.html"
+			(at 162.56 50.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "ddfb5d73-bfc1-4a1e-bcf1-0f51ad4762da")
 		)
@@ -13486,6 +13440,76 @@
 			(project "shapones_xiao_rp2350"
 				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
 					(reference "#PWR047")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector_Generic:Conn_01x02")
+		(at 135.89 128.27 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "6199480f-8d12-4898-a9ed-f7a7718ef0cc")
+		(property "Reference" "J2"
+			(at 138.43 128.2699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "Conn_01x02"
+			(at 138.43 130.8099 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "shpc_mechanical:SolderWirePad_1x02_SMD_150x50mil"
+			(at 135.89 128.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 135.89 128.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
+			(at 135.89 128.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "b243c40c-d721-4c30-9b7b-b8b771ce3f81")
+		)
+		(pin "2"
+			(uuid "ed598f29-8677-45df-984d-b4d7592f9ac2")
+		)
+		(instances
+			(project ""
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "J2")
 					(unit 1)
 				)
 			)
@@ -13625,7 +13649,7 @@
 	)
 	(symbol
 		(lib_id "Device:R_Small")
-		(at 50.8 228.6 0)
+		(at 40.64 228.6 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -13634,7 +13658,7 @@
 		(fields_autoplaced yes)
 		(uuid "69f3ee67-fbf5-481f-8eaf-8b09ab185e1d")
 		(property "Reference" "R27"
-			(at 53.34 227.3299 0)
+			(at 43.18 227.3299 0)
 			(effects
 				(font
 					(size 1.016 1.016)
@@ -13643,7 +13667,7 @@
 			)
 		)
 		(property "Value" "0"
-			(at 53.34 229.8699 0)
+			(at 43.18 229.8699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13652,7 +13676,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 50.8 228.6 0)
+			(at 40.64 228.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13661,7 +13685,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 50.8 228.6 0)
+			(at 40.64 228.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13670,7 +13694,7 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
-			(at 50.8 228.6 0)
+			(at 40.64 228.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13679,7 +13703,7 @@
 			)
 		)
 		(property "LCSC" "C106231"
-			(at 53.34 227.3299 0)
+			(at 43.18 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13688,7 +13712,7 @@
 			)
 		)
 		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
-			(at 53.34 227.3299 0)
+			(at 43.18 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13998,70 +14022,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Mechanical:Fiducial")
-		(at 231.14 254 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom no)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "7046e362-b5de-4f4a-b157-9c1eb1cea0bb")
-		(property "Reference" "FID2"
-			(at 233.68 252.7299 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "Fiducial"
-			(at 233.68 255.2699 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
-			(at 231.14 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 231.14 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Fiducial Marker"
-			(at 231.14 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(instances
-			(project "shapones_xiao_rp2350"
-				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
-					(reference "FID2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:LED_Small")
 		(at 190.5 149.86 90)
 		(unit 1)
@@ -14126,6 +14086,15 @@
 			)
 		)
 		(property "LCSC" "C28310436"
+			(at 190.5 149.86 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C28310436.html"
 			(at 190.5 149.86 90)
 			(effects
 				(font
@@ -14391,7 +14360,7 @@
 	)
 	(symbol
 		(lib_id "Device:R_Small")
-		(at 35.56 228.6 0)
+		(at 25.4 228.6 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -14400,7 +14369,7 @@
 		(fields_autoplaced yes)
 		(uuid "74fc1e85-63e6-4a75-874b-621274905013")
 		(property "Reference" "R23"
-			(at 38.1 227.3299 0)
+			(at 27.94 227.3299 0)
 			(effects
 				(font
 					(size 1.016 1.016)
@@ -14409,7 +14378,7 @@
 			)
 		)
 		(property "Value" "0"
-			(at 38.1 229.8699 0)
+			(at 27.94 229.8699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14418,7 +14387,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 35.56 228.6 0)
+			(at 25.4 228.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14427,7 +14396,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 35.56 228.6 0)
+			(at 25.4 228.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14436,7 +14405,7 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
-			(at 35.56 228.6 0)
+			(at 25.4 228.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14445,7 +14414,7 @@
 			)
 		)
 		(property "LCSC" "C106231"
-			(at 38.1 227.3299 0)
+			(at 27.94 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14454,7 +14423,7 @@
 			)
 		)
 		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
-			(at 38.1 227.3299 0)
+			(at 27.94 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15112,6 +15081,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C963235.html"
+			(at 177.8 246.38 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "28e74455-d711-493c-a20c-ee4d2bb5130c")
 		)
@@ -15209,6 +15187,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60580.html"
+			(at 104.14 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "ffa00775-fc6b-4575-a21c-fb747ba0945a")
 		)
@@ -15226,7 +15213,7 @@
 	)
 	(symbol
 		(lib_id "Device:R_Small")
-		(at 35.56 243.84 0)
+		(at 25.4 243.84 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -15235,7 +15222,7 @@
 		(fields_autoplaced yes)
 		(uuid "88db8a6e-d9eb-4ee6-9653-bd46845a073f")
 		(property "Reference" "R24"
-			(at 38.1 242.5699 0)
+			(at 27.94 242.5699 0)
 			(effects
 				(font
 					(size 1.016 1.016)
@@ -15244,7 +15231,7 @@
 			)
 		)
 		(property "Value" "0"
-			(at 38.1 245.1099 0)
+			(at 27.94 245.1099 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15253,7 +15240,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 35.56 243.84 0)
+			(at 25.4 243.84 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15262,7 +15249,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 35.56 243.84 0)
+			(at 25.4 243.84 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15271,7 +15258,7 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
-			(at 35.56 243.84 0)
+			(at 25.4 243.84 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15280,7 +15267,7 @@
 			)
 		)
 		(property "LCSC" "C106231"
-			(at 38.1 242.5699 0)
+			(at 27.94 242.5699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15289,7 +15276,7 @@
 			)
 		)
 		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
-			(at 38.1 242.5699 0)
+			(at 27.94 242.5699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15393,6 +15380,15 @@
 			)
 		)
 		(property "LCSC" "C127272"
+			(at 226.06 55.88 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C127272.html"
 			(at 226.06 55.88 90)
 			(effects
 				(font
@@ -15597,6 +15593,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C53550.html"
+			(at 85.09 71.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "3"
 			(uuid "d96c231f-7fee-4849-b435-32a53a97facc")
 		)
@@ -15704,7 +15709,7 @@
 	)
 	(symbol
 		(lib_id "Device:R_Small")
-		(at 43.18 228.6 0)
+		(at 33.02 228.6 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -15713,7 +15718,7 @@
 		(fields_autoplaced yes)
 		(uuid "90237834-a72a-4fa7-99ac-f90f9ae05963")
 		(property "Reference" "R25"
-			(at 45.72 227.3299 0)
+			(at 35.56 227.3299 0)
 			(effects
 				(font
 					(size 1.016 1.016)
@@ -15722,7 +15727,7 @@
 			)
 		)
 		(property "Value" "0"
-			(at 45.72 229.8699 0)
+			(at 35.56 229.8699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15731,7 +15736,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 43.18 228.6 0)
+			(at 33.02 228.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15740,7 +15745,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 43.18 228.6 0)
+			(at 33.02 228.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15749,7 +15754,7 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
-			(at 43.18 228.6 0)
+			(at 33.02 228.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15758,7 +15763,7 @@
 			)
 		)
 		(property "LCSC" "C106231"
-			(at 45.72 227.3299 0)
+			(at 35.56 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15767,7 +15772,7 @@
 			)
 		)
 		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
-			(at 45.72 227.3299 0)
+			(at 35.56 227.3299 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16001,6 +16006,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60580.html"
+			(at 55.88 58.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "e225239c-24b0-487c-9ebf-bae4a0510479")
 		)
@@ -16213,6 +16227,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C53100485.html"
+			(at 53.34 129.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "5"
 			(uuid "6ff7e3bd-a632-4eb1-9f13-0ddab4cd3fe7")
 		)
@@ -16238,75 +16261,8 @@
 		)
 	)
 	(symbol
-		(lib_id "Connector_Generic:Conn_01x01")
-		(at 134.62 127 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "99b51eef-9add-4010-b390-2cdbc2aa5284")
-		(property "Reference" "J5"
-			(at 137.16 125.7299 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "Conn_01x01"
-			(at 137.16 128.2699 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Connector_Wire:SolderWirePad_1x01_SMD_2x4mm"
-			(at 134.62 127 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 134.62 127 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)"
-			(at 134.62 127 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "b41afb71-f78d-49a5-8ad4-8f317df30336")
-		)
-		(instances
-			(project ""
-				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
-					(reference "J5")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:R_Small")
-		(at 43.18 243.84 0)
+		(at 33.02 243.84 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -16315,7 +16271,7 @@
 		(fields_autoplaced yes)
 		(uuid "9b984d0d-2661-4540-b2e3-f94261db5548")
 		(property "Reference" "R26"
-			(at 45.72 242.5699 0)
+			(at 35.56 242.5699 0)
 			(effects
 				(font
 					(size 1.016 1.016)
@@ -16324,7 +16280,7 @@
 			)
 		)
 		(property "Value" "0"
-			(at 45.72 245.1099 0)
+			(at 35.56 245.1099 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16333,7 +16289,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 43.18 243.84 0)
+			(at 33.02 243.84 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16342,7 +16298,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 43.18 243.84 0)
+			(at 33.02 243.84 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16351,7 +16307,7 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
-			(at 43.18 243.84 0)
+			(at 33.02 243.84 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16360,7 +16316,7 @@
 			)
 		)
 		(property "LCSC" "C106231"
-			(at 45.72 242.5699 0)
+			(at 35.56 242.5699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16369,7 +16325,7 @@
 			)
 		)
 		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
-			(at 45.72 242.5699 0)
+			(at 35.56 242.5699 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16448,6 +16404,15 @@
 			)
 		)
 		(property "LCSC" "C963235"
+			(at 38.1 38.1 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C963235.html"
 			(at 38.1 38.1 90)
 			(effects
 				(font
@@ -16535,70 +16500,6 @@
 			(project "shapones_xiao_rp2350"
 				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
 					(reference "#PWR08")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Mechanical:Fiducial")
-		(at 215.9 254 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom no)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "9cc37f53-4501-4b97-a184-c7c25a1fe1bd")
-		(property "Reference" "FID1"
-			(at 218.44 252.7299 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "Fiducial"
-			(at 218.44 255.2699 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Fiducial:Fiducial_1mm_Mask2mm"
-			(at 215.9 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 215.9 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Fiducial Marker"
-			(at 215.9 254 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(instances
-			(project ""
-				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
-					(reference "FID1")
 					(unit 1)
 				)
 			)
@@ -16814,6 +16715,15 @@
 			)
 		)
 		(property "LCSC" "C351176"
+			(at 90.17 129.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C351176.html"
 			(at 90.17 129.54 0)
 			(effects
 				(font
@@ -17044,6 +16954,15 @@
 			)
 		)
 		(property "LCSC" "C30584803"
+			(at 193.04 43.18 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C30584803.html"
 			(at 193.04 43.18 90)
 			(effects
 				(font
@@ -17664,73 +17583,6 @@
 			(project "shapones_xiao_rp2350"
 				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
 					(reference "SW2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Connector_Generic:Conn_01x01")
-		(at 134.62 132.08 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "b48aeffe-9f97-487d-a5fe-85ce4568febf")
-		(property "Reference" "J6"
-			(at 137.16 130.8099 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "Conn_01x01"
-			(at 137.16 133.3499 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Connector_Wire:SolderWirePad_1x01_SMD_2x4mm"
-			(at 134.62 132.08 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 134.62 132.08 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)"
-			(at 134.62 132.08 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "5c84f124-e02e-4119-8b7c-abdfdf86511a")
-		)
-		(instances
-			(project "shapones_xiao_rp2350"
-				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
-					(reference "J6")
 					(unit 1)
 				)
 			)
@@ -18525,6 +18377,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C295747.html"
+			(at 109.22 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "e745630a-0dd0-4a0b-8878-3051a80ce1b9")
 		)
@@ -18897,7 +18758,7 @@
 	)
 	(symbol
 		(lib_id "power:+3V3")
-		(at 35.56 220.98 0)
+		(at 25.4 220.98 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -18906,7 +18767,7 @@
 		(fields_autoplaced yes)
 		(uuid "d551058b-a69e-49fc-9c57-cd8b2f00f573")
 		(property "Reference" "#PWR036"
-			(at 35.56 224.79 0)
+			(at 25.4 224.79 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -18915,7 +18776,7 @@
 			)
 		)
 		(property "Value" "+3V3"
-			(at 35.56 215.9 0)
+			(at 25.4 215.9 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -18923,7 +18784,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 35.56 220.98 0)
+			(at 25.4 220.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -18932,7 +18793,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 35.56 220.98 0)
+			(at 25.4 220.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -18941,7 +18802,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+3V3\""
-			(at 35.56 220.98 0)
+			(at 25.4 220.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19340,6 +19201,15 @@
 			)
 		)
 		(property "LCSC" "C42163138"
+			(at 236.22 220.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C42163138.html"
 			(at 236.22 220.98 0)
 			(effects
 				(font
@@ -20137,6 +20007,15 @@
 				(hide yes)
 			)
 		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60580.html"
+			(at 48.26 68.58 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "cfb140c3-2246-4d02-a610-de2f68fcee17")
 		)
@@ -20208,6 +20087,15 @@
 			)
 		)
 		(property "LCSC" "C128392"
+			(at 71.12 218.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C128392.html"
 			(at 71.12 218.44 0)
 			(effects
 				(font
@@ -20883,6 +20771,15 @@
 			)
 		)
 		(property "LCSC" "C841192"
+			(at 279.4 43.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C841192.html"
 			(at 279.4 43.18 0)
 			(effects
 				(font
