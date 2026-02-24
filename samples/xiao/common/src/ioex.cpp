@@ -27,7 +27,7 @@ void xiao_ioex_init() {}
 
 void xiao_ioex_deinit() {}
 
-void xiao_ioex_set_dir(int port, uint8_t mask, uint8_t value) {
+void xiao_ioex_set_dir_masked(int port, uint8_t mask, uint8_t value) {
   dir[port] = (dir[port] & ~mask) | (value & mask);
   write_reg(port == 0 ? reg_t::IODIRA : reg_t::IODIRB, dir[port]);
 }
@@ -37,19 +37,13 @@ void xiao_ioex_set_input_polarity(int port, uint8_t mask, uint8_t value) {
   write_reg(port == 0 ? reg_t::IPOLA : reg_t::IPOLB, ipol[port]);
 }
 
-void xiao_ioex_write(int port, uint8_t mask, uint8_t value) {
+void xiao_ioex_write_masked(int port, uint8_t mask, uint8_t value) {
   output[port] = (output[port] & ~mask) | (value & mask);
   write_reg(port == 0 ? reg_t::OLATA : reg_t::OLATB, output[port]);
 }
 
-uint8_t xiao_ioex_read(int port) {
-  return read_reg(port == 0 ? reg_t::GPIOA : reg_t::GPIOB);
-}
-
-void xiao_ioex_put(int pin, bool value) {
-  int port = pin / 8;
-  int bit = pin % 8;
-  xiao_ioex_write(port, 1 << bit, value ? (1 << bit) : 0);
+uint8_t xiao_ioex_read_masked(int port, uint8_t mask) {
+  return read_reg(port == 0 ? reg_t::GPIOA : reg_t::GPIOB) & mask;
 }
 
 static void write_reg(reg_t reg, uint8_t value) {

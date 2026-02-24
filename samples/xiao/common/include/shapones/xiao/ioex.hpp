@@ -3,7 +3,9 @@
 
 #include <stdint.h>
 
-static const int XIAO_IOEX_PERI_EN_PIN = 0;
+static const int XIAO_IOEX_PERI_EN_PIN = 4;
+static const int XIAO_IOEX_LCD_RST_PIN = 5;
+static const int XIAO_IOEX_INT_MUTE_PIN = 6;
 static const int XIAO_IOEX_BTN_MENU_PIN = 7;
 static const int XIAO_IOEX_BTN_A_PIN = 8;
 static const int XIAO_IOEX_BTN_B_PIN = 9;
@@ -24,13 +26,31 @@ namespace shapones::xiao {
 
 void xiao_ioex_init();
 void xiao_ioex_deinit();
-void xiao_ioex_set_dir(int port, uint8_t mask, uint8_t value);
-uint8_t xiao_ioex_read(int port);
-void xiao_ioex_write(int port, uint8_t mask, uint8_t value);
-void xiao_ioex_put(int pin, bool value);
+void xiao_ioex_set_dir_masked(int port, uint8_t mask, uint8_t value);
+void xiao_ioex_write_masked(int port, uint8_t mask, uint8_t value);
+uint8_t xiao_ioex_read_masked(int port, uint8_t mask);
+
+static inline void xiao_ioex_set_dir(int pin, bool output) {
+  int port = pin / 8;
+  int bit = pin % 8;
+  xiao_ioex_set_dir_masked(port, 1 << bit, output ? 0 : (1 << bit));
+}
+
+static inline void xiao_ioex_write(int pin, bool value) {
+  int port = pin / 8;
+  int bit = pin % 8;
+  xiao_ioex_write_masked(port, 1 << bit, value ? (1 << bit) : 0);
+}
+
+static inline bool xiao_ioex_read(int pin) {
+  int port = pin / 8;
+  int bit = pin % 8;
+  return (xiao_ioex_read_masked(port, 1 << bit) != 0);
+}
 
 static inline uint16_t xiao_ioex_read_double() {
-  return xiao_ioex_read(0) | ((uint16_t)xiao_ioex_read(1) << 8);
+  return xiao_ioex_read_masked(0, 0xFF) |
+         ((uint16_t)xiao_ioex_read_masked(1, 0xFF) << 8);
 }
 
 }  // namespace shapones::xiao

@@ -7,7 +7,7 @@ namespace shapones::xiao::power {
 
 void init();
 void service();
-void shutdown();
+void deep_sleep();
 
 }  // namespace shapones::xiao::power
 

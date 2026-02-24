@@ -9358,7 +9358,7 @@
 		)
 		(uuid "037a300e-290f-4b67-ba01-627740d4f48d")
 	)
-	(label "MUTE_INT"
+	(label "INT_MUTE"
 		(at 88.9 154.94 0)
 		(effects
 			(font
@@ -9588,7 +9588,7 @@
 		)
 		(uuid "5d03bbda-eb8a-4f6e-a044-ca3fd61c689c")
 	)
-	(label "MUTE_INT"
+	(label "INT_MUTE"
 		(at 99.06 213.36 180)
 		(effects
 			(font
@@ -12020,7 +12020,7 @@
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
-		(dnp yes)
+		(dnp no)
 		(uuid "33b7a096-c630-4e21-b300-e4c54266d715")
 		(property "Reference" "R22"
 			(at 120.65 137.16 90)

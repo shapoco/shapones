@@ -129,7 +129,7 @@ bool exists(const char *path) {
 
 result_t open(const char *path, bool write, void **handle) {
   FIL *fil = new FIL();
-  FRESULT fres = f_open(fil, path, write ? (FA_READ | FA_WRITE) : FA_READ);
+  FRESULT fres = f_open(fil, path, write ? (FA_READ | FA_WRITE | FA_CREATE_NEW) : FA_READ);
   if (fres) {
     delete fil;
     SHAPONES_RET_ERR(result_t::ERR_FS_OPEN_FAILED);

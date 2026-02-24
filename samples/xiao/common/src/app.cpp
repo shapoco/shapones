@@ -54,13 +54,13 @@ void app_init() {
   xiao_i2c_init();
 
   xiao_ioex_init();
-  xiao_ioex_set_dir(0, 0xFF, 0xFE);
-  xiao_ioex_set_dir(1, 0xFF, 0xFF);
+  xiao_ioex_set_dir_masked(0, 0xFF, 0x8E);
+  xiao_ioex_set_dir_masked(1, 0xFF, 0xFF);
 
   // Power on peripherals
-  xiao_ioex_put(XIAO_IOEX_PERI_EN_PIN, true);
+  xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, true);
   xiao_sleep_ms(100);
-  xiao_ioex_put(XIAO_IOEX_PERI_EN_PIN, false);
+  xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, false);
 
   xiao_spi_init();
 
@@ -71,6 +71,8 @@ void app_init() {
   cfg.apu_sampling_rate = audio::get_sampling_rate_hz();
   shapones::init(cfg);
   shapones::menu::show();
+
+  audio::set_muted(false);
 }
 
 void cpu_service() {
@@ -104,6 +106,14 @@ void ppu_service() {
   }
 }
 
+void shutdown() {
+  xiao_ioex_write(XIAO_IOEX_LCD_RST_PIN, 0);
+  xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, 1);
+  xiao_ioex_deinit();
+  xiao_i2c_deinit();
+  power::deep_sleep();
+}
+
 static void update_input() {
   uint64_t now_us = xiao_get_time_us();
   if (now_us >= input_next_read_us) {
@@ -111,7 +121,7 @@ static void update_input() {
 
     bool power_pressed = xiao_gpio_get(XIAO_POWER_BUTTON_PIN) == 1;
     if (!power_pressed && power_button_pressed) {
-      power::shutdown();
+      shutdown();
     }
     power_button_pressed = power_pressed;
 

@@ -591,13 +591,19 @@ static result_t on_load_rom(ListItem *mi) {
 }
 
 static result_t on_add_state_slot() {
-  char path[shapones::MAX_PATH_LENGTH + 1];
-  SHAPONES_RET_ERR(state::get_state_path(path, shapones::MAX_PATH_LENGTH));
-  int slot = find_empty_slot();
-  if (slot < 0) SHAPONES_RET_ERR(result_t::ERR_STATE_SLOT_FULL);
-  state::save(path, slot);
+  result_t res = result_t::SUCCESS;
+  do {
+    char path[shapones::MAX_PATH_LENGTH + 1];
+    SHAPONES_BRK_ERR(res,
+                     state::get_state_path(path, shapones::MAX_PATH_LENGTH));
+    int slot = find_empty_slot();
+    if (slot < 0) {
+      SHAPONES_BRK_ERR(res, result_t::ERR_STATE_SLOT_FULL);
+    }
+    SHAPONES_BRK_ERR(res, state::save(path, slot));
+  } while (0);
   load_state_list_tab();
-  return result_t::SUCCESS;
+  return res;
 }
 
 static result_t on_state_select(ListItem *mi) {

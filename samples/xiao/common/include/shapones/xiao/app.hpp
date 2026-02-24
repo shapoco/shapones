@@ -6,6 +6,7 @@ namespace shapones::xiao {
 void app_init();
 void cpu_service();
 void ppu_service();
+void shutdown();
 
 }  // namespace shapones::xiao
 

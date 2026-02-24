@@ -12,13 +12,8 @@ void init() {}
 
 void service() {}
 
-void shutdown() {
+void deep_sleep() {
   Serial.end();
-
-  xiao_ioex_put(XIAO_IOEX_PERI_EN_PIN, 1);
-  xiao_ioex_deinit();
-
-  xiao_i2c_deinit();
 
   esp_sleep_enable_ext0_wakeup((gpio_num_t)XIAO_POWER_BUTTON_PIN, 1);
   esp_deep_sleep_start();

@@ -1,5 +1,6 @@
 {
     "name": "shapones_xiao_core",
+    "version": "0.0.2",
     "build": {
         "includeDir": "include",
         "srcDir": "src",
