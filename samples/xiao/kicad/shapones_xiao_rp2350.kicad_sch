@@ -9640,7 +9640,7 @@
 		)
 		(uuid "5d03bbda-eb8a-4f6e-a044-ca3fd61c689c")
 	)
-	(label "INT_MUTE"
+	(label "IOEX_MUTE"
 		(at 99.06 213.36 180)
 		(effects
 			(font
@@ -9940,7 +9940,7 @@
 		)
 		(uuid "c5da6252-424d-4996-8823-1c561bf038e5")
 	)
-	(label "EXT_MUTE"
+	(label "SPK_MUTE"
 		(at 215.9 233.68 0)
 		(effects
 			(font
@@ -9950,7 +9950,7 @@
 		)
 		(uuid "ceb98119-0b02-4460-8a98-35b01f02f3ba")
 	)
-	(label "EXT_MUTE"
+	(label "SPK_MUTE"
 		(at 88.9 154.94 0)
 		(effects
 			(font
@@ -10040,7 +10040,7 @@
 		)
 		(uuid "e847a802-99c8-4fa5-8b93-0048231798f6")
 	)
-	(label "INT_MUTE"
+	(label "IOEX_MUTE"
 		(at 88.9 175.26 0)
 		(effects
 			(font
