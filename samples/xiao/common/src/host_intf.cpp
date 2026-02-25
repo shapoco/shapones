@@ -128,8 +128,18 @@ bool exists(const char *path) {
 }
 
 result_t open(const char *path, bool write, void **handle) {
+  int mode;
+  if (write) {
+    mode = FA_READ | FA_WRITE;
+    if (!exists(path)) {
+      mode |= FA_CREATE_NEW;
+    }
+  } else {
+    mode = FA_READ;
+  }
+
   FIL *fil = new FIL();
-  FRESULT fres = f_open(fil, path, write ? (FA_READ | FA_WRITE | FA_CREATE_NEW) : FA_READ);
+  FRESULT fres = f_open(fil, path, mode);
   if (fres) {
     delete fil;
     SHAPONES_RET_ERR(result_t::ERR_FS_OPEN_FAILED);
