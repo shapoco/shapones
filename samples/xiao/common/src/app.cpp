@@ -54,7 +54,7 @@ void app_init() {
   xiao_i2c_init();
 
   xiao_ioex_init();
-  xiao_ioex_set_dir_masked(0, 0xFF, 0x8E);
+  xiao_ioex_set_dir_masked(0, 0xFF, 0x8F);
   xiao_ioex_set_dir_masked(1, 0xFF, 0xFF);
 
   // Power on peripherals
@@ -107,8 +107,9 @@ void ppu_service() {
 }
 
 void shutdown() {
-  xiao_ioex_write(XIAO_IOEX_LCD_RST_PIN, 0);
-  xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, 1);
+  xiao_ioex_set_dir(XIAO_IOEX_LCD_RST_PIN, false);
+  xiao_ioex_set_dir(XIAO_IOEX_INT_MUTE_PIN, false);
+  xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, true);
   xiao_ioex_deinit();
   xiao_i2c_deinit();
   power::deep_sleep();

@@ -6142,7 +6142,7 @@
 	)
 	(wire
 		(pts
-			(xy 88.9 175.26) (xy 115.57 175.26)
+			(xy 88.9 175.26) (xy 101.6 175.26)
 		)
 		(stroke
 			(width 0)
@@ -8809,6 +8809,16 @@
 			(type default)
 		)
 		(uuid "ce1416dd-ece8-4ce5-ab6e-0f88fd983c5b")
+	)
+	(wire
+		(pts
+			(xy 106.68 175.26) (xy 115.57 175.26)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cf60aae6-906c-403c-a9a6-ebb3bcf825cf")
 	)
 	(wire
 		(pts
@@ -12894,6 +12904,110 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:D_Small")
+		(at 195.58 121.92 0)
+		(mirror x)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "4b10b2ac-6d7c-44f4-94cb-f482227011e8")
+		(property "Reference" "D7"
+			(at 194.056 124.714 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "1N4148WS"
+			(at 197.866 126.746 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Diode_SMD:D_SOD-323"
+			(at 195.58 121.92 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 195.58 121.92 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Diode, small symbol"
+			(at 195.58 121.92 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Device" "D"
+			(at 195.58 121.92 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Pins" "1=K 2=A"
+			(at 195.58 121.92 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60580"
+			(at 195.58 121.92 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60580.html"
+			(at 195.58 121.92 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "556d93c3-f4a1-49aa-b262-5ad6a4768f71")
+		)
+		(pin "1"
+			(uuid "9628496f-3d42-4efb-9d0a-7ff7f922f620")
+		)
+		(instances
+			(project "shapones_xiao_rp2350"
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "D7")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:+3V3")
 		(at 129.54 30.48 0)
 		(unit 1)
@@ -13042,91 +13156,6 @@
 			(project "shapones_xiao_rp2350"
 				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
 					(reference "R6")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_Small")
-		(at 195.58 121.92 90)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "512a0d54-4d06-4c64-b548-fd5d018ff930")
-		(property "Reference" "R11"
-			(at 195.58 124.206 90)
-			(effects
-				(font
-					(size 1.016 1.016)
-				)
-			)
-		)
-		(property "Value" "0"
-			(at 195.58 126.492 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 195.58 121.92 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 195.58 121.92 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, small symbol"
-			(at 195.58 121.92 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "LCSC" "C106231"
-			(at 195.58 124.206 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "URL" "https://www.lcsc.com/product-detail/C106231.html"
-			(at 195.58 124.206 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "66e75e9f-4bdc-49ae-9c7f-a22197f865e8")
-		)
-		(pin "2"
-			(uuid "1910973c-35eb-4c77-9658-1e881872ce76")
-		)
-		(instances
-			(project "shapones_xiao_rp2350"
-				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
-					(reference "R11")
 					(unit 1)
 				)
 			)
@@ -14614,7 +14643,7 @@
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
-		(dnp yes)
+		(dnp no)
 		(uuid "7b781788-a578-4b2c-a3c0-e8394f60bac2")
 		(property "Reference" "R13"
 			(at 201.168 112.268 0)
@@ -17578,6 +17607,110 @@
 			(project "shapones_xiao_rp2350"
 				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
 					(reference "SW2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:D_Small")
+		(at 104.14 175.26 0)
+		(mirror x)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "b4920c5c-63a0-4807-9c67-4a2a4eb63718")
+		(property "Reference" "D4"
+			(at 104.14 178.308 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "1N4148WS"
+			(at 104.14 180.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Diode_SMD:D_SOD-323"
+			(at 104.14 175.26 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 104.14 175.26 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Diode, small symbol"
+			(at 104.14 175.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Device" "D"
+			(at 104.14 175.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Pins" "1=K 2=A"
+			(at 104.14 175.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60580"
+			(at 104.14 175.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60580.html"
+			(at 104.14 175.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "d720944b-08f0-4877-8600-c1b16ad54b96")
+		)
+		(pin "1"
+			(uuid "e65d7191-8e54-4edd-996a-48f1d5eab5e8")
+		)
+		(instances
+			(project "shapones_xiao_rp2350"
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "D4")
 					(unit 1)
 				)
 			)
