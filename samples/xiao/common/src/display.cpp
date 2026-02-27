@@ -117,16 +117,16 @@ static void set_window(int x, int y, int w, int h);
 static void clip_rect(int *x, int *y, int *w, int *h);
 
 void init() {
+  xiao_gpio_init(XIAO_DISPLAY_CS_PIN, true);
+  xiao_gpio_init(XIAO_DISPLAY_DC_PIN, true);
+  xiao_gpio_put(XIAO_DISPLAY_CS_PIN, 1);
+  xiao_gpio_put(XIAO_DISPLAY_DC_PIN, 1);
+
   xiao_ioex_set_dir(XIAO_IOEX_LCD_RST_PIN, true);
   xiao_ioex_write(XIAO_IOEX_LCD_RST_PIN, 0);
   xiao_sleep_ms(100);
   xiao_ioex_write(XIAO_IOEX_LCD_RST_PIN, 1);
   xiao_sleep_ms(100);
-
-  xiao_gpio_init(XIAO_DISPLAY_CS_PIN, true);
-  xiao_gpio_init(XIAO_DISPLAY_DC_PIN, true);
-  xiao_gpio_put(XIAO_DISPLAY_CS_PIN, 1);
-  xiao_gpio_put(XIAO_DISPLAY_DC_PIN, 1);
 
   write_command(command_t::SOFTWARE_RESET);
   xiao_sleep_ms(200);

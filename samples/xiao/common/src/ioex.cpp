@@ -48,14 +48,14 @@ uint8_t xiao_ioex_read_masked(int port, uint8_t mask) {
 
 static void write_reg(reg_t reg, uint8_t value) {
   uint8_t buf[2] = {static_cast<uint8_t>(reg), value};
-  xiao_i2c_write_blocking(DEV_ADDR, buf, 2, true);
+  xiao_i2c_write_blocking(DEV_ADDR, buf, 2, false);
 }
 
 static uint8_t read_reg(reg_t reg) {
   uint8_t reg_addr = static_cast<uint8_t>(reg);
   uint8_t value;
-  xiao_i2c_write_blocking(DEV_ADDR, &reg_addr, 1, true);
-  xiao_i2c_read_blocking(DEV_ADDR, &value, 1, true);
+  xiao_i2c_write_blocking(DEV_ADDR, &reg_addr, 1, false);
+  xiao_i2c_read_blocking(DEV_ADDR, &value, 1, false);
   return value;
 }
 

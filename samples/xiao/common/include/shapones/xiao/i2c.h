@@ -13,9 +13,9 @@ void xiao_i2c_init();
 void xiao_i2c_deinit();
 void xiao_i2c_set_baudrate(uint32_t baudrate);
 void xiao_i2c_write_blocking(uint8_t dev_addr, const uint8_t *data,
-                             uint32_t size, bool stop);
+                             uint32_t size, bool nostop);
 void xiao_i2c_read_blocking(uint8_t dev_addr, uint8_t *data, uint32_t size,
-                            bool stop);
+                            bool nostop);
 
 #if defined(__cplusplus)
 }

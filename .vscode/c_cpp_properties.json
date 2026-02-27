@@ -124,11 +124,11 @@
                 "${PICO_EXTRAS_PATH}/src/rp2_common/hardware_rosc/include",
                 "${PICO_EXTRAS_PATH}/src/rp2_common/pico_sleep/include",
                 "${workspaceFolder}/core/include",
-                "${workspaceFolder}/samples/fatfs/source",
-                "${workspaceFolder}/samples/xiao_rp2350",
-                "${workspaceFolder}/samples/xiao_rp2350/build/pico2",
-                "${workspaceFolder}/samples/xiao_rp2350/build/pico2/generated/pico_base",
-                "${workspaceFolder}/samples/xiao_rp2350/include"
+                "${workspaceFolder}/samples/xiao/common/include",
+                "${workspaceFolder}/samples/xiao/rp",
+                "${workspaceFolder}/samples/xiao/rp/build/pico2",
+                "${workspaceFolder}/samples/xiao/rp/build/pico2/generated/pico_base",
+                "${workspaceFolder}/samples/xiao/rp/include"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

@@ -16,14 +16,14 @@ void xiao_i2c_write_blocking(uint8_t dev_addr, const uint8_t *data,
                              uint32_t size, bool stop) {
   Wire.beginTransmission(dev_addr);
   Wire.write(data, size);
-  if (stop) {
+  if (!stop) {
     Wire.endTransmission();
   }
 }
 
 void xiao_i2c_read_blocking(uint8_t dev_addr, uint8_t *data, uint32_t size,
                             bool stop) {
-  Wire.requestFrom(dev_addr, size, stop);
+  Wire.requestFrom(dev_addr, size, !stop);
   for (uint32_t i = 0; i < size; i++) {
     data[i] = Wire.read();
   }

@@ -61,17 +61,21 @@ void app_init() {
   xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, true);
   xiao_sleep_ms(100);
   xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, false);
+  xiao_sleep_ms(100);
 
   xiao_spi_init();
 
   display::init();
-  audio::init();
 
   auto cfg = shapones::get_default_config();
   cfg.apu_sampling_rate = audio::get_sampling_rate_hz();
   shapones::init(cfg);
   shapones::menu::show();
 
+  audio::init();
+
+  // Note: audio::set_muted() must be called twice to prevent display refresh
+  // from stopping
   audio::set_muted(false);
 }
 
@@ -82,7 +86,7 @@ void cpu_service() {
     cpu::service();
   }
 
-  if (display_refresh_req && !xiao_spi_dma_is_busy()) {
+  if (display_refresh_req ) {
     display_refresh_req = false;
     display::refresh();
   }

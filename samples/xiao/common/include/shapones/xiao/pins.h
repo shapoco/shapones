@@ -1,6 +1,8 @@
 #ifndef SHAPONES_XIAO_PINS_H
 #define SHAPONES_XIAO_PINS_H
 
+extern const int XIAO_I2C_SDA_PIN;
+extern const int XIAO_I2C_SCL_PIN;
 extern const int XIAO_SPI_MOSI_PIN;
 extern const int XIAO_SPI_MISO_PIN;
 extern const int XIAO_SPI_SCK_PIN;

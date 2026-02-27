@@ -1,5 +1,7 @@
 #include "shapones/xiao/pins.h"
 
+const int XIAO_I2C_SDA_PIN = 5;
+const int XIAO_I2C_SCL_PIN = 6;
 const int XIAO_SPI_MOSI_PIN = 9;
 const int XIAO_SPI_MISO_PIN = 8;
 const int XIAO_SPI_SCK_PIN = 7;
