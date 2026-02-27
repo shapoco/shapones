@@ -17,7 +17,7 @@ pico_sdk_init()
 
 add_executable(${APP_NAME})
 add_compile_options(-O2)
-add_compile_definitions(SHAPONES_ENABLE_LOG=1)
+add_compile_definitions(SHAPONES_ENABLE_LOG=0)
 
 set(SHAPONES_PATH ../../../core)
 set(COMMON_PATH ../common)

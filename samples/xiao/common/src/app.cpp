@@ -74,8 +74,6 @@ void app_init() {
 
   audio::init();
 
-  // Note: audio::set_muted() must be called twice to prevent display refresh
-  // from stopping
   audio::set_muted(false);
 }
 
@@ -86,7 +84,7 @@ void cpu_service() {
     cpu::service();
   }
 
-  if (display_refresh_req ) {
+  if (display_refresh_req && !xiao_spi_dma_is_busy()) {
     display_refresh_req = false;
     display::refresh();
   }
@@ -106,7 +104,9 @@ void ppu_service() {
     if (!ppu_frame_skip) {
       display_refresh_req = true;
     }
-    ppu_frame_skip = wait_vsync();
+  }
+  if (!!(ppu_status.timing & ppu::timing_t::END_OF_FRAME)) {
+    ppu_frame_skip = wait_vsync() && !ppu_frame_skip;
   }
 }
 

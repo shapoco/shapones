@@ -45,9 +45,9 @@ void init() {
   pwm_init(pwm_slice, &pwm_cfg, true);
 
   dma_ch = dma_claim_unused_channel(true);
-  dma_channel_set_irq1_enabled(dma_ch, true);
-  irq_set_exclusive_handler(DMA_IRQ_1, dma_handler);
-  irq_set_enabled(DMA_IRQ_1, true);
+  dma_channel_set_irq0_enabled(dma_ch, true);
+  irq_set_exclusive_handler(DMA_IRQ_0, dma_handler);
+  irq_set_enabled(DMA_IRQ_0, true);
 
   dma_channel_config dma_cfg = dma_channel_get_default_config(dma_ch);
   channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_32);
@@ -77,7 +77,7 @@ void deinit() {
 void stream() {}
 
 static void dma_handler() {
-  dma_hw->ints1 = 1u << dma_ch;
+  dma_hw->ints0 = 1u << dma_ch;
   start_dma();
   fill_buffer();
 }

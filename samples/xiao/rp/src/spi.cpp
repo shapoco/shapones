@@ -13,7 +13,6 @@ static spi_inst_t *const spibus_inst = spi0;
 
 static int cs_pin = -1;
 static uint32_t baudrate = 10'000'000;
-static uint64_t last_dma_start_time_us = 0;
 
 static bool is_spi_shift_busy();
 static void abort_dma();
@@ -45,8 +44,6 @@ void xiao_spi_init() {
   gpio_set_dir(XIAO_TFCARD_CS_PIN, GPIO_OUT);
 
   dma_tx = dma_claim_unused_channel(true);
-  dma_channel_set_irq0_enabled(dma_tx, false);
-  dma_channel_set_irq1_enabled(dma_tx, false);
   dma_cfg = dma_channel_get_default_config(dma_tx);
   channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
   channel_config_set_read_increment(&dma_cfg, true);
@@ -101,8 +98,6 @@ void xiao_spi_dma_write_start(int cs, const uint8_t *data, uint32_t size) {
   cs_pin = cs;
   dma_channel_configure(dma_tx, &dma_cfg, &spi_get_hw(spibus_inst)->dr, data,
                         size, true);
-
-  last_dma_start_time_us = to_us_since_boot(get_absolute_time());
 }
 
 void xiao_spi_dma_complete() {
@@ -116,18 +111,8 @@ void xiao_spi_dma_complete() {
 }
 
 bool xiao_spi_dma_is_busy() {
-  bool busy = dma_channel_is_busy(dma_tx) || is_spi_shift_busy();
-  if (busy) {
-    uint64_t now_us = to_us_since_boot(get_absolute_time());
-    if (now_us - last_dma_start_time_us > 200'000) {
-      abort_dma();
-      busy = false;
-    }
-  }
-
-  return busy;
+  return dma_channel_is_busy(dma_tx) || is_spi_shift_busy();
 }
-
 }
 
 static bool is_spi_shift_busy() {
