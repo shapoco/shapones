@@ -19,9 +19,7 @@ static uint32_t audio_rd_ptr = 0;
 
 static void fill_buffer(bool preload);
 
-uint32_t get_sampling_rate_hz() {
-  return AUDIO_SAMPLE_FREQ_HZ;
-}
+uint32_t get_sampling_rate_hz() { return AUDIO_SAMPLE_FREQ_HZ; }
 
 void init() {
   i2s_chan_config_t chan_cfg =
@@ -61,7 +59,7 @@ static void fill_buffer(bool preload) {
   if (buff_free == 0) {
     buff_free = AUDIO_BUFF_LEN;
   }
-  if (buff_free > 1) {
+  if (buff_free > AUDIO_BUFF_LEN / 4) {
     buff_free--;
     shapones::apu::service(apu_out_buff, buff_free);
     for (int i = 0; i < buff_free; i++) {
@@ -84,7 +82,7 @@ static void fill_buffer(bool preload) {
     audio_rd_ptr =
         (audio_rd_ptr + written / SAMPLE_SIZE) & (AUDIO_BUFF_LEN - 1);
   }
-  if (audio_rd_ptr < audio_wr_ptr) {
+  if (audio_rd_ptr + AUDIO_BUFF_LEN / 4 < audio_wr_ptr) {
     size_t to_write = (audio_wr_ptr - audio_rd_ptr) * SAMPLE_SIZE;
     size_t written = 0;
     if (preload) {

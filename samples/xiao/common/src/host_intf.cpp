@@ -1,6 +1,7 @@
 #include <shapones/host_intf.hpp>
 
 #include "shapones/xiao/lock.h"
+#include "shapones/xiao/ram.h"
 #include "shapones/xiao/timer.h"
 
 #include <ff.h>
@@ -55,14 +56,17 @@ result_t load_ines(const char *path, const uint8_t **out_ines,
 void unload_ines() {}
 
 result_t ram_alloc(size_t size, void **out_ptr) {
-  *out_ptr = malloc(size);
+  *out_ptr = xiao_malloc(size, true);
   if (!*out_ptr) {
-    SHAPONES_RET_ERR(result_t::ERR_RAM_ALLOC_FAILED);
+    *out_ptr = xiao_malloc(size, false);
+    if (!*out_ptr) {
+      SHAPONES_RET_ERR(result_t::ERR_RAM_ALLOC_FAILED);
+    }
   }
   return result_t::SUCCESS;
 }
 
-void ram_free(void *ptr) { free(ptr); }
+void ram_free(void *ptr) { xiao_free(ptr); }
 
 result_t spinlock_init(int id) {
   xiao_spinlock_init(&spinlocks[id]);

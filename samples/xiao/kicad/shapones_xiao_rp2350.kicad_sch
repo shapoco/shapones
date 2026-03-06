@@ -5995,6 +5995,12 @@
 		(uuid "d000edd8-ff07-439b-a733-08764f7951dc")
 	)
 	(junction
+		(at 35.56 129.54)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "d066c1f6-c162-47aa-8a7e-922ac8a77bb1")
+	)
+	(junction
 		(at 115.57 147.32)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -6102,7 +6108,7 @@
 	)
 	(wire
 		(pts
-			(xy 95.25 129.54) (xy 105.41 129.54)
+			(xy 95.25 129.54) (xy 97.79 129.54)
 		)
 		(stroke
 			(width 0)
@@ -6209,6 +6215,16 @@
 			(type default)
 		)
 		(uuid "0736f26e-ce8c-43a0-a6cd-c6ff0cd53ed5")
+	)
+	(wire
+		(pts
+			(xy 35.56 129.54) (xy 38.1 129.54)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0810cdf7-d452-4f70-8a21-2f5d5201e9fc")
 	)
 	(wire
 		(pts
@@ -6832,6 +6848,16 @@
 	)
 	(wire
 		(pts
+			(xy 102.87 129.54) (xy 105.41 129.54)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3ea183fe-0ff4-4142-a962-aace2956f46a")
+	)
+	(wire
+		(pts
 			(xy 73.66 111.76) (xy 76.2 111.76)
 		)
 		(stroke
@@ -7119,6 +7145,16 @@
 			(type default)
 		)
 		(uuid "51cd8410-a64d-447e-adbb-4ea066d6d83c")
+	)
+	(wire
+		(pts
+			(xy 35.56 129.54) (xy 35.56 133.35)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "51fd92f1-56e5-40cd-a8eb-0320c7e5221b")
 	)
 	(wire
 		(pts
@@ -8792,7 +8828,7 @@
 	)
 	(wire
 		(pts
-			(xy 30.48 129.54) (xy 38.1 129.54)
+			(xy 25.4 129.54) (xy 35.56 129.54)
 		)
 		(stroke
 			(width 0)
@@ -8819,6 +8855,16 @@
 			(type default)
 		)
 		(uuid "cf60aae6-906c-403c-a9a6-ebb3bcf825cf")
+	)
+	(wire
+		(pts
+			(xy 35.56 138.43) (xy 35.56 142.24)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cf692956-050a-4542-9e1b-801125102529")
 	)
 	(wire
 		(pts
@@ -9541,7 +9587,7 @@
 		(uuid "3ea4fcc0-1190-4abd-aa0a-2c3cc16f2552")
 	)
 	(label "SOUND"
-		(at 30.48 129.54 0)
+		(at 25.4 129.54 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -10403,6 +10449,92 @@
 			(project "shapones_xiao_rp2350"
 				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
 					(reference "R15")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C_Small")
+		(at 100.33 129.54 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "0b0c4972-69b7-4407-ad85-b3a058bbf83a")
+		(property "Reference" "C12"
+			(at 100.3363 123.19 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "1u"
+			(at 100.3363 125.73 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+			(at 100.33 129.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 100.33 129.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor, small symbol"
+			(at 100.33 129.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C140782"
+			(at 100.3363 123.19 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C140782.html"
+			(at 100.3363 123.19 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "89c09e12-6f4d-4b3b-8f26-fe223108f8ce")
+		)
+		(pin "1"
+			(uuid "8935ee1d-88a7-4c9a-a813-467c36af7154")
+		)
+		(instances
+			(project "shapones_xiao_rp2350"
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "C12")
 					(unit 1)
 				)
 			)
@@ -20098,6 +20230,72 @@
 	)
 	(symbol
 		(lib_id "power:GND")
+		(at 35.56 142.24 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "e2be8d65-7f82-4078-921f-17fce498e3a6")
+		(property "Reference" "#PWR062"
+			(at 35.56 148.59 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 35.56 147.32 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 35.56 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 35.56 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 35.56 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "fdf196da-0714-4e9b-87c0-f498cf301b99")
+		)
+		(instances
+			(project "shapones_xiao_rp2350"
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "#PWR062")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
 		(at 160.02 256.54 0)
 		(mirror y)
 		(unit 1)
@@ -20328,6 +20526,94 @@
 			(project "shapones_xiao_rp2350"
 				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
 					(reference "D1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R_Small")
+		(at 35.56 135.89 0)
+		(mirror y)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "ebfcb5f3-ca21-4e23-b6fe-8eba70987105")
+		(property "Reference" "R11"
+			(at 34.29 134.62 0)
+			(effects
+				(font
+					(size 1.016 1.016)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "100k"
+			(at 34.29 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+			(at 35.56 135.89 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 35.56 135.89 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor, small symbol"
+			(at 35.56 135.89 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C60491"
+			(at 34.29 134.62 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "URL" "https://www.lcsc.com/product-detail/C60491.html"
+			(at 34.29 134.62 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "a7e616e5-ba1f-4668-a530-780f80cc441b")
+		)
+		(pin "2"
+			(uuid "1aa028c5-8fcd-4a21-b11a-4c255f97bceb")
+		)
+		(instances
+			(project "shapones_xiao_rp2350"
+				(path "/c325fb4c-906a-4010-8224-fd2c0e1f0539"
+					(reference "R11")
 					(unit 1)
 				)
 			)

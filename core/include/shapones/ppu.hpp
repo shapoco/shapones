@@ -43,29 +43,10 @@ static constexpr int SCAN_LINES = 262;
 
 static constexpr cycle_t MAX_DELAY_CYCLES = LINE_CYCLES;
 
-enum class timing_t {
-  NONE = 0,
-  END_OF_VISIBLE_LINE = (1 << 0),
-  END_OF_VISIBLE_AREA = (1 << 1),
-  START_OF_VBLANK_LINE = (1 << 2),
-  END_OF_FRAME = (1 << 3),
-};
-
-static SHAPONES_INLINE timing_t operator|(timing_t a, timing_t b) {
-  return static_cast<timing_t>(static_cast<uint32_t>(a) |
-                               static_cast<uint32_t>(b));
-}
-static SHAPONES_INLINE timing_t operator&(timing_t a, timing_t b) {
-  return static_cast<timing_t>(static_cast<uint32_t>(a) &
-                               static_cast<uint32_t>(b));
-}
-static SHAPONES_INLINE timing_t &operator|=(timing_t &a, timing_t b) {
-  a = a | b;
-  return a;
-}
-static SHAPONES_INLINE bool operator!(timing_t a) {
-  return static_cast<uint32_t>(a) == 0;
-}
+static constexpr uint8_t TIMING_END_OF_VISIBLE_LINE = 1 << 0;
+static constexpr uint8_t TIMING_END_OF_VISIBLE_AREA = 1 << 1;
+static constexpr uint8_t TIMING_START_OF_VBLANK_LINE = 1 << 2;
+static constexpr uint8_t TIMING_END_OF_FRAME = 1 << 3;
 
 static constexpr int NAME_LINE_STRIDE = SCREEN_WIDTH / 8;
 static constexpr int NAME_PAGE_STRIDE = 0x400;
@@ -174,7 +155,20 @@ struct sprite_line_t {
 
 struct status_t {
   int focus_y;
-  timing_t timing;
+  uint8_t timing_flags;
+
+  inline bool is_end_of_visible_line() const {
+    return (timing_flags & TIMING_END_OF_VISIBLE_LINE) != 0;
+  }
+  inline bool is_end_of_visible_area() const {
+    return (timing_flags & TIMING_END_OF_VISIBLE_AREA) != 0;
+  }
+  inline bool is_start_of_vblank_line() const {
+    return (timing_flags & TIMING_START_OF_VBLANK_LINE) != 0;
+  }
+  inline bool is_end_of_frame() const {
+    return (timing_flags & TIMING_END_OF_FRAME) != 0;
+  }
 };
 
 extern volatile cycle_t cycle_count;
@@ -192,7 +186,8 @@ void reg_write(addr_t addr, uint8_t data);
 
 void oam_dma_write(addr_t offset, uint8_t data);
 
-result_t service(uint8_t *line_buff,  bool skip_render = false, status_t* status = nullptr);
+result_t service(uint8_t *line_buff, bool skip_render = false,
+                 status_t *status = nullptr);
 
 uint32_t get_state_size();
 result_t save_state(void *file_handle);

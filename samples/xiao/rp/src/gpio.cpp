@@ -13,11 +13,11 @@ void xiao_gpio_init(int pin, bool output) {
 
 void xiao_gpio_deinit(int pin) { gpio_set_dir(pin, GPIO_IN); }
 
-void xiao_gpio_put(int pin, bool value) {
+void xiao_gpio_write(int pin, bool value) {
   gpio_put(pin, value ? 1 : 0);
 }
 
-bool xiao_gpio_get(int pin) { return gpio_get(pin) != 0; }
+bool xiao_gpio_read(int pin) { return gpio_get(pin) != 0; }
 
 #if defined(__cplusplus)
 }

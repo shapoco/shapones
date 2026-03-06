@@ -11,5 +11,6 @@ extern const int XIAO_DISPLAY_DC_PIN;
 extern const int XIAO_TFCARD_CS_PIN;
 extern const int XIAO_AUDIO_OUT_PIN;
 extern const int XIAO_POWER_BUTTON_PIN;
+extern const int XIAO_GPIO_PIN;
 
 #endif

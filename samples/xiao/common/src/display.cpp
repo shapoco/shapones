@@ -119,8 +119,8 @@ static void clip_rect(int *x, int *y, int *w, int *h);
 void init() {
   xiao_gpio_init(XIAO_DISPLAY_CS_PIN, true);
   xiao_gpio_init(XIAO_DISPLAY_DC_PIN, true);
-  xiao_gpio_put(XIAO_DISPLAY_CS_PIN, 1);
-  xiao_gpio_put(XIAO_DISPLAY_DC_PIN, 1);
+  xiao_gpio_write(XIAO_DISPLAY_CS_PIN, 1);
+  xiao_gpio_write(XIAO_DISPLAY_DC_PIN, 1);
 
   xiao_ioex_set_dir(XIAO_IOEX_LCD_RST_PIN, true);
   xiao_ioex_write(XIAO_IOEX_LCD_RST_PIN, 0);
@@ -208,15 +208,15 @@ static void start_command(command_t cmd) {
 
   xiao_spi_set_baudrate(xiao_spi_display_frequency());
 
-  xiao_gpio_put(XIAO_DISPLAY_CS_PIN, 0);
-  xiao_gpio_put(XIAO_DISPLAY_DC_PIN, 0);
+  xiao_gpio_write(XIAO_DISPLAY_CS_PIN, 0);
+  xiao_gpio_write(XIAO_DISPLAY_DC_PIN, 0);
   xiao_spi_write_blocking((const uint8_t *)&cmd, 1);
-  xiao_gpio_put(XIAO_DISPLAY_DC_PIN, 1);
+  xiao_gpio_write(XIAO_DISPLAY_DC_PIN, 1);
 }
 
 static void end_command() {
-  xiao_gpio_put(XIAO_DISPLAY_CS_PIN, 1);
-  xiao_gpio_put(XIAO_DISPLAY_DC_PIN, 1);
+  xiao_gpio_write(XIAO_DISPLAY_CS_PIN, 1);
+  xiao_gpio_write(XIAO_DISPLAY_DC_PIN, 1);
 }
 
 static void send_data(const uint8_t *data, uint32_t size) {

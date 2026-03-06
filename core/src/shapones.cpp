@@ -126,7 +126,7 @@ result_t render_next_line(uint8_t *line_buff, bool skip_render,
   do {
     SHAPONES_RET_ERR(cpu::service());
     SHAPONES_RET_ERR(ppu::service(line_buff, skip_render, status));
-  } while (!(status->timing & ppu::timing_t::END_OF_VISIBLE_LINE));
+  } while (!status->is_end_of_visible_line());
   return result_t::SUCCESS;
 }
 
@@ -135,7 +135,7 @@ result_t vsync(uint8_t *line_buff, bool skip_render) {
   do {
     SHAPONES_RET_ERR(cpu::service());
     SHAPONES_RET_ERR(ppu::service(line_buff, skip_render, &status));
-  } while (!(status.timing & ppu::timing_t::END_OF_FRAME));
+  } while (!status.is_end_of_frame());
   return result_t::SUCCESS;
 }
 

@@ -9,7 +9,7 @@ ESP32DMASPI::Master spi_dma;
 
 extern "C" {
 
-static constexpr size_t TRANSFER_SIZE = 4096;
+static constexpr size_t TRANSFER_SIZE = 16 * 1024;
 
 static constexpr size_t QUEUE_SIZE = (2 * 256 * 256) / TRANSFER_SIZE;
 int cs_pin = -1;
@@ -69,7 +69,7 @@ void xiao_spi_dma_write_start(int cs, const uint8_t *data, uint32_t size) {
   xiao_spi_dma_complete();
   init_dma();
   if (cs >= 0) {
-    xiao_gpio_put(cs, 0);
+    xiao_gpio_write(cs, 0);
   }
   cs_pin = cs;
   while (size > 0) {
@@ -86,7 +86,7 @@ void xiao_spi_dma_complete() {
   while (spi_dma.numTransactionsInFlight() > 0) {
   }
   if (cs_pin >= 0) {
-    xiao_gpio_put(cs_pin, 1);
+    xiao_gpio_write(cs_pin, 1);
     cs_pin = -1;
   }
 }

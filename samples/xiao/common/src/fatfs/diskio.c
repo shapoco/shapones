@@ -19,8 +19,8 @@
 #define FCLK_FAST() { }
 #define FCLK_SLOW() { }
 
-#define CS_HIGH()   { xiao_gpio_put(XIAO_TFCARD_CS_PIN, 1 ); }
-#define CS_LOW()    { xiao_gpio_put(XIAO_TFCARD_CS_PIN, 0 ); }
+#define CS_HIGH()   { xiao_gpio_write(XIAO_TFCARD_CS_PIN, 1 ); }
+#define CS_LOW()    { xiao_gpio_write(XIAO_TFCARD_CS_PIN, 0 ); }
 
 #define MMC_CD      1 /* Card detect (yes:true, no:false, default:true) */
 #define MMC_WP      0 /* Write protected (yes:true, no:false, default:false) */
@@ -81,7 +81,7 @@ static BYTE CardType;   /* Card type flags */
 static void init_spi (void)
 {
     xiao_gpio_init(XIAO_TFCARD_CS_PIN, true);
-    xiao_gpio_put(XIAO_TFCARD_CS_PIN, 1);
+    xiao_gpio_write(XIAO_TFCARD_CS_PIN, 1);
 
     xiao_spi_dma_complete();
     xiao_spi_set_baudrate(xiao_spi_tfcard_frequency()); 

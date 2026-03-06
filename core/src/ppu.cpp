@@ -293,7 +293,7 @@ static SHAPONES_INLINE void palette_write(addr_t addr, uint8_t data) {
 }
 
 result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
-  status->timing = timing_t::NONE;
+  status->timing_flags = 0;
   status->focus_y = focus_y;
 
   cycle_t cycle = cycle_count;
@@ -347,9 +347,9 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
       shapones::menu::overlay(focus_y, line_buff);
     }
 
-    status->timing |= timing_t::END_OF_VISIBLE_LINE;
+    status->timing_flags |= TIMING_END_OF_VISIBLE_LINE;
     if (focus_y == SCREEN_HEIGHT - 1) {
-      status->timing |= timing_t::END_OF_VISIBLE_AREA;
+      status->timing_flags |= TIMING_END_OF_VISIBLE_AREA;
     }
 
     focus_x = SCREEN_WIDTH;
@@ -364,7 +364,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     if (focus_y == SCREEN_HEIGHT) {
       reg.status.vblank_flag = 1;
       mapper::instance->vblank(reg);
-      status->timing |= timing_t::START_OF_VBLANK_LINE;
+      status->timing_flags |= TIMING_START_OF_VBLANK_LINE;
     } else if (focus_y == SCAN_LINES - 2) {
       reg.status.vblank_flag = 0;
       reg.status.sprite0_hit = 0;
@@ -379,7 +379,7 @@ result_t service(uint8_t *line_buff, bool skip_render, status_t *status) {
     focus_x = 0;
     focus_y++;
     if (focus_y >= SCAN_LINES) {
-      status->timing |= timing_t::END_OF_FRAME;
+      status->timing_flags |= TIMING_END_OF_FRAME;
       measure(skip_render);
       focus_y = 0;
     }

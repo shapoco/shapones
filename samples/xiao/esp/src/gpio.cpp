@@ -13,11 +13,11 @@ void xiao_gpio_init(int pin, bool output) {
 
 void xiao_gpio_deinit(int pin) { pinMode(pin, INPUT); }
 
-void xiao_gpio_put(int pin, bool value) {
+void xiao_gpio_write(int pin, bool value) {
   digitalWrite(pin, value ? HIGH : LOW);
 }
 
-bool xiao_gpio_get(int pin) { return digitalRead(pin) == HIGH; }
+bool xiao_gpio_read(int pin) { return digitalRead(pin) == HIGH; }
 
 #if defined(__cplusplus)
 }

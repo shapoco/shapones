@@ -23,7 +23,7 @@ static uint8_t ipol[2] = {0, 0};
 static void write_reg(reg_t reg, uint8_t value);
 static uint8_t read_reg(reg_t reg);
 
-void xiao_ioex_init() {}
+void xiao_ioex_init() { xiao_i2c_set_baudrate(xiao_i2c_ioex_frequency()); }
 
 void xiao_ioex_deinit() {}
 
@@ -44,6 +44,14 @@ void xiao_ioex_write_masked(int port, uint8_t mask, uint8_t value) {
 
 uint8_t xiao_ioex_read_masked(int port, uint8_t mask) {
   return read_reg(port == 0 ? reg_t::GPIOA : reg_t::GPIOB) & mask;
+}
+
+uint16_t xiao_ioex_read_double() {
+  uint8_t reg_addr = static_cast<uint8_t>(reg_t::GPIOA);
+  uint8_t data[2];
+  xiao_i2c_write_blocking(DEV_ADDR, &reg_addr, 1, false);
+  xiao_i2c_read_blocking(DEV_ADDR, data, 2, false);
+  return data[0] | (((uint16_t)data[1]) << 8);
 }
 
 static void write_reg(reg_t reg, uint8_t value) {

@@ -10,6 +10,18 @@
 #include "shapones/xiao/spi.h"
 #include "shapones/xiao/timer.h"
 
+#define SEG7_INCLUDE_IMPL
+#define SEG7_INCLUDE_AS_STATIC
+#include <seg7.hpp>
+
+#define MONITOR_ENABLE (0)
+#define MONITOR_CPU_TIMING (0)
+#define MONITOR_DMA_TIMING (0)
+#define MONITOR_APU_TIMING (0)
+#define MONITOR_PPU_TIMING (0)
+#define MONITOR_COLOR_CONV_TIMING (0)
+#define MONITOR_INPUT_TIMING (0)
+
 namespace shapones::xiao {
 
 // NES color table
@@ -38,7 +50,7 @@ static uint64_t input_next_read_us = 0;
 
 static uint8_t ppu_line_buff[shapones::SCREEN_WIDTH];
 static uint64_t next_vsync_us = 0;
-static bool ppu_frame_skip = false;
+static int ppu_frame_skip_count = 0;
 static volatile bool display_refresh_req = false;
 
 static bool power_button_pressed = false;
@@ -51,20 +63,32 @@ static bool wait_vsync();
 void app_init() {
   xiao_gpio_init(XIAO_POWER_BUTTON_PIN, false);
 
+#if MONITOR_ENABLE
+  xiao_gpio_init(XIAO_GPIO_PIN, true);
+#endif
+
   xiao_i2c_init();
 
   xiao_ioex_init();
-  xiao_ioex_set_dir_masked(0, 0xFF, 0x8F);
+  xiao_ioex_set_dir_masked(0, 0xFF, 0xFF);
   xiao_ioex_set_dir_masked(1, 0xFF, 0xFF);
+
+  // Mute speaker during initialization to avoid noise
+  xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, true);
+  xiao_ioex_set_dir(XIAO_IOEX_INT_MUTE_PIN, true);
+
+  // Reset LCD
+  xiao_ioex_write(XIAO_IOEX_LCD_RST_PIN, false);
+  xiao_ioex_set_dir(XIAO_IOEX_LCD_RST_PIN, true);
 
   // Power on peripherals
   xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, true);
+  xiao_ioex_set_dir(XIAO_IOEX_PERI_EN_PIN, true);
   xiao_sleep_ms(100);
   xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, false);
   xiao_sleep_ms(100);
 
   xiao_spi_init();
-
   display::init();
 
   auto cfg = shapones::get_default_config();
@@ -80,41 +104,84 @@ void app_init() {
 void cpu_service() {
   update_input();
 
+#if MONITOR_CPU_TIMING
+  xiao_gpio_write(XIAO_GPIO_PIN, true);
+#endif
   for (int i = 0; i < 10; i++) {
     cpu::service();
   }
+#if MONITOR_CPU_TIMING
+  xiao_gpio_write(XIAO_GPIO_PIN, false);
+#endif
 
   if (display_refresh_req && !xiao_spi_dma_is_busy()) {
     display_refresh_req = false;
+#if MONITOR_DMA_TIMING
+    xiao_gpio_write(XIAO_GPIO_PIN, true);
+#endif
     display::refresh();
+#if MONITOR_DMA_TIMING
+    xiao_gpio_write(XIAO_GPIO_PIN, false);
+#endif
   }
 
+#if MONITOR_APU_TIMING
+  xiao_gpio_write(XIAO_GPIO_PIN, true);
+#endif
   audio::stream();
+#if MONITOR_APU_TIMING
+  xiao_gpio_write(XIAO_GPIO_PIN, false);
+#endif
 }
 
 void ppu_service() {
-  ppu::status_t ppu_status;
-  ppu::service(ppu_line_buff, ppu_frame_skip, &ppu_status);
+  bool frame_skip = ppu_frame_skip_count > 0;
 
-  if (!!(ppu_status.timing & ppu::timing_t::END_OF_VISIBLE_LINE) &&
-      !ppu_frame_skip) {
+  ppu::status_t ppu_status;
+#if MONITOR_PPU_TIMING
+  xiao_gpio_write(XIAO_GPIO_PIN, true);
+#endif
+  ppu::service(ppu_line_buff, frame_skip, &ppu_status);
+#if MONITOR_PPU_TIMING
+  xiao_gpio_write(XIAO_GPIO_PIN, false);
+#endif
+
+  if (ppu_status.is_end_of_visible_line() && !frame_skip) {
+#if MONITOR_COLOR_CONV_TIMING
+    xiao_gpio_write(XIAO_GPIO_PIN, true);
+#endif
     convert_color(ppu_status.focus_y);
-  }
-  if (!!(ppu_status.timing & ppu::timing_t::END_OF_VISIBLE_AREA)) {
-    if (!ppu_frame_skip) {
-      display_refresh_req = true;
+#if MONITOR_COLOR_CONV_TIMING
+    xiao_gpio_write(XIAO_GPIO_PIN, false);
+#endif
+
+    if (ppu_status.focus_y == 16) {
+      int w = 36;
+      int fps_cent = shapones::ppu::get_fps() * 100;
+      display::fill_rect(display::WIDTH - w, 0, w, 12, 0x000);
+      ::seg7::drawDec32(display::WIDTH - w + 2, 0, fps_cent, 2);
     }
   }
-  if (!!(ppu_status.timing & ppu::timing_t::END_OF_FRAME)) {
-    ppu_frame_skip = wait_vsync() && !ppu_frame_skip;
+  if (ppu_status.is_end_of_visible_area()) {
+    if (!frame_skip) {
+      display_refresh_req = true;
+    }
+    if (wait_vsync()) {
+      ppu_frame_skip_count = (ppu_frame_skip_count + 1) % 4;
+    } else {
+      ppu_frame_skip_count = 0;
+    }
   }
 }
 
 void shutdown() {
+  audio::deinit();
   xiao_ioex_set_dir(XIAO_IOEX_LCD_RST_PIN, false);
   xiao_ioex_set_dir(XIAO_IOEX_INT_MUTE_PIN, false);
   xiao_ioex_write(XIAO_IOEX_PERI_EN_PIN, true);
   xiao_ioex_deinit();
+  xiao_i2c_deinit();
+  xiao_spi_deinit();
   xiao_i2c_deinit();
   power::deep_sleep();
 }
@@ -122,15 +189,21 @@ void shutdown() {
 static void update_input() {
   uint64_t now_us = xiao_get_time_us();
   if (now_us >= input_next_read_us) {
-    input_next_read_us = now_us + 1'000'000 / 120;
+    input_next_read_us = now_us + 1'000'000 / 60;
 
-    bool power_pressed = xiao_gpio_get(XIAO_POWER_BUTTON_PIN) == 1;
+    bool power_pressed = xiao_gpio_read(XIAO_POWER_BUTTON_PIN) == 1;
     if (!power_pressed && power_button_pressed) {
       shutdown();
     }
     power_button_pressed = power_pressed;
 
+#if MONITOR_INPUT_TIMING
+    xiao_gpio_write(XIAO_GPIO_PIN, true);
+#endif
     uint16_t ioex_input = xiao_ioex_read_double();
+#if MONITOR_INPUT_TIMING
+    xiao_gpio_write(XIAO_GPIO_PIN, false);
+#endif
 
     bool menu_pressed = (ioex_input & (1 << XIAO_IOEX_BTN_MENU_PIN)) == 0;
     if (!menu_pressed && menu_button_pressed) {
@@ -203,3 +276,8 @@ static bool wait_vsync() {
 }
 
 }  // namespace shapones::xiao
+
+SEG7_FUNC_MOD void seg7::fillRect(seg7::pos_t x, seg7::pos_t y, uint8_t w,
+                                  uint8_t h) {
+  shapones::xiao::display::fill_rect(x, y, w, h, 0xFFF);
+}

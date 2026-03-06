@@ -48,10 +48,7 @@ static inline bool xiao_ioex_read(int pin) {
   return (xiao_ioex_read_masked(port, 1 << bit) != 0);
 }
 
-static inline uint16_t xiao_ioex_read_double() {
-  return xiao_ioex_read_masked(0, 0xFF) |
-         ((uint16_t)xiao_ioex_read_masked(1, 0xFF) << 8);
-}
+uint16_t xiao_ioex_read_double();
 
 }  // namespace shapones::xiao
 

@@ -93,7 +93,7 @@ void xiao_spi_read_blocking(uint8_t repeated_byte, uint8_t *data,
 void xiao_spi_dma_write_start(int cs, const uint8_t *data, uint32_t size) {
   xiao_spi_dma_complete();
   if (cs >= 0) {
-    xiao_gpio_put(cs, 0);
+    xiao_gpio_write(cs, 0);
   }
   cs_pin = cs;
   dma_channel_configure(dma_tx, &dma_cfg, &spi_get_hw(spibus_inst)->dr, data,
@@ -105,7 +105,7 @@ void xiao_spi_dma_complete() {
     tight_loop_contents();
   }
   if (cs_pin >= 0) {
-    xiao_gpio_put(cs_pin, 1);
+    xiao_gpio_write(cs_pin, 1);
     cs_pin = -1;
   }
 }
@@ -123,7 +123,7 @@ static void abort_dma() {
   dma_hw->ints0 = 1u << dma_tx;
   dma_hw->ints1 = 1u << dma_tx;
   if (cs_pin >= 0) {
-    xiao_gpio_put(cs_pin, 1);
+    xiao_gpio_write(cs_pin, 1);
     cs_pin = -1;
   }
 }
