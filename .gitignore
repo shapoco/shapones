@@ -8,6 +8,8 @@ tmp.*
 tmp.*/
 *.d
 *.o
+.cmake/
+.pio/
 
 # for KiCad
 *-backups/
