@@ -1,5 +1,10 @@
 # ShapoNES for Xiamocon
 
+## バイナリダウンロード
+
+[Releases](https://github.com/shapoco/shapones/releases) から
+shapones_for_xiamocon_YYYYMMDD.zip をダウンロードして展開してください (YYYYMMDD はリリース日時)。
+
 ## バイナリの書き込み方法
 
 ### RP2350 版
@@ -53,4 +58,7 @@ FUNC キーでメニューを表示し、別の NES ファイルを起動する�
 
 ロードが失敗した場合、再度ロードを実行すると成功することがあります。
 
+## 既知の問題
 
+- フレームレートが若干低い
+- ステートのロードが失敗することがある
