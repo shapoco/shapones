@@ -142,8 +142,7 @@ static void core1_main() {
     shapones::ppu::service(line_buff, skip_frame, &s);
 
     // end of visible line
-    if (!!((s.timing & shapones::ppu::timing_t::END_OF_VISIBLE_LINE)) &&
-        !skip_frame) {
+    if (!!(s.is_end_of_visible_line()) && !skip_frame) {
       // Convert palette index to RGB444
       uint8_t *rd_ptr = line_buff;
       uint8_t *wr_ptr = frame_buff + (s.focus_y * FRAME_BUFF_STRIDE);
@@ -155,7 +154,7 @@ static void core1_main() {
         *(wr_ptr++) = c1 & 0xff;
       }
     }
-    if (!!(s.timing & shapones::ppu::timing_t::END_OF_VISIBLE_AREA)) {
+    if (!!(s.is_end_of_visible_area())) {
       if (!skip_frame) {
         disp_flip();
       }
